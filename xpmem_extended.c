@@ -21,8 +21,6 @@
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
 
-#define XPMEM_MAX_UNIQ_ID_EXT   255
-
 u32 extend_enabled = 0;
 struct xpmem_extended_ops * xpmem_extended_ops = NULL;
 
@@ -50,10 +48,6 @@ xpmem_make_apid_extended(struct xpmem_thread_group * ap_tg) {
     DBUG_ON(sizeof(struct xpmem_id) != sizeof(xpmem_apid_t));
 
     uniq = atomic_inc_return(&ap_tg->uniq_apid_ex);
-    if (uniq > XPMEM_MAX_UNIQ_ID_EXT) {
-        atomic_dec(&ap_tg->uniq_apid);
-        return -EBUSY;
-    }   
 
     *apid_p = 0;
     apid.tgid = ap_tg->tgid;
