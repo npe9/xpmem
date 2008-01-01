@@ -69,6 +69,7 @@ xpmem_make_apid_extended(struct xpmem_thread_group * ap_tg) {
     uniq = atomic_inc_return(&ap_tg->uniq_apid_ex);
 
     if (atomic_read(&ap_tg->uniq_apid_ex) > XPMEM_MAX_UNIQ_APID) {
+        printk(KERN_ERR "XPMEM: Out of extended APID space: cannot serve GETs\n");
         atomic_dec(&ap_tg->uniq_apid_ex);
         return -EBUSY;
     }

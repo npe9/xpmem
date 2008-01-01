@@ -34,8 +34,8 @@
 #include <xpmem_extended.h>
 
 /* TODO: set this based on some configure option */
-//#define EXT_PALACIOS
-#define EXT_NS
+#define EXT_PALACIOS
+//#define EXT_NS
 
 struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
 
