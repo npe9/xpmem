@@ -348,6 +348,9 @@ xpmem_probe_driver(struct pci_dev             * dev,
     palacios_state->workq = create_singlethread_workqueue("xpmem-work");
     INIT_WORK(&(palacios_state->worker), xpmem_work_fn);
 
+    palacios_state->initialized = 1;
+    atomic_inc(&dev_off);
+
     /* Add connection to name/forwarding service */
     palacios_state->link = xpmem_add_connection(
             palacios_state->part, 
@@ -360,9 +363,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
             " name/forwarding service\n");
         goto err_free_irq;
     }
-
-    palacios_state->initialized = 1;
-    atomic_inc(&dev_off);
 
     /* Signal device initialization by clearing irq status */
     xpmem_irq_clear_hcall(palacios_state->bar_state.xpmem_irq_clear_hcall_id);
