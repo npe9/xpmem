@@ -39,15 +39,8 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg)
 	segid.uniq = (unsigned short)uniq;
 
     if (extend_enabled) {
-        xpmem_extended_ops->make(segid_p);
+        xpmem_extended_ops->make(xpmem_my_part, segid_p);
     }
-
-    /*
-    if (xpmem_palacios_make_segid(segid_p)) {
-        printk("Failed to register segid with Palacios\n");
-        *segid_p = 0;
-    }
-    */
 
 	DBUG_ON(*segid_p <= 0);
 	return *segid_p;
@@ -66,6 +59,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
 
 	if (permit_type != XPMEM_PERMIT_MODE ||
 	    ((u64)permit_value & ~00777) || size == 0) {
+        printk("EINVAL\n");
 		return -EINVAL;
 	}
 
@@ -233,7 +227,7 @@ xpmem_remove(xpmem_segid_t segid)
 	xpmem_tg_deref(seg_tg);
 
     if (extend_enabled) {
-        xpmem_extended_ops->remove(segid);
+        xpmem_extended_ops->remove(xpmem_my_part, segid);
     }
 
 	return ret;

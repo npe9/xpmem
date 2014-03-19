@@ -12,12 +12,12 @@ extern struct xpmem_extended_ops palacios_ops;
 extern struct xpmem_extended_ops ns_ops;
 
 struct xpmem_extended_ops { 
-    int (*make)(xpmem_segid_t *); 
-    int (*remove)(xpmem_segid_t);
-    int (*get)(xpmem_segid_t, int, int, u64, xpmem_apid_t *); 
-    int (*release)(xpmem_apid_t);
-    int (*attach)(xpmem_apid_t, off_t, size_t, u64 *);
-    int (*detach)(u64);
+    int (*make)(struct xpmem_partition *, xpmem_segid_t *); 
+    int (*remove)(struct xpmem_partition *, xpmem_segid_t);
+    int (*get)(struct xpmem_partition *, xpmem_segid_t, int, int, u64, xpmem_apid_t *); 
+    int (*release)(struct xpmem_partition *, xpmem_apid_t);
+    int (*attach)(struct xpmem_partition *, xpmem_apid_t, off_t, size_t, u64 *);
+    int (*detach)(struct xpmem_partition *, u64);
 };
 
 struct xpmem_cmd_make_ex {
@@ -80,7 +80,7 @@ struct xpmem_cmd_ex {
 };
 
 
-int xpmem_extend_enable(xpmem_domain_t dom);
+
 int xpmem_get_remote(struct xpmem_cmd_get_ex * get_ex);
 int xpmem_release_remote(struct xpmem_cmd_release_ex * release_ex);
 int xpmem_attach_remote(struct xpmem_cmd_attach_ex * attach_ex);

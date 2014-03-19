@@ -66,21 +66,10 @@ struct xpmem_addr {
 #define XPMEM_CMD_DETACH	_IO(XPMEM_IOC_MAGIC, 6)
 #define XPMEM_CMD_FORK_BEGIN	_IO(XPMEM_IOC_MAGIC, 7)
 #define XPMEM_CMD_FORK_END	_IO(XPMEM_IOC_MAGIC, 8)
-#define XPMEM_CMD_EXTEND	_IO(XPMEM_IOC_MAGIC, 9)
 
 /*
  * Structures used with the preceding ioctl() commands to pass data.
  */
-typedef enum {
-    XPMEM_EXT_NS,
-    XPMEM_EXT_PALACIOS,
-    XPMEM_EXT_PISCES,
-} xpmem_domain_t;
-
-struct xpmem_cmd_extend {
-    xpmem_domain_t domain;
-};
-
 struct xpmem_cmd_make {
 	__u64 vaddr;
 	size_t size;

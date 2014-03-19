@@ -28,9 +28,15 @@
 #include <linux/mm.h>
 #include <linux/file.h>
 #include <linux/proc_fs.h>
+#include <linux/poll.h>
+
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
+
+/* TODO: set this based on some configure option */
+#define EXT_PALACIOS
+//#define EXT_NS
 
 struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
 
@@ -78,9 +84,6 @@ xpmem_open(struct inode *inode, struct file *file)
 	tg->mmu_initialized = 0;
 	tg->mmu_unregister_called = 0;
 	tg->mm = current->mm;
-
-	INIT_LIST_HEAD(&tg->cmd_list);
-	mutex_init(&tg->cmd_mutex);
 
 	/* Register MMU notifier callbacks */
 	if (xpmem_mmu_notifier_init(tg) != 0) {
@@ -312,16 +315,6 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case XPMEM_CMD_FORK_END: {
 		return xpmem_fork_end();
 	}
-    case XPMEM_CMD_EXTEND: {
-        struct xpmem_cmd_extend extend_info;
-
-        if (copy_from_user(&extend_info, (void __user *)arg,
-                    sizeof(struct xpmem_cmd_extend))) {
-            return -EFAULT;
-        }
-        
-        return xpmem_extend_enable(extend_info.domain);
-    }
 	default:
 		break;
 	}
@@ -329,69 +322,72 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 }
 
 
-/*
 static unsigned int
 xpmem_poll(struct file *file, struct poll_table_struct *pollp) {
-    struct xpmem_thread_group *tg;
     unsigned int ret;
-    unsigned long flags;
+    struct ns_xpmem_state * ns_state = xpmem_my_part->ns_state;
 
-    tg = xpmem_tg_ref_by_tgid(current->tgid);
-    if (!IS_ERR(tg)) {
+    if (!ns_state) {
         return 0;
-    }   
+    }
 
-    poll_wait(file, &(tg->cmd_waitq), pollp);
+    poll_wait(file, &(ns_state->ns_wq), pollp);
 
-    ret = POLLOUT | PLOOWRNORM;
+    ret = POLLOUT | POLLWRNORM;
 
-    mutex_lock(&(tg->cmd_mutex));
-    if (!list_empty(&(tg->cmd_list))) {
+    mutex_lock(&(ns_state->mutex));
+    if ((ns_state->cmd) && (ns_state->req_complete == 0)) {
         ret |= (POLLIN | POLLRDNORM);
     }   
-    mutex_unlock(&(tg->cmd_mutex));
+    mutex_unlock(&(ns_state->mutex));
 
     return ret;
 }
 
 static ssize_t 
 xpmem_read(struct file *file, char __user *buffer, size_t length, loff_t *off) {
-    struct xpmem_thread_group *tg;
-    unsigned int ret;
-    unsigned long flags;
+    struct ns_xpmem_state * ns_state = xpmem_my_part->ns_state;
 
-    tg = xpmem_tg_ref_by_tgid(current->tgid);
-    if (!IS_ERR(tg)) {
-        return -1;
-    }   
+    if (!ns_state) {
+        return -ENODEV;
+    }
 
-    mutex_lock(&(tg->cmd_mutex));
+    if (!(ns_state->cmd) || (ns_state->req_complete == 1)) {
+        return 0;
+    }
+
+    if (length != sizeof(struct xpmem_cmd_ex)) {
+        return -EINVAL;
+    }
+
+    if (copy_to_user(buffer, (void *)ns_state->cmd, size)) {
+        ret = -EFAULT;
+    }
+
+    return length;
 }
 
 static ssize_t
 xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t *off) {
-    struct xpmem_thread_group *tg;
-    struct xpmem_cmd_ex * cmd_ex = kmalloc(sizeof(struct xpmem_cmd_ex), GFP_KERNEL);
+    struct ns_xpmem_state * ns_state = xpmem_my_part->ns_state;
+    struct xpmem_cmd_ex cmd;
 
-    tg = xpmem_tg_ref_by_tgid(current->tgid);
-    if (!IS_ERR(tg)) {
-        kfree(cmd_ex);
-        return -1;
+    if (!ns_state) {
+        return -ENODEV;
     }
 
-    if (size != sizeof(struct xpmem_cmd_ex)) {
-        kfree(cmd_ex);
+    if (length != sizeof(struct xpmem_cmd_ex)) {
+        return -EINVAL;
+    }
+
+    if (copy_from_user((void *)&cmd, buffer, sizeof(struct xpmem_cmd_ex))) {
         return -EFAULT;
     }
 
-    if (copy_from_user((void *)cmd_ex, buffer, length)) {
-        kfree(cmd_ex);
-        return -EFAULT;
-    }
+    // TODO: process incoming request 
 
-    return xpmem_cmd_ex(cmd_ex);
+    return length;
 }
-*/
 
 static struct file_operations xpmem_fops = {
 	//.owner = THIS_MODULE,
@@ -401,10 +397,9 @@ static struct file_operations xpmem_fops = {
 	.mmap = xpmem_mmap,
 
     /* For extended support */
-    /*.poll = xpmem_poll,
+    .poll = xpmem_poll,
     .read = xpmem_read,
     .write = xpmem_write,
-    */
 };
 
 static struct miscdevice xpmem_dev_handle = {
@@ -488,7 +483,18 @@ xpmem_init(void)
 	//debug_printk_entry->uid = current->cred->uid;
 	//debug_printk_entry->gid = current->cred->gid;
     
-    xpmem_palacios_init();
+#if defined(EXT_PALACIOS)
+    xpmem_palacios_init(xpmem_my_part);
+    xpmem_extended_ops = &palacios_ops;
+    extend_enabled = 1;
+#elif defined(EXT_NS)
+    xpmem_ns_init(xpmem_my_part);
+    xpmem_extended_ops = &ns_ops;
+    extend_enabled = 1;
+#else
+    xpmem_extended_ops = NULL;
+    extend_enabled = 0;
+#endif
 
 	printk("SGI XPMEM kernel module v%s loaded\n",
 	       XPMEM_CURRENT_VERSION_STRING);
@@ -519,6 +525,9 @@ xpmem_exit(void)
 	//remove_proc_entry("global_pages", xpmem_unpin_procfs_dir);
 	//remove_proc_entry("debug_printk", xpmem_unpin_procfs_dir);
 	//remove_proc_entry(XPMEM_MODULE_NAME, NULL);
+    
+    xpmem_palacios_deinit(xpmem_my_part);
+    xpmem_ns_deinit(xpmem_my_part);
 
 	printk("SGI XPMEM kernel module v%s unloaded\n",
 	       XPMEM_CURRENT_VERSION_STRING);

@@ -22,24 +22,6 @@
 u32 extend_enabled = 0;
 struct xpmem_extended_ops * xpmem_extended_ops = NULL;
 
-int xpmem_extend_enable(xpmem_domain_t dom) {
-    switch (dom) {
-        case XPMEM_EXT_NS:
-            xpmem_extended_ops = &ns_ops;
-            break;
-
-        case XPMEM_EXT_PALACIOS:
-            xpmem_extended_ops = &palacios_ops;
-            break;
-
-        default:
-            return -1;
-    }
-
-    extend_enabled = 1;
-    return 0;
-}
-
 static xpmem_apid_t
 xpmem_make_apid_extended(struct xpmem_thread_group * ap_tg, xpmem_segid_t segid) {
     struct xpmem_id apid, * segid_id_p;
@@ -73,6 +55,8 @@ xpmem_validate_remote_access(struct xpmem_access_permit *ap, off_t offset,
     *vaddr = ap->seg->vaddr + offset;
     return 0;
 }
+
+
 
 /* Handle remote requests */
 int xpmem_get_remote(struct xpmem_cmd_get_ex * get_ex) {

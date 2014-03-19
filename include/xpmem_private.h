@@ -168,6 +168,21 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
  * general internal driver structures
  */
 
+struct ns_xpmem_state {
+    int initialized;
+
+    /* pending command  */
+    struct xpmem_cmd_ex * cmd;
+    struct mutex mutex;
+    int req_complete;
+
+    /* waitq for clients */
+    wait_queue_head_t client_wq;
+
+    /* waitq for name server */
+    wait_queue_head_t ns_wq;
+};
+
 struct xpmem_thread_group {
 	spinlock_t lock;	/* tg lock */
 	pid_t tgid;		/* tg's tgid */
@@ -192,9 +207,6 @@ struct xpmem_thread_group {
 	struct mmu_notifier mmu_not;	/* tg's mmu notifier struct */
 	int mmu_initialized;	/* registered for mmu callbacks? */
 	int mmu_unregister_called;
-    struct list_head cmd_list; /* local XPMEM commands for NS (extended) */
-    struct mutex cmd_mutex; /* lock serializing access to cmd list (extended) */ 
-    wait_queue_head_t cmd_waitq; /* waitq for NS to accept local requests (extended) */
 };
 
 struct xpmem_segment {
@@ -245,6 +257,10 @@ struct xpmem_partition {
 	/* procfs debugging */
 	atomic_t n_pinned; 	/* # of pages pinned xpmem */
 	atomic_t n_unpinned; 	/* # of pages unpinned by xpmem */
+
+    /* extended xpmem states */
+    struct palacios_xpmem_state * palacios_state;
+    struct ns_xpmem_state * ns_state;
 };
 
 /*
@@ -385,15 +401,12 @@ extern int xpmem_mmu_notifier_init(struct xpmem_thread_group *);
 extern void xpmem_mmu_notifier_unlink(struct xpmem_thread_group *);
 
 /* found in xpmem_palacios.c */
-extern int xpmem_palacios_init(void);
-/*extern int xpmem_palacios_make(xpmem_segid_t * segid);
-extern int xpmem_palacios_remove(xpmem_segid_t);
+extern int xpmem_palacios_init(struct xpmem_partition *);
+extern int xpmem_palacios_deinit(struct xpmem_partition *);
 
-extern int xpmem_palacios_get(xpmem_segid_t, u32 flags, u32 permit_type, u64 permit_value, xpmem_apid_t * apid);
-extern int xpmem_palacios_release(xpmem_apid_t apid);
-extern int xpmem_palacios_attach(xpmem_apid_t apid, uint64_t off, uint64_t size, u64 * vaddr);
-extern int xpmem_palacios_detach(u64 vaddr);
-*/
+/* found in xpmem_ns.c */
+extern int xpmem_ns_init(struct xpmem_partition *);
+extern int xpmem_ns_deinit(struct xpmem_partition *);
 
 /*
  * Inlines that mark an internal driver structure as being destroyable or not.

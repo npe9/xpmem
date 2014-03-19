@@ -27,6 +27,7 @@
 
 
 #define VMCALL      ".byte 0x0F,0x01,0xC1\r\n"
+#define MAX_DEVICES     16
 
 
 static void xpmem_make_hcall(int id, xpmem_segid_t segid) {
@@ -83,7 +84,7 @@ static void xpmem_detach_hcall(int id, u64 vaddr) {
     );
 }
 
-static void xpmem_get_complete_hcall(int id, xpmem_apid_t apid) {
+static void xpmem_get_req_complete_hcall(int id, xpmem_apid_t apid) {
     unsigned long long ret = 0;
     __asm__ volatile(
         VMCALL
@@ -92,7 +93,7 @@ static void xpmem_get_complete_hcall(int id, xpmem_apid_t apid) {
     );
 }
 
-static void xpmem_remove_complete_hcall(int id) {
+static void xpmem_remove_req_complete_hcall(int id) {
     unsigned long long ret = 0;
     __asm__ volatile(
         VMCALL
@@ -101,7 +102,7 @@ static void xpmem_remove_complete_hcall(int id) {
     );
 }
 
-static void xpmem_attach_complete_hcall(int id, u64 buffer_pa) {
+static void xpmem_attach_req_complete_hcall(int id, u64 buffer_pa) {
     unsigned long long ret = 0;
     __asm__ volatile(
         VMCALL
@@ -110,7 +111,7 @@ static void xpmem_attach_complete_hcall(int id, u64 buffer_pa) {
     );
 }
 
-static void xpmem_detach_complete_hcall(int id) {
+static void xpmem_detach_req_complete_hcall(int id) {
     unsigned long long ret = 0;
     __asm__ volatile(
         VMCALL
@@ -120,11 +121,6 @@ static void xpmem_detach_complete_hcall(int id) {
 }
 
 
-static const struct pci_device_id xpmem_ids[] = {
-    { PCI_DEVICE(XPMEM_VENDOR_ID, XPMEM_DEVICE_ID) },
-    { },
-};
-
 struct xpmem_hypercall_info {
     u32 make_hcall;
     u32 remove_hcall;
@@ -132,7 +128,7 @@ struct xpmem_hypercall_info {
     u32 release_hcall;
     u32 attach_hcall;
     u32 detach_hcall;
-    u32 command_complete_hcall;
+    u32 command_req_complete_hcall;
 };
 
 struct xpmem_bar_state {
@@ -149,38 +145,20 @@ static void read_bar(void __iomem * xpmem_bar, void * bar_state) {
     }
 }
 
-struct xpmem_state {
+struct palacios_xpmem_state {
     void __iomem * xpmem_bar;
     struct xpmem_bar_state bar_state;
-
     int initialized;
+    struct tasklet_struct t;
 
-    int make_requested;
-    int make_complete;
-
-    int remove_requested;
-    int remove_complete;
-
-    int get_requested;
-    int get_complete;
-
-    int release_requested;
-    int release_complete;
-
-    int attach_requested;
-    int attach_complete;
-
-    int detach_requested;
-    int detach_complete;
-
-    /* Semaphore serializing access to device */
-    struct semaphore mutex;
-
-    /* Wait queue for Palacios completion notification */
+    struct mutex mutex;
     wait_queue_head_t waitq;
+    int req_complete;
 };
 
-static struct xpmem_state state;
+static struct palacios_xpmem_state palacios_devs[MAX_DEVICES];
+static int dev_off = 0;
+DEFINE_SPINLOCK(palacios_lock);
 
 
 void xpmem_tasklet_fn(unsigned long data) {
@@ -227,55 +205,44 @@ void xpmem_tasklet_fn(unsigned long data) {
 }
 
 
-DECLARE_TASKLET(xpmem_tasklet, xpmem_tasklet_fn, (unsigned long)&(state.bar_state));
-
-
 
 static irqreturn_t irq_handler(int irq, void * data) {
-    struct xpmem_state * state = (struct xpmem_state *)data; 
+    struct palacios_xpmem_state * state = (struct palacios_xpmem_state *)data; 
     u8 status;
 
     read_bar(state->xpmem_bar, (void *)&(state->bar_state));
     status = state->bar_state.interrupt_status;
 
     if (status & INT_COMPLETE) {
-        if (state->make_requested) {
-            state->make_requested = 0;
-            state->make_complete = 1;
-        } else if (state->remove_requested) {
-            state->remove_requested = 0;
-            state->remove_complete = 1;
-        } else if (state->get_requested) {
-            state->get_requested = 0;
-            state->get_complete = 1;
-        } else if (state->release_requested) {
-            state->release_requested = 0;
-            state->release_complete = 1;
-        } else if (state->attach_requested) {
-            state->attach_requested = 0;
-            state->attach_complete = 1;
-        } else if (state->detach_requested) {
-            state->detach_requested = 0;
-            state->detach_complete = 1;
-        } else {
-            // not good 
-            return IRQ_NONE;
-        }
-
+        state->req_complete = 1; 
         wake_up_interruptible(&(state->waitq));
     }
 
     if (status & INT_REQUEST) {
-        tasklet_schedule(&(xpmem_tasklet));
+        tasklet_schedule(&(state->t));
     }
 
     return IRQ_HANDLED;
 }
 
 
+
+static const struct pci_device_id xpmem_ids[] = {
+    { PCI_DEVICE(XPMEM_VENDOR_ID, XPMEM_DEVICE_ID) },
+    { },
+};
+
 static int xpmem_probe_driver(struct pci_dev * dev, const struct pci_device_id * id) {
     int ret = -1;
     unsigned long bar_size = 0;
+    unsigned long flags;
+    struct palacios_xpmem_state * palacios_state = NULL;
+
+    spin_lock_irqsave(&(palacios_lock), flags);
+    palacios_state = &(palacios_devs[dev_off]);
+    spin_unlock_irqrestore(&(palacios_lock), flags);
+
+    memset(palacios_state, 0, sizeof(struct palacios_xpmem_state));
 
     if (dev->vendor != XPMEM_VENDOR_ID) {
         return ret;
@@ -300,44 +267,50 @@ static int xpmem_probe_driver(struct pci_dev * dev, const struct pci_device_id *
 
     /* Map BAR 0 */
     bar_size = pci_resource_len(dev, 0);
-    state.xpmem_bar = pci_iomap(dev, 0, bar_size); 
+    palacios_state->xpmem_bar = pci_iomap(dev, 0, bar_size); 
 
-    if (!state.xpmem_bar) {
+    if (!palacios_state->xpmem_bar) {
         printk("Failed to map Palacios XPMEM BAR 0 memory\n");
         ret = -1;
         goto err;
     }
 
     /* Read Palacios header from BAR0 */
-    read_bar(state.xpmem_bar, (void *)&(state.bar_state));
+    read_bar(palacios_state->xpmem_bar, (void *)&(palacios_state->bar_state));
 
-    if ((state.bar_state.hcall_info.make_hcall == 0) || 
-            (state.bar_state.hcall_info.remove_hcall == 0) || 
-            (state.bar_state.hcall_info.get_hcall == 0) || 
-            (state.bar_state.hcall_info.release_hcall == 0) || 
-            (state.bar_state.hcall_info.attach_hcall == 0) ||
-            (state.bar_state.hcall_info.detach_hcall == 0) ||
-            (state.bar_state.hcall_info.command_complete_hcall == 0)) {
+    if ((palacios_state->bar_state.hcall_info.make_hcall == 0) || 
+            (palacios_state->bar_state.hcall_info.remove_hcall == 0) || 
+            (palacios_state->bar_state.hcall_info.get_hcall == 0) || 
+            (palacios_state->bar_state.hcall_info.release_hcall == 0) || 
+            (palacios_state->bar_state.hcall_info.attach_hcall == 0) ||
+            (palacios_state->bar_state.hcall_info.detach_hcall == 0) ||
+            (palacios_state->bar_state.hcall_info.command_req_complete_hcall == 0)) {
         printk("Palacios XPMEM hypercalls not available\n");
         ret = -1;
         goto err_unmap;
     }
 
     /* Register IRQ handler */
-    if ((ret = request_irq(dev->irq, irq_handler, IRQF_SHARED, "xpmem", &state))) {
+    if ((ret = request_irq(dev->irq, irq_handler, IRQF_SHARED, "xpmem", palacios_state))) {
         printk("Failed to request IRQ for Palacios XPMEM device (irq = %d)\n", dev->irq);
         goto err_unmap;
     }
 
-    init_waitqueue_head(&(state.waitq));
-    sema_init(&(state.mutex), 1);
-    state.initialized = 1;
+
+    init_waitqueue_head(&(palacios_state->waitq));
+    mutex_init(&(palacios_state->mutex));
+    tasklet_init(&(palacios_state->t), &(xpmem_tasklet_fn), (unsigned long)&(palacios_state->bar_state));
+
+    palacios_state->initialized = 1;
+    spin_lock_irqsave(&(palacios_lock), flags);
+    ++dev_off;
+    spin_unlock_irqrestore(&(palacios_lock), flags);
 
     printk("Palacios XPMEM PCI device enabled\n");
     return 0;
 
 err_unmap:
-    pci_iounmap(dev, state.xpmem_bar);
+    pci_iounmap(dev, palacios_state->xpmem_bar);
 err:
     printk("Palacios XPMEM device initialization failed\n");
     return ret;
@@ -355,10 +328,13 @@ static struct pci_driver xpmem_driver = {
 };
 
 
-int xpmem_palacios_init(void) {
+int xpmem_palacios_init(struct xpmem_partition * part) {
     int ret;
+    unsigned long flags;
 
-    memset(&state, 0, sizeof(struct xpmem_state));
+    spin_lock_irqsave(&(palacios_lock), flags);
+    part->palacios_state = &(palacios_devs[dev_off]);
+    spin_unlock_irqrestore(&(palacios_lock), flags);
 
     /* Register PCI driver */
     ret = pci_register_driver(&xpmem_driver);
@@ -370,113 +346,115 @@ int xpmem_palacios_init(void) {
     return ret;
 }
 
-
-
-static int xpmem_make_palacios(xpmem_segid_t * segid) {
-    if (!state.initialized) {
-        return -1;
-    }
-
-    /* Take mutex */
-    while (down_interruptible(&(state.mutex)));
-
-    state.make_requested = 1;
-    state.make_complete = 0;
-    xpmem_make_hcall(state.bar_state.hcall_info.make_hcall, *segid);
-
-    wait_event_interruptible(state.waitq, (state.make_complete == 1)); 
-    *segid = state.bar_state.response.make.segid;
-
-    /* Release mutex */
-    up(&(state.mutex));
+int xpmem_palacios_deinit(struct xpmem_partition * part) {
+    pci_unregister_driver(&xpmem_driver);
     return 0;
 }
 
-static int xpmem_remove_palacios(xpmem_segid_t segid) {
-    if (!state.initialized) {
+
+static int xpmem_make_palacios(struct xpmem_partition * part, xpmem_segid_t * segid) {
+    struct palacios_xpmem_state * state = part->palacios_state;
+
+    if (!state->initialized) {
         return -1;
     }
 
-    while (down_interruptible(&(state.mutex)));
+    while (mutex_lock_interruptible(&(state->mutex)));
 
-    state.remove_requested = 1;
-    state.remove_complete = 0;
-    xpmem_remove_hcall(state.bar_state.hcall_info.remove_hcall, segid);
+    state->req_complete = 0;
+    xpmem_make_hcall(state->bar_state.hcall_info.make_hcall, *segid);
+    wait_event_interruptible(state->waitq, (state->req_complete == 1)); 
+    *segid = state->bar_state.response.make.segid;
 
-    wait_event_interruptible(state.waitq, (state.remove_complete == 1));
-
-    up(&(state.mutex));
+    mutex_unlock(&(state->mutex));
     return 0;
 }
 
-static int xpmem_get_palacios(xpmem_segid_t segid, int flags, int permit_type, u64 permit_value, xpmem_apid_t * apid) {
-    if (!state.initialized) {
+static int xpmem_remove_palacios(struct xpmem_partition * part, xpmem_segid_t segid) {
+    struct palacios_xpmem_state * state = part->palacios_state;
+
+    if (!state->initialized) {
         return -1;
     }
 
-    while (down_interruptible(&(state.mutex)));
+    while (mutex_lock_interruptible(&(state->mutex)));
 
-    state.get_requested = 1;
-    state.get_complete = 0;
-    xpmem_get_hcall(state.bar_state.hcall_info.get_hcall, segid, flags, permit_type, permit_value);
+    state->req_complete = 0;
+    xpmem_remove_hcall(state->bar_state.hcall_info.remove_hcall, segid);
+    wait_event_interruptible(state->waitq, (state->req_complete == 1));
 
-    wait_event_interruptible(state.waitq, (state.get_complete == 1));
-    *apid = state.bar_state.response.get.apid;
-
-    up(&(state.mutex));
+    mutex_unlock(&(state->mutex));
     return 0;
 }
 
-static int xpmem_release_palacios(xpmem_apid_t apid) {
-    if (!state.initialized) {
+static int xpmem_get_palacios(struct xpmem_partition * part, xpmem_segid_t segid, int flags, int permit_type, u64 permit_value, xpmem_apid_t * apid) {
+    struct palacios_xpmem_state * state = part->palacios_state;
+
+    if (!state->initialized) {
         return -1;
     }
 
-    while (down_interruptible(&(state.mutex)));
+    while (mutex_lock_interruptible(&(state->mutex)));
 
-    state.release_requested = 1;
-    state.release_complete = 0;
-    xpmem_release_hcall(state.bar_state.hcall_info.release_hcall, apid);
+    state->req_complete = 0;;
+    xpmem_get_hcall(state->bar_state.hcall_info.get_hcall, segid, flags, permit_type, permit_value);
+    wait_event_interruptible(state->waitq, (state->req_complete == 1));
+    *apid = state->bar_state.response.get.apid;
 
-    wait_event_interruptible(state.waitq, (state.release_complete == 1));
-
-    up(&(state.mutex));
+    mutex_unlock(&(state->mutex));
     return 0;
 }
 
-static int xpmem_attach_palacios(xpmem_apid_t apid, off_t offset, size_t size, u64 * vaddr) {
-    if (!state.initialized) {
+static int xpmem_release_palacios(struct xpmem_partition * part, xpmem_apid_t apid) {
+    struct palacios_xpmem_state * state = part->palacios_state;
+
+    if (!state->initialized) {
         return -1;
     }
 
-    while (down_interruptible(&(state.mutex)));
+    while (mutex_lock_interruptible(&(state->mutex)));
 
-    state.attach_requested = 1;
-    state.attach_complete = 0;
-    xpmem_attach_hcall(state.bar_state.hcall_info.remove_hcall, apid, offset, size, /* TODO: buffer pa*/ 0);
+    state->req_complete = 0;
+    xpmem_release_hcall(state->bar_state.hcall_info.release_hcall, apid);
+    wait_event_interruptible(state->waitq, (state->req_complete == 1));
 
-    wait_event_interruptible(state.waitq, (state.attach_complete == 1));
+    mutex_unlock(&(state->mutex));
+    return 0;
+}
+
+static int xpmem_attach_palacios(struct xpmem_partition * part, xpmem_apid_t apid, off_t offset, size_t size, u64 * vaddr) {
+    struct palacios_xpmem_state * state = part->palacios_state;
+
+    if (!state->initialized) {
+        return -1;
+    }
+
+    while (mutex_lock_interruptible(&(state->mutex)));
+
+    state->req_complete = 0;
+    xpmem_attach_hcall(state->bar_state.hcall_info.remove_hcall, apid, offset, size, /* TODO: buffer pa*/ 0);
+    wait_event_interruptible(state->waitq, (state->req_complete == 1));
 
     /* TODO: read pfns from buffer PA, invoke ioremap() on them, set *vaddr */
 
-    up(&(state.mutex));
+    mutex_unlock(&(state->mutex));
     return 0;
 }
 
-static int xpmem_detach_palacios(u64 vaddr) {
-    if (!state.initialized) {
+static int xpmem_detach_palacios(struct xpmem_partition * part, u64 vaddr) {
+    struct palacios_xpmem_state * state = part->palacios_state;
+
+    if (!state->initialized) {
         return -1;
     }
 
-    while (down_interruptible(&(state.mutex)));
+    while (mutex_lock_interruptible(&(state->mutex)));
 
-    state.detach_requested = 1;
-    state.detach_complete = 0;
-    xpmem_detach_hcall(state.bar_state.hcall_info.remove_hcall, vaddr);
+    state->req_complete = 0;
+    xpmem_detach_hcall(state->bar_state.hcall_info.remove_hcall, vaddr);
+    wait_event_interruptible(state->waitq, (state->req_complete == 1));
 
-    wait_event_interruptible(state.waitq, (state.detach_complete == 1));
-
-    up(&(state.mutex));
+    mutex_unlock(&(state->mutex));
     return 0;
 }
 
