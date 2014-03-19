@@ -384,7 +384,38 @@ xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t 
         return -EFAULT;
     }
 
-    // TODO: process incoming request 
+    switch (cmd.type) {
+        case XPMEM_MAKE_COMPLETE:
+        case XPMEM_REMOVE_COMPLETE:
+        case XPMEM_GET_COMPLETE:
+        case XPMEM_RELEASE_COMPLETE:
+        case XPMEM_ATTACH_COMPLETE:
+        case XPMEM_DETACH_COMPLETE:
+            mutex_lock(&(ns_state->mutex));
+            if (ns_state->cmd && ns_state->cmd->type == cmd.type) {
+                ns_state->req_complete = 1;
+                wake_up_interruptible(&(ns_state->client_wq));
+            }
+            mutex_unlock(&(ns_state->mutex));
+            break;
+
+        case XPMEM_GET:
+            break;
+
+        case XPMEM_RELEASE:
+            break;
+        
+        case XPMEM_ATTACH:
+            break;
+
+        case XPMEM_DETACH:
+            break;
+
+        case XPMEM_MAKE:
+        case XPMEM_REMOVE:
+        default:
+            return -EINVAL;
+    }
 
     return length;
 }

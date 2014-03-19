@@ -93,7 +93,7 @@ static void xpmem_get_req_complete_hcall(int id, xpmem_apid_t apid) {
     );
 }
 
-static void xpmem_remove_req_complete_hcall(int id) {
+static void xpmem_release_req_complete_hcall(int id) {
     unsigned long long ret = 0;
     __asm__ volatile(
         VMCALL
@@ -166,19 +166,37 @@ void xpmem_tasklet_fn(unsigned long data) {
     struct xpmem_cmd_ex * request = (struct xpmem_cmd_ex *)&(bar_state->request);
 
     switch (request->type) {
-        case XPMEM_GET:
+        case XPMEM_GET: {
+            xpmem_apid_t apid;
+
             printk("Received XPMEM_GET request(segid: %lli, flags: %lu, permit_type: %lu, permit_value: %llu)\n",
                 (signed long long)request->get.segid,
                 (unsigned long)request->get.flags,
                 (unsigned long)request->get.permit_type,
                 (unsigned long long)request->get.permit_value
             );
+
+            if (xpmem_get_remote(&(request->get))) {
+                printk("Request failed!\n");
+                apid = -1;
+            } else {
+                apid = request->get.apid;
+            }
+
+            xpmem_get_req_complete_hcall(bar_state->hcall_info.command_req_complete_hcall, apid); 
             break;
+        }
 
         case XPMEM_RELEASE:
             printk("Received XPMEM_RELEASE request(apid: %lli)\n",
                 (signed long long)request->release.apid
             );
+
+            if (xpmem_release_remote(&(request->release))) {
+                printk("Request failed!\n");
+            }
+
+            xpmem_release_req_complete_hcall(bar_state->hcall_info.command_req_complete_hcall);
             break;
         
         case XPMEM_ATTACH:
@@ -187,12 +205,24 @@ void xpmem_tasklet_fn(unsigned long data) {
                 (unsigned long long)request->attach.off,
                 (unsigned long long)request->attach.size
             );
+
+            if (xpmem_attach_remote(&(request->attach))) {
+                printk("Request failed!\n");
+            }
+
+            xpmem_attach_req_complete_hcall(bar_state->hcall_info.command_req_complete_hcall, 0x0);
             break;
 
         case XPMEM_DETACH:
             printk("Received XPMEM_DETACH request(vaddr: %llu)\n",
                 (unsigned long long)request->detach.vaddr
             );
+
+            if (xpmem_detach_remote(&(request->detach))) {
+                printk("Request failed!\n");
+            }
+
+            xpmem_detach_req_complete_hcall(bar_state->hcall_info.command_req_complete_hcall);
             break;
 
         case XPMEM_MAKE:
