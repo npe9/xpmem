@@ -388,6 +388,8 @@ static int xpmem_make_palacios(struct xpmem_partition * part, xpmem_segid_t * se
     if (!state->initialized) {
         return -1;
     }
+    
+    printk("MAKE_PALACIOS\n");
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
@@ -407,6 +409,8 @@ static int xpmem_remove_palacios(struct xpmem_partition * part, xpmem_segid_t se
         return -1;
     }
 
+    printk("REMOVE_PALACIOS\n");
+
     while (mutex_lock_interruptible(&(state->mutex)));
 
     state->req_complete = 0;
@@ -423,6 +427,8 @@ static int xpmem_get_palacios(struct xpmem_partition * part, xpmem_segid_t segid
     if (!state->initialized) {
         return -1;
     }
+
+    printk("GET_PALACIOS\n");
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
@@ -442,6 +448,8 @@ static int xpmem_release_palacios(struct xpmem_partition * part, xpmem_apid_t ap
         return -1;
     }
 
+    printk("RELEASE_PALACIOS\n");
+
     while (mutex_lock_interruptible(&(state->mutex)));
 
     state->req_complete = 0;
@@ -458,6 +466,8 @@ static int xpmem_attach_palacios(struct xpmem_partition * part, xpmem_apid_t api
     if (!state->initialized) {
         return -1;
     }
+
+    printk("ATTACH_PALACIOS\n");
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
@@ -477,6 +487,8 @@ static int xpmem_detach_palacios(struct xpmem_partition * part, u64 vaddr) {
     if (!state->initialized) {
         return -1;
     }
+
+    printk("DETACH_PALACIOS\n");
 
     while (mutex_lock_interruptible(&(state->mutex)));
 

@@ -27,6 +27,8 @@ static int xpmem_make_ns(struct xpmem_partition * part, xpmem_segid_t * segid_p)
         return -1;
     }
 
+    printk("MAKE_NS\n");
+
     cmd.type = XPMEM_MAKE;
     cmd.make.segid = *segid_p;
 
@@ -50,6 +52,8 @@ static int xpmem_remove_ns(struct xpmem_partition * part, xpmem_segid_t segid) {
         return -1;
     }
 
+    printk("REMOVE_NS\n");
+
     cmd.type = XPMEM_REMOVE;
     cmd.remove.segid = segid;
 
@@ -72,6 +76,8 @@ static int xpmem_get_ns(struct xpmem_partition * part, xpmem_segid_t segid, int 
     if (!state->initialized) {
         return -1;
     }
+
+    printk("GET_NS\n");
 
     cmd.type = XPMEM_GET;
     cmd.get.segid = segid;
@@ -99,6 +105,8 @@ static int xpmem_release_ns(struct xpmem_partition * part, xpmem_apid_t apid) {
         return -1;
     }
 
+    printk("RELEASE_NS\n");
+
     cmd.type = XPMEM_RELEASE;
     cmd.release.apid = apid;
 
@@ -123,6 +131,8 @@ static int xpmem_attach_ns(struct xpmem_partition * part, xpmem_apid_t apid, off
     if (!state->initialized) {
         return -1;
     }
+
+    printk("ATTACH_NS\n");
 
     cmd.type = XPMEM_ATTACH;
     cmd.attach.apid = apid;
@@ -151,6 +161,8 @@ static int xpmem_detach_ns(struct xpmem_partition * part, u64 vaddr) {
     if (!state->initialized) {
         return -1;
     }
+
+    printk("DETACH_NS\n");
 
     cmd.type = XPMEM_DETACH;
     cmd.detach.vaddr = vaddr;
