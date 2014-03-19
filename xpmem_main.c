@@ -35,8 +35,8 @@
 #include <xpmem_extended.h>
 
 /* TODO: set this based on some configure option */
-#define EXT_PALACIOS
-//#define EXT_NS
+//#define EXT_PALACIOS
+#define EXT_NS
 
 struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
 
@@ -360,8 +360,8 @@ xpmem_read(struct file *file, char __user *buffer, size_t length, loff_t *off) {
         return -EINVAL;
     }
 
-    if (copy_to_user(buffer, (void *)ns_state->cmd, size)) {
-        ret = -EFAULT;
+    if (copy_to_user(buffer, (void *)ns_state->cmd, length)) {
+        return -EFAULT;
     }
 
     return length;
