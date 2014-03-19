@@ -171,10 +171,16 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
 struct ns_xpmem_state {
     int initialized;
 
-    /* pending command  */
+    /* pending/in progress command  */
     struct xpmem_cmd_ex * cmd;
-    struct mutex mutex;
     int req_complete;
+    int req_processed;
+
+    /* protect cmd/req */
+    spinlock_t lock;
+
+    /* Serialize client access to NS */
+    struct mutex mutex;
 
     /* waitq for clients */
     wait_queue_head_t client_wq;

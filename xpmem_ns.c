@@ -34,12 +34,20 @@ static int xpmem_make_ns(struct xpmem_partition * part, xpmem_segid_t * segid_p)
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
+    spin_lock(&(state->lock));
     state->req_complete = 0;
+    state->req_processed = 0;
     state->cmd = &cmd;
-    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
-    *segid_p = state->cmd->make.segid;
+    spin_unlock(&(state->lock));
 
+    wake_up_interruptible(&(state->ns_wq));
+    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
+
+    spin_lock(&(state->lock));
+    *segid_p = state->cmd->make.segid;
     state->cmd = NULL;
+    spin_unlock(&(state->lock));
+
     mutex_unlock(&(state->mutex));
     return 0;
 }
@@ -59,11 +67,19 @@ static int xpmem_remove_ns(struct xpmem_partition * part, xpmem_segid_t segid) {
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
+    spin_lock(&(state->lock));
     state->req_complete = 0;
+    state->req_processed = 0;
     state->cmd = &cmd;
+    spin_unlock(&(state->lock));
+
+    wake_up_interruptible(&(state->ns_wq));
     wait_event_interruptible(state->client_wq, (state->req_complete == 1));
 
+    spin_lock(&(state->lock));
     state->cmd = NULL;
+    spin_unlock(&(state->lock));
+
     mutex_unlock(&(state->mutex));
     return 0;
 }
@@ -87,12 +103,20 @@ static int xpmem_get_ns(struct xpmem_partition * part, xpmem_segid_t segid, int 
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
+    spin_lock(&(state->lock));
     state->req_complete = 0;
+    state->req_processed = 0;
     state->cmd = &cmd;
-    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
-    *apid_p = state->cmd->get.apid;
+    spin_unlock(&(state->lock));
 
+    wake_up_interruptible(&(state->ns_wq));
+    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
+
+    spin_lock(&(state->lock));
+    *apid_p = state->cmd->get.apid;
     state->cmd = NULL;
+    spin_unlock(&(state->lock));
+
     mutex_unlock(&(state->mutex));
     return 0;
 }
@@ -112,11 +136,19 @@ static int xpmem_release_ns(struct xpmem_partition * part, xpmem_apid_t apid) {
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
+    spin_lock(&(state->lock));
     state->req_complete = 0;
+    state->req_processed = 0;
     state->cmd = &cmd;
+    spin_unlock(&(state->lock));
+
+    wake_up_interruptible(&(state->ns_wq));
     wait_event_interruptible(state->client_wq, (state->req_complete == 1));
 
+    spin_lock(&(state->lock));
     state->cmd = NULL;
+    spin_unlock(&(state->lock));
+
     mutex_unlock(&(state->mutex));
     return 0;
 }
@@ -141,16 +173,24 @@ static int xpmem_attach_ns(struct xpmem_partition * part, xpmem_apid_t apid, off
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
+    spin_lock(&(state->lock));
     state->req_complete = 0;
+    state->req_processed = 0;
     state->cmd = &cmd;
+    spin_unlock(&(state->lock));
+
+    wake_up_interruptible(&(state->ns_wq));
     wait_event_interruptible(state->client_wq, (state->req_complete == 1));
     num_pfns = state->cmd->attach.num_pfns;
     pfns = state->cmd->attach.pfns;
 
+    spin_lock(&(state->lock));
+    /* TODO: map PFNS */
     state->cmd = NULL;
+    spin_unlock(&(state->lock));
+
     mutex_unlock(&(state->mutex));
 
-    /* TODO: map PFNS */
     return 0;
 }
 
@@ -169,11 +209,19 @@ static int xpmem_detach_ns(struct xpmem_partition * part, u64 vaddr) {
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
+    spin_lock(&(state->lock));
     state->req_complete = 0;
+    state->req_processed = 0;
     state->cmd = &cmd;
+    spin_unlock(&(state->lock));
+
+    wake_up_interruptible(&(state->ns_wq));
     wait_event_interruptible(state->client_wq, (state->req_complete == 1));
 
+    spin_lock(&(state->lock));
     state->cmd = NULL;
+    spin_unlock(&(state->lock));
+
     mutex_unlock(&(state->mutex));
     return 0;
 }
@@ -194,11 +242,13 @@ int xpmem_ns_init(struct xpmem_partition * part) {
         return -1;
     }
 
-    part->ns_state->cmd = NULL;
+    spin_lock_init(&(part->ns_state->lock));
     mutex_init(&(part->ns_state->mutex));
     init_waitqueue_head(&(part->ns_state->client_wq));
     init_waitqueue_head(&(part->ns_state->ns_wq));
+    part->ns_state->cmd = NULL;
     part->ns_state->req_complete = 1;
+    part->ns_state->req_processed = 1;
 
     part->ns_state->initialized = 1;
     return 0;

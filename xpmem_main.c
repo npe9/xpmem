@@ -335,11 +335,11 @@ xpmem_poll(struct file *file, struct poll_table_struct *pollp) {
 
     ret = POLLOUT | POLLWRNORM;
 
-    mutex_lock(&(ns_state->mutex));
-    if ((ns_state->cmd) && (ns_state->req_complete == 0)) {
+    spin_lock(&(ns_state->lock));
+    if ((ns_state->cmd) && (ns_state->req_processed == 0)) {
         ret |= (POLLIN | POLLRDNORM);
     }   
-    mutex_unlock(&(ns_state->mutex));
+    spin_unlock(&(ns_state->lock));
 
     return ret;
 }
@@ -352,18 +352,22 @@ xpmem_read(struct file *file, char __user *buffer, size_t length, loff_t *off) {
         return -ENODEV;
     }
 
-    if (!(ns_state->cmd) || (ns_state->req_complete == 1)) {
-        return 0;
-    }
-
     if (length != sizeof(struct xpmem_cmd_ex)) {
         return -EINVAL;
+    }
+
+    spin_lock(&(ns_state->lock));
+    if (!(ns_state->cmd) || (ns_state->req_processed == 1)) {
+        spin_unlock(&(ns_state->lock));
+        return 0;
     }
 
     if (copy_to_user(buffer, (void *)ns_state->cmd, length)) {
         return -EFAULT;
     }
 
+    ns_state->req_processed = 1;
+    spin_unlock(&(ns_state->lock));
     return length;
 }
 
@@ -380,7 +384,7 @@ xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t 
         return -EINVAL;
     }
 
-    if (copy_from_user((void *)&cmd, buffer, sizeof(struct xpmem_cmd_ex))) {
+    if (copy_from_user((void *)ns_state->cmd, buffer, sizeof(struct xpmem_cmd_ex))) {
         return -EFAULT;
     }
 
@@ -391,12 +395,10 @@ xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t 
         case XPMEM_RELEASE_COMPLETE:
         case XPMEM_ATTACH_COMPLETE:
         case XPMEM_DETACH_COMPLETE:
-            mutex_lock(&(ns_state->mutex));
-            if (ns_state->cmd && ns_state->cmd->type == cmd.type) {
-                ns_state->req_complete = 1;
-                wake_up_interruptible(&(ns_state->client_wq));
-            }
-            mutex_unlock(&(ns_state->mutex));
+            spin_lock(&(ns_state->lock));
+            ns_state->req_complete = 1;
+            wake_up_interruptible(&(ns_state->client_wq));
+            spin_unlock(&(ns_state->lock));
             break;
 
         case XPMEM_GET:
