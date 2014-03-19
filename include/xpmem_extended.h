@@ -67,6 +67,22 @@ typedef enum {
     XPMEM_DETACH_COMPLETE,
 } xpmem_op_t;
 
+typedef enum {
+    LOCAL,
+    VM, 
+    ENCLAVE,
+} xpmem_endpoint_t;
+
+struct xpmem_loc {
+    int fd; 
+
+    xpmem_endpoint_t type;
+    int id; 
+
+    xpmem_endpoint_t type2;
+    int id2;
+};
+
 struct xpmem_cmd_ex {
     xpmem_op_t type;
     union {
@@ -77,6 +93,7 @@ struct xpmem_cmd_ex {
         struct xpmem_cmd_attach_ex attach;
         struct xpmem_cmd_detach_ex detach;
     };  
+    struct xpmem_loc src_loc;
 };
 
 
