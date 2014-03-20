@@ -13,6 +13,7 @@
 #include <linux/semaphore.h>
 #include <linux/wait.h>
 #include <linux/interrupt.h>
+#include <linux/workqueue.h>
 
 #include <xpmem.h>
 #include <xpmem_private.h>
@@ -149,7 +150,8 @@ struct palacios_xpmem_state {
     void __iomem * xpmem_bar;
     struct xpmem_bar_state bar_state;
     int initialized;
-    struct tasklet_struct t;
+    struct workqueue_struct * workq;
+    struct work_struct worker;
 
     struct mutex mutex;
     wait_queue_head_t waitq;
@@ -161,8 +163,9 @@ static int dev_off = 0;
 DEFINE_SPINLOCK(palacios_lock);
 
 
-void xpmem_tasklet_fn(unsigned long data) {
-    struct xpmem_bar_state * bar_state = (struct xpmem_bar_state *)data;
+void xpmem_work_fn(struct work_struct * work) {
+    struct palacios_xpmem_state * xpmem_state = container_of(work, struct palacios_xpmem_state, worker);
+    struct xpmem_bar_state * bar_state = &(xpmem_state->bar_state);
     struct xpmem_cmd_ex * request = (struct xpmem_cmd_ex *)&(bar_state->request);
 
     switch (request->type) {
@@ -249,7 +252,7 @@ static irqreturn_t irq_handler(int irq, void * data) {
     }
 
     if (status & INT_REQUEST) {
-        tasklet_schedule(&(state->t));
+        queue_work(state->workq, &(state->worker));
     }
 
     return IRQ_HANDLED;
@@ -329,7 +332,8 @@ static int xpmem_probe_driver(struct pci_dev * dev, const struct pci_device_id *
 
     init_waitqueue_head(&(palacios_state->waitq));
     mutex_init(&(palacios_state->mutex));
-    tasklet_init(&(palacios_state->t), &(xpmem_tasklet_fn), (unsigned long)&(palacios_state->bar_state));
+    palacios_state->workq = create_singlethread_workqueue("xpmem-work");
+    INIT_WORK(&(palacios_state->worker), xpmem_work_fn);
 
     palacios_state->initialized = 1;
     spin_lock_irqsave(&(palacios_lock), flags);
