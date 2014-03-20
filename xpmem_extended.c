@@ -19,27 +19,10 @@
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
 
+#define XPMEM_MAX_UNIQ_ID_EXT   255
+
 u32 extend_enabled = 0;
 struct xpmem_extended_ops * xpmem_extended_ops = NULL;
-
-static xpmem_apid_t
-xpmem_make_apid_extended(struct xpmem_thread_group * ap_tg, xpmem_segid_t segid) {
-    struct xpmem_id apid, * segid_id_p;
-    xpmem_apid_t *apid_p = (xpmem_apid_t *)&apid;
-    int uniq;
-
-    segid_id_p = (struct xpmem_id *)&segid;
-    uniq = segid_id_p->uniq;
-
-    *apid_p = 0;
-    apid.tgid = ap_tg->tgid;
-    apid.uniq = (unsigned short) uniq;
-
-    DBUG_ON(*apid_p <= 0);
-    return *apid_p;
-
-}
-
 
 static int
 xpmem_validate_remote_access(struct xpmem_access_permit *ap, off_t offset,
@@ -56,6 +39,27 @@ xpmem_validate_remote_access(struct xpmem_access_permit *ap, off_t offset,
     return 0;
 }
 
+static xpmem_apid_t
+xpmem_make_apid_extended(struct xpmem_thread_group * ap_tg) {
+    struct xpmem_id apid;
+    xpmem_apid_t *apid_p = (xpmem_apid_t *)&apid;
+    int uniq;
+
+    DBUG_ON(sizeof(struct xpmem_id) != sizeof(xpmem_apid_t));
+
+    uniq = atomic_inc_return(&ap_tg->uniq_apid_ex);
+    if (uniq > XPMEM_MAX_UNIQ_ID_EXT) {
+        atomic_dec(&ap_tg->uniq_apid);
+        return -EBUSY;
+    }   
+
+    *apid_p = 0;
+    apid.tgid = ap_tg->tgid;
+    apid.uniq = (unsigned short)uniq;
+
+    DBUG_ON(*apid_p <= 0); 
+    return *apid_p;
+}
 
 
 /* Handle remote requests */
@@ -112,7 +116,7 @@ int xpmem_get_remote(struct xpmem_cmd_get_ex * get_ex) {
         return -XPMEM_ERRNO_NOPROC;
     }
 
-    apid = xpmem_make_apid_extended(ap_tg, segid);
+    apid = xpmem_make_apid_extended(ap_tg);
     if (apid < 0) {
         xpmem_tg_deref(ap_tg);
         xpmem_seg_deref(seg);

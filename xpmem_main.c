@@ -72,6 +72,7 @@ xpmem_open(struct inode *inode, struct file *file)
 	tg->gid = current->cred->gid;
 	atomic_set(&tg->uniq_segid, 0);
 	atomic_set(&tg->uniq_apid, 0);
+	atomic_set(&tg->uniq_apid_ex, 0);
 	atomic_set(&tg->n_pinned, 0);
 	tg->addr_limit = TASK_SIZE;
 	tg->seg_list_lock = __RW_LOCK_UNLOCKED(tg->seg_list_lock);
@@ -374,7 +375,6 @@ xpmem_read(struct file *file, char __user *buffer, size_t length, loff_t *off) {
 static ssize_t
 xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t *off) {
     struct ns_xpmem_state * ns_state = xpmem_my_part->ns_state;
-    struct xpmem_cmd_ex cmd;
 
     if (!ns_state) {
         return -ENODEV;
@@ -388,7 +388,7 @@ xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t 
         return -EFAULT;
     }
 
-    switch (cmd.type) {
+    switch (ns_state->cmd->type) {
         case XPMEM_MAKE_COMPLETE:
         case XPMEM_REMOVE_COMPLETE:
         case XPMEM_GET_COMPLETE:
@@ -416,6 +416,7 @@ xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t 
         case XPMEM_MAKE:
         case XPMEM_REMOVE:
         default:
+            printk(KERN_ERR "Invalid XPMEM command: %d\n", ns_state->cmd->type);
             return -EINVAL;
     }
 
