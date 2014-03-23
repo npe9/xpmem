@@ -5,6 +5,9 @@
 #ifndef _XPMEM_EXTENDED_H
 #define _XPMEM_EXTENDED_H
 
+#include <xpmem_private.h>
+#include <xpmem.h>
+
 
 extern u32 extend_enabled;
 extern struct xpmem_extended_ops * xpmem_extended_ops;
@@ -96,6 +99,27 @@ struct xpmem_cmd_ex {
     struct xpmem_loc src_loc;
 };
 
+struct ns_xpmem_state {
+    int initialized;
+
+    /* pending/in progress command  */
+    struct xpmem_cmd_ex cmd;
+    int requested;
+    int processed;
+    int complete;
+
+    /* protect cmd/req */
+    spinlock_t lock;
+
+    /* Serialize client access to NS */
+    struct mutex mutex;
+
+    /* waitq for clients */
+    wait_queue_head_t client_wq;
+
+    /* waitq for name server */
+    wait_queue_head_t ns_wq;
+};
 
 
 int xpmem_get_remote(struct xpmem_cmd_get_ex * get_ex);

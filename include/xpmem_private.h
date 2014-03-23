@@ -19,6 +19,7 @@
 #include <linux/hugetlb.h>
 #include <asm/signal.h>
 
+
 #ifdef CONFIG_MMU_NOTIFIER
 #include <linux/mmu_notifier.h>
 #else
@@ -167,27 +168,6 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
 /*
  * general internal driver structures
  */
-
-struct ns_xpmem_state {
-    int initialized;
-
-    /* pending/in progress command  */
-    struct xpmem_cmd_ex * cmd;
-    int req_complete;
-    int req_processed;
-
-    /* protect cmd/req */
-    spinlock_t lock;
-
-    /* Serialize client access to NS */
-    struct mutex mutex;
-
-    /* waitq for clients */
-    wait_queue_head_t client_wq;
-
-    /* waitq for name server */
-    wait_queue_head_t ns_wq;
-};
 
 struct xpmem_thread_group {
 	spinlock_t lock;	/* tg lock */

@@ -337,7 +337,7 @@ xpmem_poll(struct file *file, struct poll_table_struct *pollp) {
     ret = POLLOUT | POLLWRNORM;
 
     spin_lock(&(ns_state->lock));
-    if ((ns_state->cmd) && (ns_state->req_processed == 0)) {
+    if ((ns_state->requested) && (!ns_state->processed)) {
         ret |= (POLLIN | POLLRDNORM);
     }   
     spin_unlock(&(ns_state->lock));
@@ -358,16 +358,17 @@ xpmem_read(struct file *file, char __user *buffer, size_t length, loff_t *off) {
     }
 
     spin_lock(&(ns_state->lock));
-    if (!(ns_state->cmd) || (ns_state->req_processed == 1)) {
+    if ((!ns_state->requested) || (ns_state->processed)) {
         spin_unlock(&(ns_state->lock));
         return 0;
     }
 
-    if (copy_to_user(buffer, (void *)ns_state->cmd, length)) {
+    if (copy_to_user(buffer, (void *)&(ns_state->cmd), length)) {
+        spin_unlock(&(ns_state->lock));
         return -EFAULT;
     }
 
-    ns_state->req_processed = 1;
+    ns_state->processed = 1;
     spin_unlock(&(ns_state->lock));
     return length;
 }
@@ -375,6 +376,7 @@ xpmem_read(struct file *file, char __user *buffer, size_t length, loff_t *off) {
 static ssize_t
 xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t *off) {
     struct ns_xpmem_state * ns_state = xpmem_my_part->ns_state;
+    ssize_t ret = length;
 
     if (!ns_state) {
         return -ENODEV;
@@ -384,11 +386,11 @@ xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t 
         return -EINVAL;
     }
 
-    if (copy_from_user((void *)ns_state->cmd, buffer, sizeof(struct xpmem_cmd_ex))) {
+    if (copy_from_user((void *)&(ns_state->cmd), buffer, sizeof(struct xpmem_cmd_ex))) {
         return -EFAULT;
     }
 
-    switch (ns_state->cmd->type) {
+    switch (ns_state->cmd.type) {
         case XPMEM_MAKE_COMPLETE:
         case XPMEM_REMOVE_COMPLETE:
         case XPMEM_GET_COMPLETE:
@@ -396,7 +398,9 @@ xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t 
         case XPMEM_ATTACH_COMPLETE:
         case XPMEM_DETACH_COMPLETE:
             spin_lock(&(ns_state->lock));
-            ns_state->req_complete = 1;
+            ns_state->complete = 1;
+            ns_state->requested = 0;
+            ns_state->processed = 0;
             wake_up_interruptible(&(ns_state->client_wq));
             spin_unlock(&(ns_state->lock));
             break;
@@ -416,11 +420,11 @@ xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t 
         case XPMEM_MAKE:
         case XPMEM_REMOVE:
         default:
-            printk(KERN_ERR "Invalid XPMEM command: %d\n", ns_state->cmd->type);
-            return -EINVAL;
+            printk(KERN_ERR "Invalid XPMEM command: %d\n", ns_state->cmd.type);
+            ret = -EINVAL;
     }
 
-    return length;
+    return ret;
 }
 
 static struct file_operations xpmem_fops = {

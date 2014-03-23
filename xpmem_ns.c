@@ -21,7 +21,7 @@
  */
 static int xpmem_make_ns(struct xpmem_partition * part, xpmem_segid_t * segid_p) {
     struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex cmd;
+    struct xpmem_cmd_ex * cmd = &(state->cmd);
 
     if (!state->initialized) {
         return -1;
@@ -29,23 +29,22 @@ static int xpmem_make_ns(struct xpmem_partition * part, xpmem_segid_t * segid_p)
 
     printk("MAKE_NS\n");
 
-    cmd.type = XPMEM_MAKE;
-    cmd.make.segid = *segid_p;
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
     spin_lock(&(state->lock));
-    state->req_complete = 0;
-    state->req_processed = 0;
-    state->cmd = &cmd;
+    cmd->type = XPMEM_MAKE;
+    cmd->make.segid = *segid_p;
+    state->requested = 1;
+    state->processed = 0;
+    state->complete = 0;
     spin_unlock(&(state->lock));
 
     wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
+    wait_event_interruptible(state->client_wq, (state->complete == 1));
 
     spin_lock(&(state->lock));
-    *segid_p = state->cmd->make.segid;
-    state->cmd = NULL;
+    *segid_p = cmd->make.segid;
     spin_unlock(&(state->lock));
 
     mutex_unlock(&(state->mutex));
@@ -54,7 +53,7 @@ static int xpmem_make_ns(struct xpmem_partition * part, xpmem_segid_t * segid_p)
 
 static int xpmem_remove_ns(struct xpmem_partition * part, xpmem_segid_t segid) {
     struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex cmd;
+    struct xpmem_cmd_ex * cmd = &(state->cmd);
 
     if (!state->initialized) {
         return -1;
@@ -62,23 +61,18 @@ static int xpmem_remove_ns(struct xpmem_partition * part, xpmem_segid_t segid) {
 
     printk("REMOVE_NS\n");
 
-    cmd.type = XPMEM_REMOVE;
-    cmd.remove.segid = segid;
-
     while (mutex_lock_interruptible(&(state->mutex)));
 
     spin_lock(&(state->lock));
-    state->req_complete = 0;
-    state->req_processed = 0;
-    state->cmd = &cmd;
+    cmd->type = XPMEM_REMOVE;
+    cmd->remove.segid = segid;
+    state->requested = 1;
+    state->processed = 0;
+    state->complete = 0;
     spin_unlock(&(state->lock));
 
     wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
-
-    spin_lock(&(state->lock));
-    state->cmd = NULL;
-    spin_unlock(&(state->lock));
+    wait_event_interruptible(state->client_wq, (state->complete == 1));
 
     mutex_unlock(&(state->mutex));
     return 0;
@@ -87,7 +81,7 @@ static int xpmem_remove_ns(struct xpmem_partition * part, xpmem_segid_t segid) {
 static int xpmem_get_ns(struct xpmem_partition * part, xpmem_segid_t segid, int flags, 
             int permit_type, u64 permit_value, xpmem_apid_t * apid_p) {
     struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex cmd;
+    struct xpmem_cmd_ex * cmd = &(state->cmd);
 
     if (!state->initialized) {
         return -1;
@@ -95,26 +89,24 @@ static int xpmem_get_ns(struct xpmem_partition * part, xpmem_segid_t segid, int 
 
     printk("GET_NS\n");
 
-    cmd.type = XPMEM_GET;
-    cmd.get.segid = segid;
-    cmd.get.flags = flags;
-    cmd.get.permit_type = permit_type;
-    cmd.get.permit_value = permit_value;
-
     while (mutex_lock_interruptible(&(state->mutex)));
 
     spin_lock(&(state->lock));
-    state->req_complete = 0;
-    state->req_processed = 0;
-    state->cmd = &cmd;
+    cmd->type = XPMEM_GET;
+    cmd->get.segid = segid;
+    cmd->get.flags = flags;
+    cmd->get.permit_type = permit_type;
+    cmd->get.permit_value = permit_value;
+    state->requested = 1;
+    state->processed = 0;
+    state->complete = 0;
     spin_unlock(&(state->lock));
 
     wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
+    wait_event_interruptible(state->client_wq, (state->complete == 1));
 
     spin_lock(&(state->lock));
-    *apid_p = state->cmd->get.apid;
-    state->cmd = NULL;
+    *apid_p = cmd->get.apid;
     spin_unlock(&(state->lock));
 
     mutex_unlock(&(state->mutex));
@@ -123,7 +115,7 @@ static int xpmem_get_ns(struct xpmem_partition * part, xpmem_segid_t segid, int 
 
 static int xpmem_release_ns(struct xpmem_partition * part, xpmem_apid_t apid) {
     struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex cmd;
+    struct xpmem_cmd_ex * cmd = &(state->cmd);
 
     if (!state->initialized) {
         return -1;
@@ -131,23 +123,18 @@ static int xpmem_release_ns(struct xpmem_partition * part, xpmem_apid_t apid) {
 
     printk("RELEASE_NS\n");
 
-    cmd.type = XPMEM_RELEASE;
-    cmd.release.apid = apid;
-
     while (mutex_lock_interruptible(&(state->mutex)));
 
     spin_lock(&(state->lock));
-    state->req_complete = 0;
-    state->req_processed = 0;
-    state->cmd = &cmd;
+    cmd->type = XPMEM_RELEASE;
+    cmd->release.apid = apid;
+    state->requested = 1;
+    state->processed = 0;
+    state->complete = 0;
     spin_unlock(&(state->lock));
 
     wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
-
-    spin_lock(&(state->lock));
-    state->cmd = NULL;
-    spin_unlock(&(state->lock));
+    wait_event_interruptible(state->client_wq, (state->complete == 1));
 
     mutex_unlock(&(state->mutex));
     return 0;
@@ -156,7 +143,7 @@ static int xpmem_release_ns(struct xpmem_partition * part, xpmem_apid_t apid) {
 static int xpmem_attach_ns(struct xpmem_partition * part, xpmem_apid_t apid, off_t off, 
             size_t size, u64 * vaddr) {
     struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex cmd;
+    struct xpmem_cmd_ex * cmd = &(state->cmd);
     u64 * pfns;
     u64 num_pfns;
 
@@ -166,27 +153,25 @@ static int xpmem_attach_ns(struct xpmem_partition * part, xpmem_apid_t apid, off
 
     printk("ATTACH_NS\n");
 
-    cmd.type = XPMEM_ATTACH;
-    cmd.attach.apid = apid;
-    cmd.attach.off = off;
-    cmd.attach.size = size;
-
     while (mutex_lock_interruptible(&(state->mutex)));
 
     spin_lock(&(state->lock));
-    state->req_complete = 0;
-    state->req_processed = 0;
-    state->cmd = &cmd;
+    cmd->type = XPMEM_ATTACH;
+    cmd->attach.apid = apid;
+    cmd->attach.off = off;
+    cmd->attach.size = size;
+    state->requested = 1;
+    state->processed = 0;
+    state->complete = 0;
     spin_unlock(&(state->lock));
 
     wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
-    num_pfns = state->cmd->attach.num_pfns;
-    pfns = state->cmd->attach.pfns;
+    wait_event_interruptible(state->client_wq, (state->complete == 1));
 
     spin_lock(&(state->lock));
     /* TODO: map PFNS */
-    state->cmd = NULL;
+    num_pfns = cmd->attach.num_pfns;
+    pfns = cmd->attach.pfns;
     spin_unlock(&(state->lock));
 
     mutex_unlock(&(state->mutex));
@@ -196,7 +181,7 @@ static int xpmem_attach_ns(struct xpmem_partition * part, xpmem_apid_t apid, off
 
 static int xpmem_detach_ns(struct xpmem_partition * part, u64 vaddr) {
     struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex cmd;
+    struct xpmem_cmd_ex * cmd = &(state->cmd);
 
     if (!state->initialized) {
         return -1;
@@ -204,23 +189,18 @@ static int xpmem_detach_ns(struct xpmem_partition * part, u64 vaddr) {
 
     printk("DETACH_NS\n");
 
-    cmd.type = XPMEM_DETACH;
-    cmd.detach.vaddr = vaddr;
-
     while (mutex_lock_interruptible(&(state->mutex)));
 
     spin_lock(&(state->lock));
-    state->req_complete = 0;
-    state->req_processed = 0;
-    state->cmd = &cmd;
+    cmd->type = XPMEM_DETACH;
+    cmd->detach.vaddr = vaddr;
+    state->requested = 1;
+    state->processed = 0;
+    state->complete = 0;
     spin_unlock(&(state->lock));
 
     wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->req_complete == 1));
-
-    spin_lock(&(state->lock));
-    state->cmd = NULL;
-    spin_unlock(&(state->lock));
+    wait_event_interruptible(state->client_wq, (state->complete == 1));
 
     mutex_unlock(&(state->mutex));
     return 0;
@@ -246,9 +226,6 @@ int xpmem_ns_init(struct xpmem_partition * part) {
     mutex_init(&(part->ns_state->mutex));
     init_waitqueue_head(&(part->ns_state->client_wq));
     init_waitqueue_head(&(part->ns_state->ns_wq));
-    part->ns_state->cmd = NULL;
-    part->ns_state->req_complete = 1;
-    part->ns_state->req_processed = 1;
 
     part->ns_state->initialized = 1;
     return 0;
