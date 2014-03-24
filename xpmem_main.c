@@ -28,7 +28,6 @@
 #include <linux/mm.h>
 #include <linux/file.h>
 #include <linux/proc_fs.h>
-#include <linux/poll.h>
 
 #include <xpmem.h>
 #include <xpmem_private.h>
@@ -316,115 +315,22 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case XPMEM_CMD_FORK_END: {
 		return xpmem_fork_end();
 	}
+    case XPMEM_CMD_EXT_LOCAL_CONNECT: { 
+        return xpmem_local_connect(xpmem_my_part->ns_state);
+    }
+    case XPMEM_CMD_EXT_LOCAL_DISCONNECT: {
+        return xpmem_local_disconnect(xpmem_my_part->ns_state);
+    }
+    case XPMEM_CMD_EXT_REMOTE_CONNECT: { 
+        return xpmem_remote_connect(xpmem_my_part->ns_state);
+    }
+    case XPMEM_CMD_EXT_REMOTE_DISCONNECT: {
+        return xpmem_remote_disconnect(xpmem_my_part->ns_state);
+    }
 	default:
 		break;
 	}
 	return -ENOIOCTLCMD;
-}
-
-
-static unsigned int
-xpmem_poll(struct file *file, struct poll_table_struct *pollp) {
-    unsigned int ret;
-    struct ns_xpmem_state * ns_state = xpmem_my_part->ns_state;
-
-    if (!ns_state) {
-        return 0;
-    }
-
-    poll_wait(file, &(ns_state->ns_wq), pollp);
-
-    ret = POLLOUT | POLLWRNORM;
-
-    spin_lock(&(ns_state->lock));
-    if ((ns_state->requested) && (!ns_state->processed)) {
-        ret |= (POLLIN | POLLRDNORM);
-    }   
-    spin_unlock(&(ns_state->lock));
-
-    return ret;
-}
-
-static ssize_t 
-xpmem_read(struct file *file, char __user *buffer, size_t length, loff_t *off) {
-    struct ns_xpmem_state * ns_state = xpmem_my_part->ns_state;
-
-    if (!ns_state) {
-        return -ENODEV;
-    }
-
-    if (length != sizeof(struct xpmem_cmd_ex)) {
-        return -EINVAL;
-    }
-
-    spin_lock(&(ns_state->lock));
-    if ((!ns_state->requested) || (ns_state->processed)) {
-        spin_unlock(&(ns_state->lock));
-        return 0;
-    }
-
-    if (copy_to_user(buffer, (void *)&(ns_state->cmd), length)) {
-        spin_unlock(&(ns_state->lock));
-        return -EFAULT;
-    }
-
-    ns_state->processed = 1;
-    spin_unlock(&(ns_state->lock));
-    return length;
-}
-
-static ssize_t
-xpmem_write(struct file *file, const char __user *buffer, size_t length, loff_t *off) {
-    struct ns_xpmem_state * ns_state = xpmem_my_part->ns_state;
-    ssize_t ret = length;
-
-    if (!ns_state) {
-        return -ENODEV;
-    }
-
-    if (length != sizeof(struct xpmem_cmd_ex)) {
-        return -EINVAL;
-    }
-
-    if (copy_from_user((void *)&(ns_state->cmd), buffer, sizeof(struct xpmem_cmd_ex))) {
-        return -EFAULT;
-    }
-
-    switch (ns_state->cmd.type) {
-        case XPMEM_MAKE_COMPLETE:
-        case XPMEM_REMOVE_COMPLETE:
-        case XPMEM_GET_COMPLETE:
-        case XPMEM_RELEASE_COMPLETE:
-        case XPMEM_ATTACH_COMPLETE:
-        case XPMEM_DETACH_COMPLETE:
-            spin_lock(&(ns_state->lock));
-            ns_state->complete = 1;
-            ns_state->requested = 0;
-            ns_state->processed = 0;
-            wake_up_interruptible(&(ns_state->client_wq));
-            spin_unlock(&(ns_state->lock));
-            break;
-
-        case XPMEM_GET:
-            break;
-
-        case XPMEM_RELEASE:
-            break;
-        
-        case XPMEM_ATTACH:
-            break;
-
-        case XPMEM_DETACH:
-            break;
-
-        case XPMEM_MAKE:
-        case XPMEM_REMOVE:
-        default:
-            printk(KERN_ERR "Invalid XPMEM command: %d\n", ns_state->cmd.type);
-            ret = -EINVAL;
-    }
-
-    return ret;
 }
 
 static struct file_operations xpmem_fops = {
@@ -433,11 +339,6 @@ static struct file_operations xpmem_fops = {
 	.flush = xpmem_flush,
 	.unlocked_ioctl = xpmem_ioctl,
 	.mmap = xpmem_mmap,
-
-    /* For extended support */
-    .poll = xpmem_poll,
-    .read = xpmem_read,
-    .write = xpmem_write,
 };
 
 static struct miscdevice xpmem_dev_handle = {

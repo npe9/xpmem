@@ -476,7 +476,7 @@ static int xpmem_attach_palacios(struct xpmem_partition * part, xpmem_apid_t api
     while (mutex_lock_interruptible(&(state->mutex)));
 
     state->req_complete = 0;
-    xpmem_attach_hcall(state->bar_state.hcall_info.remove_hcall, apid, offset, size, /* TODO: buffer pa*/ 0);
+    xpmem_attach_hcall(state->bar_state.hcall_info.attach_hcall, apid, offset, size, /* TODO: buffer pa*/ 0);
     wait_event_interruptible(state->waitq, (state->req_complete == 1));
 
     /* TODO: read pfns from buffer PA, invoke ioremap() on them, set *vaddr */
@@ -497,7 +497,7 @@ static int xpmem_detach_palacios(struct xpmem_partition * part, u64 vaddr) {
     while (mutex_lock_interruptible(&(state->mutex)));
 
     state->req_complete = 0;
-    xpmem_detach_hcall(state->bar_state.hcall_info.remove_hcall, vaddr);
+    xpmem_detach_hcall(state->bar_state.hcall_info.detach_hcall, vaddr);
     wait_event_interruptible(state->waitq, (state->req_complete == 1));
 
     mutex_unlock(&(state->mutex));

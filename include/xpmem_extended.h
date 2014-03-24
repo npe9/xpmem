@@ -101,17 +101,23 @@ struct xpmem_cmd_ex {
 
 struct ns_xpmem_state {
     int initialized;
+    int local_fd;
+    int remote_fd;
 
-    /* pending/in progress command  */
+    /* pending/in progress local cmd */
     struct xpmem_cmd_ex cmd;
     int requested;
     int processed;
     int complete;
 
-    /* protect cmd/req */
+    /* issued remote cmd */
+    struct xpmem_cmd_ex remote_cmd;
+    int remote_requested;
+
+    /* protect cmd access */
     spinlock_t lock;
 
-    /* Serialize client access to NS */
+    /* Serialize client access to cmd/NS */
     struct mutex mutex;
 
     /* waitq for clients */

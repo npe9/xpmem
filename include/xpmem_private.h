@@ -394,6 +394,11 @@ extern int xpmem_palacios_deinit(struct xpmem_partition *);
 /* found in xpmem_ns.c */
 extern int xpmem_ns_init(struct xpmem_partition *);
 extern int xpmem_ns_deinit(struct xpmem_partition *);
+extern int xpmem_local_connect(struct ns_xpmem_state *);
+extern int xpmem_local_disconnect(struct ns_xpmem_state *);
+extern int xpmem_remote_connect(struct ns_xpmem_state *);
+extern int xpmem_remote_disconnect(struct ns_xpmem_state *);
+
 
 /*
  * Inlines that mark an internal driver structure as being destroyable or not.
