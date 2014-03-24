@@ -211,9 +211,11 @@ void xpmem_work_fn(struct work_struct * work) {
 
             if (xpmem_attach_remote(&(request->attach))) {
                 printk("Request failed!\n");
+                request->attach.num_pfns = 0;
+                request->attach.pfns = NULL;
             }
 
-            xpmem_attach_req_complete_hcall(bar_state->hcall_info.command_req_complete_hcall, 0x0);
+            xpmem_attach_req_complete_hcall(bar_state->hcall_info.command_req_complete_hcall, __pa(request->attach.pfns));
             break;
 
         case XPMEM_DETACH:

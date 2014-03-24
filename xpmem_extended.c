@@ -6,7 +6,7 @@
  * don't think that's avoidable
  *
  * This code is independent of code implementing transport interfaces -
- * that exists in xpmem_{ns,palacios,pisces}.c
+ * those exist in xpmem_{ns,palacios,pisces}.c
  *
  * Author: Brian Kocoloski <briankoco@cs.pitt.edu>
  *
