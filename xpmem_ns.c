@@ -12,55 +12,10 @@
 #include <linux/module.h>
 #include <linux/poll.h>
 #include <linux/anon_inodes.h>
-#include <linux/mman.h>
-#include <linux/mm.h>
 
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
-
-
-static unsigned long xpmem_map_pfn_range(u64 * pfns, u64 num_pfns) {
-    struct vm_area_struct * vma = NULL;
-    unsigned long size = 0;
-    unsigned long addr = 0;
-    unsigned long attach_addr = 0;
-    u64 i = 0;
-    int status = 0;
-
-    size = num_pfns * PAGE_SIZE;
-    attach_addr = vm_mmap(NULL, 0, size, PROT_READ | PROT_WRITE,
-            MAP_SHARED, 0);
-
-    if (IS_ERR_VALUE(attach_addr)) {
-        printk(KERN_ERR "XPMEM: vm_mmap failed\n");
-        return attach_addr;
-    }
-
-    vma = find_vma(current->mm, attach_addr);
-    if (!vma) {
-        printk(KERN_ERR "XPMEM: find_vma failed - this should be impossible\n");
-        return -ENOMEM;
-    }
-
-    for (i = 0; i < num_pfns; i++) {
-        addr = attach_addr + (i * PAGE_SIZE);
-
-        printk("XPMEM: mapping vaddr = %p, pfn = %llu, (paddr = %p)\n",
-            (void *)addr,
-            pfns[i],
-            (void *)(pfns[i] << PAGE_SHIFT)
-        );
-
-        status = remap_pfn_range(vma, addr, pfns[i], PAGE_SIZE, vma->vm_page_prot);
-        if (status) {
-            printk(KERN_ERR "XPMEM: remap_pfn_range failed\n");
-            return -ENOMEM;
-        }
-    }
-
-    return attach_addr;
-}
 
 
 /* These will pack commands into request structures and write them to the NS

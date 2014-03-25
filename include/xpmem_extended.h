@@ -133,4 +133,6 @@ int xpmem_release_remote(struct xpmem_cmd_release_ex * release_ex);
 int xpmem_attach_remote(struct xpmem_cmd_attach_ex * attach_ex);
 int xpmem_detach_remote(struct xpmem_cmd_detach_ex * detach_ex);
 
+unsigned long xpmem_map_pfn_range(u64 * pfns, u64 num_pfns);
+
 #endif /* _XPMEM_EXTENDED_H */

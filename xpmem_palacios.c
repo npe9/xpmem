@@ -240,7 +240,6 @@ void xpmem_work_fn(struct work_struct * work) {
 }
 
 
-
 static irqreturn_t irq_handler(int irq, void * data) {
     struct palacios_xpmem_state * state = (struct palacios_xpmem_state *)data; 
     u8 status;
@@ -468,9 +467,16 @@ static int xpmem_release_palacios(struct xpmem_partition * part, xpmem_apid_t ap
 
 static int xpmem_attach_palacios(struct xpmem_partition * part, xpmem_apid_t apid, off_t offset, size_t size, u64 * vaddr) {
     struct palacios_xpmem_state * state = part->palacios_state;
+    u64 * pfns = NULL;
+    u64 num_pfns = size / PAGE_SIZE;
 
     if (!state->initialized) {
         return -1;
+    }
+
+    pfns = kzalloc(sizeof(u64) * num_pfns, GFP_KERNEL);
+    if (!pfns) {
+        return -ENOMEM;
     }
 
     printk("ATTACH_PALACIOS\n");
@@ -478,10 +484,15 @@ static int xpmem_attach_palacios(struct xpmem_partition * part, xpmem_apid_t api
     while (mutex_lock_interruptible(&(state->mutex)));
 
     state->req_complete = 0;
-    xpmem_attach_hcall(state->bar_state.hcall_info.attach_hcall, apid, offset, size, /* TODO: buffer pa*/ 0);
+    xpmem_attach_hcall(state->bar_state.hcall_info.attach_hcall, apid, offset, size, __pa(pfns));
     wait_event_interruptible(state->waitq, (state->req_complete == 1));
 
-    /* TODO: read pfns from buffer PA, invoke ioremap() on them, set *vaddr */
+    if (!pfns) {
+        *vaddr = 0;
+    } else {
+        *vaddr = xpmem_map_pfn_range(pfns, num_pfns);
+        kfree(pfns);
+    }
 
     mutex_unlock(&(state->mutex));
     return 0;
