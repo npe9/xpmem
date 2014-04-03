@@ -76,14 +76,20 @@ typedef enum {
     ENCLAVE,
 } xpmem_endpoint_t;
 
-struct xpmem_loc {
-    int fd; 
+struct xpmem_dom {
+    /* Name server routing info */
+    struct {
+        int id;
+        int fd;
+        xpmem_endpoint_t type;
+    } ns;
 
-    xpmem_endpoint_t type;
-    int id; 
-
-    xpmem_endpoint_t type2;
-    int id2;
+    /* Within enclave routing info */
+    struct {
+        int id;
+        int fd;
+        xpmem_endpoint_t type;
+    } enclave;
 };
 
 struct xpmem_cmd_ex {
@@ -96,7 +102,8 @@ struct xpmem_cmd_ex {
         struct xpmem_cmd_attach_ex attach;
         struct xpmem_cmd_detach_ex detach;
     };  
-    struct xpmem_loc src_loc;
+    struct xpmem_dom src_dom;
+    struct xpmem_dom dst_dom;
 };
 
 struct ns_xpmem_state {
