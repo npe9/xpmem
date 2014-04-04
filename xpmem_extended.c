@@ -25,25 +25,20 @@
 u32 extend_enabled = 0;
 struct xpmem_extended_ops * xpmem_extended_ops = NULL;
 
-struct xpmem_remote_attach_struct {
-    unsigned int tgid;
-    unsigned long vaddr;
-};
-
 struct xpmem_hashtable * attach_htable = NULL;
+
+struct xpmem_remote_attach_struct {
+    unsigned long vaddr;
+    unsigned long size;
+    struct list_head node;
+};
 
 static u32 xpmem_hash_fn(uintptr_t key) {
     return hash_long(key);
 }
 
 static int xpmem_eq_fn(uintptr_t key1, uintptr_t key2) {
-    struct xpmem_remote_attach_struct * rem1, * rem2;
-
-    rem1 = (struct xpmem_remote_attach_struct *)key1;
-    rem2 = (struct xpmem_remote_attach_struct *)key2;
-
-    return ((rem1->tgid == rem2->tgid) &&
-            (rem1->vaddr == rem2->vaddr));
+    return (key1 == key2);
 }
 
 
@@ -323,6 +318,7 @@ unsigned long xpmem_map_pfn_range(u64 * pfns, u64 num_pfns) {
     u64 i = 0;
     int status = 0;
     struct xpmem_remote_attach_struct * remote;
+    struct list_head * head;
 
     size = num_pfns * PAGE_SIZE;
     attach_addr = vm_mmap(NULL, 0, size, PROT_READ | PROT_WRITE,
@@ -370,33 +366,52 @@ unsigned long xpmem_map_pfn_range(u64 * pfns, u64 num_pfns) {
         return -1;
     }
 
-    remote->tgid = current->tgid;
     remote->vaddr = attach_addr;
+    remote->size = size;
 
-    if (!htable_insert(attach_htable, (uintptr_t)remote, (uintptr_t)size)) {
-        vm_munmap(attach_addr, size);
-        return -1;
+    head = (struct list_head *)htable_search(attach_htable, current->tgid);
+    if (!head) {
+        head = kmalloc(sizeof(struct list_head), GFP_KERNEL);
+        if (!head) {
+            vm_munmap(attach_addr, size);
+            return -ENOMEM;
+        }
+
+        INIT_LIST_HEAD(head);
+        if (!htable_insert(attach_htable, (uintptr_t)current->tgid, (uintptr_t)head)) {
+            vm_munmap(attach_addr, size);
+            return -1;
+        }
     }
-
+    list_add_tail(&(remote->node), head);
+    
     return attach_addr;
 }
 
 
 void xpmem_detach_vaddr(u64 vaddr) {
-    struct xpmem_remote_attach_struct remote;
-    unsigned long size = 0;
+    struct list_head * head = NULL;
 
     if (!attach_htable) {
         return;
     }
 
-    remote.tgid = current->tgid;
-    remote.vaddr = (unsigned long)vaddr;
-
-    size = (unsigned long)htable_remove(attach_htable, (uintptr_t)&remote, 1);
-    if (!size) {
+    head = (struct list_head *)htable_search(attach_htable, current->tgid);
+    if (!head) {
         printk(KERN_ERR "XPMEM_EXTENDED: LEAKING VIRTUAL ADDRESS SPACE\n");
     } else {
-        vm_munmap(vaddr, size);
+        struct xpmem_remote_attach_struct * remote = NULL, * next = NULL;
+        list_for_each_entry_safe(remote, next, head, node) {
+            if (remote->vaddr == vaddr) {
+                vm_munmap(remote->vaddr, remote->size);
+                list_del(&(remote->node));
+                kfree(remote);
+                break;
+            }
+        }
+
+        if (list_empty(head)) {
+            htable_remove(attach_htable, (uintptr_t)current->tgid, 1);
+        }
     }
 }
