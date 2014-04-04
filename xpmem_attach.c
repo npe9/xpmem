@@ -519,10 +519,10 @@ xpmem_detach(u64 at_vaddr)
 	att = (struct xpmem_attachment *)vma->vm_private_data;
 	if (!xpmem_is_vm_ops_set(vma) || att == NULL) {
         ret = -EINVAL;
+        up_write(&current->mm->mmap_sem);
         if (extend_enabled) {
             ret = xpmem_extended_ops->detach(xpmem_my_part, at_vaddr);
         }
-        up_write(&current->mm->mmap_sem);
 		return ret;
 	}
 	xpmem_att_ref(att);
