@@ -93,7 +93,10 @@ struct xpmem_dom {
 };
 
 struct xpmem_cmd_ex {
+    struct xpmem_dom src_dom;
+    struct xpmem_dom dst_dom;
     xpmem_op_t type;
+
     union {
         struct xpmem_cmd_make_ex make;
         struct xpmem_cmd_remove_ex remove;
@@ -102,8 +105,6 @@ struct xpmem_cmd_ex {
         struct xpmem_cmd_attach_ex attach;
         struct xpmem_cmd_detach_ex detach;
     };  
-    struct xpmem_dom src_dom;
-    struct xpmem_dom dst_dom;
 };
 
 struct ns_xpmem_state {
