@@ -487,7 +487,7 @@ static int xpmem_attach_palacios(struct xpmem_partition * part, xpmem_apid_t api
     xpmem_attach_hcall(state->bar_state.hcall_info.attach_hcall, apid, offset, size, __pa(pfns));
     wait_event_interruptible(state->waitq, (state->req_complete == 1));
 
-    if (!pfns) {
+    if (!pfns || num_pfns == 0) {
         *vaddr = 0;
     } else {
         *vaddr = xpmem_map_pfn_range(pfns, num_pfns);
@@ -512,6 +512,8 @@ static int xpmem_detach_palacios(struct xpmem_partition * part, u64 vaddr) {
     state->req_complete = 0;
     xpmem_detach_hcall(state->bar_state.hcall_info.detach_hcall, vaddr);
     wait_event_interruptible(state->waitq, (state->req_complete == 1));
+
+    xpmem_detach_vaddr(vaddr);
 
     mutex_unlock(&(state->mutex));
     return 0;

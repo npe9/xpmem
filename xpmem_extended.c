@@ -20,9 +20,32 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
+#include <xpmem_hashtable.h>
 
 u32 extend_enabled = 0;
 struct xpmem_extended_ops * xpmem_extended_ops = NULL;
+
+struct xpmem_remote_attach_struct {
+    unsigned int tgid;
+    unsigned long vaddr;
+};
+
+struct xpmem_hashtable * attach_htable = NULL;
+
+static u32 xpmem_hash_fn(uintptr_t key) {
+    return hash_long(key);
+}
+
+static int xpmem_eq_fn(uintptr_t key1, uintptr_t key2) {
+    struct xpmem_remote_attach_struct * rem1, * rem2;
+
+    rem1 = (struct xpmem_remote_attach_struct *)key1;
+    rem2 = (struct xpmem_remote_attach_struct *)key2;
+
+    return ((rem1->tgid == rem2->tgid) &&
+            (rem1->vaddr == rem2->vaddr));
+}
+
 
 static int
 xpmem_validate_remote_access(struct xpmem_access_permit *ap, off_t offset,
@@ -299,6 +322,7 @@ unsigned long xpmem_map_pfn_range(u64 * pfns, u64 num_pfns) {
     unsigned long attach_addr = 0;
     u64 i = 0;
     int status = 0;
+    struct xpmem_remote_attach_struct * remote;
 
     size = num_pfns * PAGE_SIZE;
     attach_addr = vm_mmap(NULL, 0, size, PROT_READ | PROT_WRITE,
@@ -327,10 +351,52 @@ unsigned long xpmem_map_pfn_range(u64 * pfns, u64 num_pfns) {
         status = remap_pfn_range(vma, addr, pfns[i], PAGE_SIZE, vma->vm_page_prot);
         if (status) {
             printk(KERN_ERR "XPMEM: remap_pfn_range failed\n");
+            vm_munmap(attach_addr, size);
             return -ENOMEM;
         }
     }   
 
+    if (!attach_htable) {
+        attach_htable = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
+        if (!attach_htable) {
+            vm_munmap(attach_addr, size);
+            return -ENOMEM;
+        }
+    }
+
+    remote = kmalloc(sizeof(struct xpmem_remote_attach_struct), GFP_KERNEL);
+    if (!remote) {
+        vm_munmap(attach_addr, size);
+        return -1;
+    }
+
+    remote->tgid = current->tgid;
+    remote->vaddr = attach_addr;
+
+    if (!htable_insert(attach_htable, (uintptr_t)remote, (uintptr_t)size)) {
+        vm_munmap(attach_addr, size);
+        return -1;
+    }
+
     return attach_addr;
 }
 
+
+void xpmem_detach_vaddr(u64 vaddr) {
+    struct xpmem_remote_attach_struct remote;
+    unsigned long size = 0;
+
+    if (!attach_htable) {
+        return;
+    }
+
+    remote.tgid = current->tgid;
+    remote.vaddr = (unsigned long)vaddr;
+
+    size = (unsigned long)htable_remove(attach_htable, (uintptr_t)&remote, 1);
+    if (!size) {
+        printk(KERN_ERR "XPMEM_EXTENDED: LEAKING VIRTUAL ADDRESS SPACE\n");
+    } else {
+        vm_munmap(vaddr, size);
+    }
+}

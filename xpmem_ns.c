@@ -173,7 +173,9 @@ static int xpmem_attach_ns(struct xpmem_partition * part, xpmem_apid_t apid, off
     num_pfns = cmd->attach.num_pfns;
     pfns = cmd->attach.pfns;
 
-    if (num_pfns > 0) {
+    if (!pfns || num_pfns == 0) {
+        *vaddr = 0;
+    } else {
         *vaddr = (u64)xpmem_map_pfn_range(pfns, num_pfns);
         kfree(pfns);
     }
@@ -206,6 +208,8 @@ static int xpmem_detach_ns(struct xpmem_partition * part, u64 vaddr) {
 
     wake_up_interruptible(&(state->ns_wq));
     wait_event_interruptible(state->client_wq, (state->complete == 1));
+
+    xpmem_detach_vaddr(vaddr);
 
     mutex_unlock(&(state->mutex));
     return 0;

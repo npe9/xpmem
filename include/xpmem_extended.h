@@ -142,5 +142,6 @@ int xpmem_attach_remote(struct xpmem_cmd_attach_ex * attach_ex);
 int xpmem_detach_remote(struct xpmem_cmd_detach_ex * detach_ex);
 
 unsigned long xpmem_map_pfn_range(u64 * pfns, u64 num_pfns);
+void xpmem_detach_vaddr(u64 vaddr);
 
 #endif /* _XPMEM_EXTENDED_H */
