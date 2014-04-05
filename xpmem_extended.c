@@ -411,7 +411,8 @@ void xpmem_detach_vaddr(u64 vaddr) {
         }
 
         if (list_empty(head)) {
-            htable_remove(attach_htable, (uintptr_t)current->tgid, 1);
+            htable_remove(attach_htable, (uintptr_t)current->tgid, 0);
+            kfree(head);
         }
     }
 }
