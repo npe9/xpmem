@@ -261,7 +261,8 @@ struct xpmem_partition {
  */
 struct xpmem_id {
 	pid_t tgid;		/* thread group that owns ID */
-	unsigned short uniq;	/* this value makes the ID unique */
+	//unsigned short uniq;	/* this value makes the ID unique */
+	u32 uniq;	/* this value makes the ID unique */
 };
 
 #define XPMEM_MAX_UNIQ_ID	((1 << (sizeof(short) * 8)) - 1)
