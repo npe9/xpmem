@@ -450,11 +450,13 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
 		}
 	}
 
+	up_write(&current->mm->mmap_sem);
 	at_vaddr = vm_mmap(file, vaddr, size, prot_flags, flags, offset);
 	if (IS_ERR((void *)at_vaddr)) {
 		ret = at_vaddr;
 		goto out_3;
 	}
+	down_write(&current->mm->mmap_sem);
 	att->at_vaddr = at_vaddr;
 
 	vma = find_vma(current->mm, at_vaddr);
@@ -464,6 +466,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
 	vma->vm_ops = &xpmem_vm_ops;
 
 	att->at_vma = vma;
+
 
 	/*
 	 * The attach point where we mapped the portion of the segment the
