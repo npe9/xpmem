@@ -25,6 +25,7 @@
 typedef __s64 xpmem_segid_t;	/* segid returned from xpmem_make() */
 typedef __s64 xpmem_apid_t;	/* apid returned from xpmem_get() */
 
+
 struct xpmem_addr {
 	xpmem_apid_t apid;	/* apid that represents memory */
 	off_t offset;		/* offset into apid's memory */

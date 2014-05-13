@@ -216,12 +216,12 @@ static int xpmem_detach_ns(struct xpmem_partition * part, u64 vaddr) {
 }
 
 struct xpmem_extended_ops ns_ops = {
-    .make       = xpmem_make_ns,
-    .remove     = xpmem_remove_ns,
-    .get        = xpmem_get_ns,
-    .release    = xpmem_release_ns,
-    .attach     = xpmem_attach_ns,
-    .detach     = xpmem_detach_ns,
+    .make               = xpmem_make_ns,
+    .remove             = xpmem_remove_ns,
+    .get                = xpmem_get_ns,
+    .release            = xpmem_release_ns,
+    .attach             = xpmem_attach_ns,
+    .detach             = xpmem_detach_ns,
 };
 
 

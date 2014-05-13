@@ -135,7 +135,6 @@ struct ns_xpmem_state {
     wait_queue_head_t ns_wq;
 };
 
-
 int xpmem_get_remote(struct xpmem_cmd_get_ex * get_ex);
 int xpmem_release_remote(struct xpmem_cmd_release_ex * release_ex);
 int xpmem_attach_remote(struct xpmem_cmd_attach_ex * attach_ex);

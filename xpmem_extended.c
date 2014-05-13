@@ -42,6 +42,7 @@ static int xpmem_eq_fn(uintptr_t key1, uintptr_t key2) {
 }
 
 
+
 static int
 xpmem_validate_remote_access(struct xpmem_access_permit *ap, off_t offset,
             size_t size, int mode, u64 *vaddr) {
@@ -67,6 +68,11 @@ xpmem_make_apid_extended(struct xpmem_thread_group * ap_tg) {
 
     uniq = atomic_inc_return(&ap_tg->uniq_apid_ex);
 
+    if (atomic_read(&ap_tg->uniq_apid_ex) > XPMEM_MAX_UNIQ_APID) {
+        atomic_dec(&ap_tg->uniq_apid_ex);
+        return -EBUSY;
+    }
+
     *apid_p = 0;
     apid.tgid = ap_tg->tgid;
     apid.uniq = (unsigned short)uniq;
@@ -74,6 +80,7 @@ xpmem_make_apid_extended(struct xpmem_thread_group * ap_tg) {
     DBUG_ON(*apid_p <= 0); 
     return *apid_p;
 }
+
 
 
 /* Handle remote requests */
