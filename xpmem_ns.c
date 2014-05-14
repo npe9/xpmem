@@ -485,6 +485,7 @@ static ssize_t remote_write(struct file * filp, const char __user * buffer, size
         default:
             printk(KERN_ERR "Invalid remote XPMEM write: %d\n", cmd->type);
             ret = -EINVAL;
+            break;
     }
 
     spin_unlock(&(ns_state->lock));
