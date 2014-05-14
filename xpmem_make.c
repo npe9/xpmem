@@ -40,7 +40,7 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg)
 
     if (extend_enabled) {
         xpmem_extended_ops->make(xpmem_my_part, segid_p);
-        atomic_set(&seg_tg->uniq_apid_ex, segid.uniq);
+        atomic_set(&seg_tg->uniq_apid_ex, 0);
     }
 
 	DBUG_ON(*segid_p <= 0);
