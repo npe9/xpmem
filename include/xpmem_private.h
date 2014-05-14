@@ -177,6 +177,7 @@ struct xpmem_thread_group {
 	volatile int flags;	/* tg attributes and state */
 	atomic_t uniq_segid;
 	atomic_t uniq_apid;
+    int uniq_apid_ex_base;
 	atomic_t uniq_apid_ex;
 	rwlock_t seg_list_lock;
 	struct list_head seg_list;	/* tg's list of segs */

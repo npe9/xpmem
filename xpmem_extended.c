@@ -75,7 +75,7 @@ xpmem_make_apid_extended(struct xpmem_thread_group * ap_tg) {
 
     *apid_p = 0;
     apid.tgid = ap_tg->tgid;
-    apid.uniq = (unsigned short)uniq;
+    apid.uniq = (unsigned short)uniq + ap_tg->uniq_apid_ex_base;
 
     DBUG_ON(*apid_p <= 0); 
     return *apid_p;
@@ -115,7 +115,7 @@ int xpmem_get_remote(struct xpmem_cmd_get_ex * get_ex) {
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);
     if (IS_ERR(seg)) {
         xpmem_tg_deref(seg_tg);
-       return PTR_ERR(seg);
+        return PTR_ERR(seg);
     }
 
     /* assuming XPMEM_PERMIT_MODE, do the appropriate permission check */
