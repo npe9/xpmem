@@ -1,8 +1,7 @@
 /*
  * XPMEM extensions for multiple domain support.
  *
- * This file implements XPMEM requests for local processes executing with
- * the NS. 
+ * xpmem_ns.c: The XPMEM name server
  *
  * Author: Brian Kocoloski <briankoco@cs.pitt.edu>
  *
@@ -10,618 +9,406 @@
 
 
 #include <linux/module.h>
-#include <linux/poll.h>
-#include <linux/anon_inodes.h>
+#include <linux/list.h>
+#include <linux/kthread.h>
+
+#include <asm/uaccess.h>
 
 #include <xpmem.h>
-#include <xpmem_private.h>
 #include <xpmem_extended.h>
+#include <xpmem_ns.h>
+#include <xpmem_hashtable.h>
 
 
-/* These will pack commands into request structures and write them to the NS
- * command list
+/* The XPMEM link map is used to connect the name server to all locally
+ * attached domains in the system. The map has one entry for each VM and each
+ * enclave connected to the name server, as well as one for local processes.
+ *
+ * Each domain in the system has a map of local connection links to a list of
+ * XPMEM domids accessible via those links. For example, consider the following
+ * topology:
+ *
+ *               < XPMEM name server>
+ *                       ^
+ *                       |
+ *                       |
+ *                  <  Dom 1  >
+ *                   ^       ^
+ *                   |       |
+ *                   |       |
+ *                <Dom 2>  <Dom 3>
+ *                   ^
+ *                   |
+ *                   |
+ *                <Dom 4>
+ *
+ * The maps look like:
+ *
+ * <Domain 0 (name server) map>
+ *   [0: local] (local processes (domid 0) are connected via link 0)
+ *   [1: <1, 2, 3, 4>] (domids 1, 2, 3, and 4 are downstream via link 1)
+ *
+ * <Domain 1 map>
+ *   [0: local] (local processes (domid 1) are connected via link 0)
+ *   [1: <2,4>] (domids 2 and 4 are downstream via link 1)
+ *   [2: <3>]   (domid 3 is downstream via link 2)
+ *
+ * <Domain 2 map>
+ *   [0: local] (local processes (domid 2) are connected via link 0)
+ *   [1: <4>] (domid 4 is downstream via link 1)
+ *
+ * <Domain 3 map>
+ *   [0: local] (local processes (domid 3) are connected via link 0)
+ *
+ * <Domain 4 map>
+ *   [0: local] (local processes (domid 4) are connected via link 0)
+ *
  */
-static int xpmem_make_ns(struct xpmem_partition * part, xpmem_segid_t * segid_p) {
-    struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex * cmd = &(state->cmd);
 
-    if (!state->initialized) {
-        return -1;
-    }
+struct xpmem_ns_state {
+    /* Device initialization */
+    int initialized;
 
-    printk("MAKE_NS\n");
+    /* Has a command been issued? */
+    int cmd_issued;
 
-    while (mutex_lock_interruptible(&(state->mutex)));
+    /* command list */
+    struct list_head cmd_list;
 
-    spin_lock(&(state->lock));
-    cmd->type = XPMEM_MAKE;
-    cmd->make.segid = *segid_p;
-    state->requested = 1;
-    state->processed = 0;
-    state->complete = 0;
-    spin_unlock(&(state->lock));
+    /* protect command list access */
+    spinlock_t lock;
 
-    wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->complete == 1));
+    /* waitq for name server */
+    wait_queue_head_t ns_waitq;
 
-    spin_lock(&(state->lock));
-    *segid_p = cmd->make.segid;
-    spin_unlock(&(state->lock));
+    /* kernel thread for running the name server */
+    struct task_struct * ns_thread;
 
-    mutex_unlock(&(state->mutex));
-    return 0;
-}
+    /* Unique domids */
+    atomic_t uniq_domid;
 
-static int xpmem_remove_ns(struct xpmem_partition * part, xpmem_segid_t segid) {
-    struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex * cmd = &(state->cmd);
+    /* Unique link */
+    atomic_t uniq_link;
 
-    if (!state->initialized) {
-        return -1;
-    }
+    /* map of XPMEM domids to local link ids (as specified above) */
+    struct xpmem_hashtable * domid_map;
 
-    printk("REMOVE_NS\n");
+    /* map of link ids to command callback functions */
+    struct xpmem_hashtable * link_map;
 
-    while (mutex_lock_interruptible(&(state->mutex)));
-
-    spin_lock(&(state->lock));
-    cmd->type = XPMEM_REMOVE;
-    cmd->remove.segid = segid;
-    state->requested = 1;
-    state->processed = 0;
-    state->complete = 0;
-    spin_unlock(&(state->lock));
-
-    wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->complete == 1));
-
-    mutex_unlock(&(state->mutex));
-    return 0;
-}
-
-static int xpmem_get_ns(struct xpmem_partition * part, xpmem_segid_t segid, int flags, 
-            int permit_type, u64 permit_value, xpmem_apid_t * apid_p) {
-    struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex * cmd = &(state->cmd);
-
-    if (!state->initialized) {
-        return -1;
-    }
-
-    printk("GET_NS\n");
-
-    while (mutex_lock_interruptible(&(state->mutex)));
-
-    spin_lock(&(state->lock));
-    cmd->type = XPMEM_GET;
-    cmd->get.segid = segid;
-    cmd->get.flags = flags;
-    cmd->get.permit_type = permit_type;
-    cmd->get.permit_value = permit_value;
-    state->requested = 1;
-    state->processed = 0;
-    state->complete = 0;
-    spin_unlock(&(state->lock));
-
-    wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->complete == 1));
-
-    spin_lock(&(state->lock));
-    *apid_p = cmd->get.apid;
-    spin_unlock(&(state->lock));
-
-    mutex_unlock(&(state->mutex));
-    return 0;
-}
-
-static int xpmem_release_ns(struct xpmem_partition * part, xpmem_apid_t apid) {
-    struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex * cmd = &(state->cmd);
-
-    if (!state->initialized) {
-        return -1;
-    }
-
-    printk("RELEASE_NS\n");
-
-    while (mutex_lock_interruptible(&(state->mutex)));
-
-    spin_lock(&(state->lock));
-    cmd->type = XPMEM_RELEASE;
-    cmd->release.apid = apid;
-    state->requested = 1;
-    state->processed = 0;
-    state->complete = 0;
-    spin_unlock(&(state->lock));
-
-    wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->complete == 1));
-
-    mutex_unlock(&(state->mutex));
-    return 0;
-}
-
-static int xpmem_attach_ns(struct xpmem_partition * part, xpmem_apid_t apid, off_t off, 
-            size_t size, u64 * vaddr) {
-    struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex * cmd = &(state->cmd);
-    u64 * pfns;
-    u64 num_pfns;
-
-    if (!state->initialized) {
-        return -1;
-    }
-
-    printk("ATTACH_NS\n");
-
-    while (mutex_lock_interruptible(&(state->mutex)));
-
-    spin_lock(&(state->lock));
-    cmd->type = XPMEM_ATTACH;
-    cmd->attach.apid = apid;
-    cmd->attach.off = off;
-    cmd->attach.size = size;
-    state->requested = 1;
-    state->processed = 0;
-    state->complete = 0;
-    spin_unlock(&(state->lock));
-
-    wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->complete == 1));
-
-    spin_lock(&(state->lock));
-    num_pfns = cmd->attach.num_pfns;
-    pfns = cmd->attach.pfns;
-
-    if (!pfns || num_pfns == 0) {
-        *vaddr = 0;
-    } else {
-        *vaddr = (u64)xpmem_map_pfn_range(pfns, num_pfns);
-        kfree(pfns);
-    }
-
-    spin_unlock(&(state->lock));
-    mutex_unlock(&(state->mutex));
-
-    return 0;
-}
-
-static int xpmem_detach_ns(struct xpmem_partition * part, u64 vaddr) {
-    struct ns_xpmem_state * state = part->ns_state;
-    struct xpmem_cmd_ex * cmd = &(state->cmd);
-
-    if (!state->initialized) {
-        return -1;
-    }
-
-    printk("DETACH_NS\n");
-
-    while (mutex_lock_interruptible(&(state->mutex)));
-
-    spin_lock(&(state->lock));
-    cmd->type = XPMEM_DETACH;
-    cmd->detach.vaddr = vaddr;
-    state->requested = 1;
-    state->processed = 0;
-    state->complete = 0;
-    spin_unlock(&(state->lock));
-
-    wake_up_interruptible(&(state->ns_wq));
-    wait_event_interruptible(state->client_wq, (state->complete == 1));
-
-    xpmem_detach_vaddr(vaddr);
-
-    mutex_unlock(&(state->mutex));
-    return 0;
-}
-
-struct xpmem_extended_ops ns_ops = {
-    .make               = xpmem_make_ns,
-    .remove             = xpmem_remove_ns,
-    .get                = xpmem_get_ns,
-    .release            = xpmem_release_ns,
-    .attach             = xpmem_attach_ns,
-    .detach             = xpmem_detach_ns,
+    /* map of XPMEM segids to XPMEM domids */
+    struct xpmem_hashtable * segid_map;
 };
 
 
-static int local_open(struct inode * inodep, struct file * filp) {
-    return 0;
+struct xpmem_cmd_ex_iter {
+    struct xpmem_cmd_ex * cmd;
+    xpmem_link_id_t       link_id;
+    struct list_head      node;
+};
+
+static u32
+xpmem_hash_fn(uintptr_t key)
+{
+    return hash_long(key);
 }
 
-static int local_release(struct inode * inodep, struct file * filp) {
-    struct ns_xpmem_state * ns_state = (struct ns_xpmem_state *)filp->private_data;
-
-    if (!ns_state || !ns_state->initialized) {
-        return -EBADF;
-    }
-
-    spin_lock(&(ns_state->lock));
-    ns_state->local_fd = -1;
-    spin_unlock(&(ns_state->lock));
-
-    return 0;
+static int
+xpmem_eq_fn(uintptr_t key1, uintptr_t key2)
+{
+    return (key1 == key2);
 }
 
-static ssize_t local_read(struct file * filp, char __user * buffer, size_t size, loff_t * offp) {
-    struct ns_xpmem_state * ns_state = (struct ns_xpmem_state *)filp->private_data;
-
-    if (!ns_state || !ns_state->initialized) {
-        return -EBADF;
-    }
-
-    if (size != sizeof(struct xpmem_cmd_ex)) {
-        return -EINVAL;
-    }
-
-    spin_lock(&(ns_state->lock));
-    if ((!ns_state->requested) || (ns_state->processed)) {
-        spin_unlock(&(ns_state->lock));
-        return 0;
-    }
-
-    if (copy_to_user(buffer, (void *)&(ns_state->cmd), size)) {
-        spin_unlock(&(ns_state->lock));
-        return -EFAULT;
-    }
-
-    ns_state->processed = 1;
-    spin_unlock(&(ns_state->lock));
-    return size;
-}
-
-static ssize_t local_write(struct file * filp, const char __user * buffer, size_t size, loff_t * offp) {
-    struct ns_xpmem_state * ns_state = (struct ns_xpmem_state *)filp->private_data;
-    ssize_t ret = size;
-
-    if (!ns_state || !ns_state->initialized) {
-        return -EBADF;
-    }
-
-    if (size != sizeof(struct xpmem_cmd_ex)) {
-        return -EINVAL;
-    }
-
-    spin_lock(&(ns_state->lock));
-    if ((!ns_state->requested || !ns_state->processed)) {
-        printk(KERN_ERR "XPMEM local channel not writeable - no requests in process\n");
-        return 0;
-    }
-
-    if (copy_from_user((void *)&(ns_state->cmd), buffer, sizeof(struct xpmem_cmd_ex))) {
-        return -EFAULT;
-    }
-
-    switch (ns_state->cmd.type) {
+static inline char *
+cmd_to_string(xpmem_op_t op)
+{
+    switch (op) {
+        case XPMEM_MAKE:
+            return "XPMEM_MAKE";
+        case XPMEM_REMOVE:
+            return "XPMEM_REMOVE";
+        case XPMEM_GET:
+            return "XPMEM_GET";
+        case XPMEM_RELEASE:
+            return "XPMEM_RELEASE";
+        case XPMEM_ATTACH:
+            return "XPMEM_ATTACH";
+        case XPMEM_DETACH:
+            return "XPMEM_DETACH";
         case XPMEM_MAKE_COMPLETE:
+            return "XPMEM_MAKE_COMPLETE";
         case XPMEM_REMOVE_COMPLETE:
+            return "XPMEM_REMOVE_COMPLETE";
         case XPMEM_GET_COMPLETE:
+            return "XPMEM_GET_COMPLETE";
         case XPMEM_RELEASE_COMPLETE:
+            return "XPMEM_RELEASE_COMPLETE";
         case XPMEM_ATTACH_COMPLETE:
+            return "XPMEM_ATTACH_COMPLETE";
         case XPMEM_DETACH_COMPLETE:
-            ns_state->complete = 1;
-            ns_state->requested = 0;
-            ns_state->processed = 0;
-            wake_up_interruptible(&(ns_state->client_wq));
-            break;
-
+            return "XPMEM_DETACH_COMPLETE";
+        case XPMEM_PING_NS:
+            return "XPMEM_PING_NS";
+        case XPMEM_PING_NS_COMPLETE:
+            return "XPMEM_PING_NS_COMPLETE";
         default:
-            printk(KERN_ERR "Invalid local XPMEM write: %d\n", ns_state->cmd.type);
-            ret = -EINVAL;
-    }
-
-    spin_unlock(&(ns_state->lock));
-    return ret;
+            return "UNKNOWN OPERATION";
+    }   
 }
 
-static unsigned int local_poll(struct file * filp, struct poll_table_struct * pollp) {
-    unsigned int ret = 0;
-    struct ns_xpmem_state * ns_state = (struct ns_xpmem_state *)filp->private_data;
-
-    if (!ns_state || !ns_state->initialized) {
-        return -EBADF;
+static inline char *
+dom_type_to_string(xpmem_endpoint_t p)
+{
+    switch (p) {
+        case VM: 
+            return "VM";
+        case ENCLAVE:
+            return "Enclave";
+        case LOCAL:
+            return "Process";
+        default:
+            return "Unknown";
     }
+}
 
-    poll_wait(filp, &(ns_state->ns_wq), pollp);
 
-    spin_lock(&(ns_state->lock));
-    if (ns_state->requested) {
-        if (ns_state->processed) {
-            printk("LOCAL POLL: write\n");
-            ret = POLLOUT | POLLWRNORM;
-        } else {
-            printk("LOCAL POLL: read\n");
-            ret = POLLIN | POLLRDNORM;
+static int32_t
+alloc_uniq_segid(void)
+{
+    return 1;
+}
+
+static void
+xpmem_ns_process_cmd(struct xpmem_ns_state * state,
+                     xpmem_link_id_t         link_id;
+                     struct xpmem_cmd_ex   * cmd)
+{
+
+
+}
+
+/* TODO: This is the code when we are NOT the NS */
+static void
+xpmem_ns_process_cmd(struct xpmem_ns_state * state,
+                     xpmem_link_id_t         link_id;
+                     struct xpmem_cmd_ex   * cmd)
+{
+    /* First, we must allocate a domid if we don't have one already */
+{
+
+
+
+static int
+xpmem_ns_thread_fn(void * arg)
+{
+    struct xpmem_ns_state * state = (struct xpmem_ns_state *)arg;
+
+    while (1) {
+        unsigned long flags;
+
+        spin_lock_irqsave(&(state->lock), flags);
+        {
+            state->cmd_issued = !list_empty(&(state->cmd_list));
         }
-    }
-    spin_unlock(&(ns_state->lock));
-    
-    return ret;
-}
+        spin_unlock_irqrestore(&(state->lock), flags);
 
-static int remote_open(struct inode * inodep, struct file * filp) {
-    return 0;
-}
+        mb();
+        wait_event_interruptible(state->ns_waitq, state->cmd_issued == 1);
 
-static int remote_release(struct inode * inodep, struct file * filp) {
-    struct ns_xpmem_state * ns_state = (struct ns_xpmem_state *)filp->private_data;
+        {
+            struct xpmem_cmd_ex_iter * iter = NULL;
 
-    if (!ns_state || !ns_state->initialized) {
-        return -EBADF;
-    }
-
-    spin_lock(&(ns_state->lock));
-    ns_state->remote_fd = -1;
-    spin_unlock(&(ns_state->lock));
-
-    return 0;
-}
-
-static ssize_t remote_read(struct file * filp, char __user * buffer, size_t size, loff_t * offp) {
-    struct ns_xpmem_state * ns_state = (struct ns_xpmem_state *)filp->private_data;
-
-    if (!ns_state || !ns_state->initialized) {
-        return -EBADF;
-    }
-
-    if (size != sizeof(struct xpmem_cmd_ex)) {
-        return -EINVAL;
-    }
-
-    spin_lock(&(ns_state->lock));
-    if (!ns_state->remote_requested) {
-        spin_unlock(&(ns_state->lock));
-        return 0;
-    }
-
-    if (copy_to_user(buffer, (void *)&(ns_state->remote_cmd), size)) {
-        spin_unlock(&(ns_state->lock));
-        return -EFAULT;
-    }
-
-    ns_state->remote_requested = 0;
-    spin_unlock(&(ns_state->lock));
-    return size;
-}
-
-static ssize_t remote_write(struct file * filp, const char __user * buffer, size_t size, loff_t * offp) {
-    struct ns_xpmem_state * ns_state = (struct ns_xpmem_state *)filp->private_data;
-    struct xpmem_cmd_ex * cmd = NULL;
-    ssize_t ret = size;
-
-    if (!ns_state || !ns_state->initialized) {
-        return -EBADF;
-    }
-
-    if (size != sizeof(struct xpmem_cmd_ex)) {
-        return -EINVAL;
-    }
-
-    spin_lock(&(ns_state->lock));
-    if (ns_state->remote_requested) {
-        printk(KERN_ERR "XPMEM remote channel not writeable - request already in process\n");
-        return 0;
-    }
-
-    cmd = &(ns_state->remote_cmd);
-    if (copy_from_user((void *)cmd, buffer, sizeof(struct xpmem_cmd_ex))) {
-        return -EFAULT;
-    }
-
-    switch (cmd->type) {
-        case XPMEM_GET: {
-            printk("Received XPMEM_GET request(segid: %lli, flags: %lu, permit_type: %lu, permit_value: %llu)\n",
-                (signed long long)cmd->get.segid,
-                (unsigned long)cmd->get.flags,
-                (unsigned long)cmd->get.permit_type,
-                (unsigned long long)cmd->get.permit_value
-            );
-
-            if (xpmem_get_remote(&(cmd->get))) {
-                printk("Request failed\n");
-                cmd->get.apid = -1;
-            }
-
-            ns_state->remote_requested = 1;
-            cmd->type = XPMEM_GET_COMPLETE;
-            break;
-        }
-
-        case XPMEM_RELEASE: {
-            printk("Received XPMEM_RELEASE request(apid: %lli)\n",
-                (signed long long)cmd->release.apid
-            );
-            
-            if (xpmem_release_remote(&(cmd->release))) {
-                printk("Request failed\n");
-            }
-
-            ns_state->remote_requested = 1;
-            cmd->type = XPMEM_RELEASE_COMPLETE;
-            break;
-        }
-
-        case XPMEM_ATTACH: {
-            printk("Received XPMEM_ATTACH request(apid: %lli, off: %llu, size: %llu)\n",
-                (signed long long)cmd->attach.apid,
-                (unsigned long long)cmd->attach.off,
-                (unsigned long long)cmd->attach.size
-            );
-
-            if (xpmem_attach_remote(&(cmd->attach))) {
-                printk("Request failed\n");
-                cmd->attach.num_pfns = 0;
-                cmd->attach.pfns = NULL;
-            }
-
-            printk("Created pfn list:\n");
+            spin_lock_irqsave(&(state->lock), flags);
             {
-                u64 i;
-                for (i = 0; i < cmd->attach.num_pfns; i++) {
-                    printk("%llu  \n", (unsigned long long)cmd->attach.pfns[i]);
-                }
-                printk("\n");
+                iter = list_first_entry(&(state->cmd_list), struct xpmem_cmd_ex_iter, node);
+                list_del(&(iter->node));
             }
+            spin_unlock_irqrestore(&(state->lock), flags);
 
-            ns_state->remote_requested = 1;
-            cmd->type = XPMEM_ATTACH_COMPLETE;
-            break;
+            /* Process cmd */
+            xpmem_ns_process_cmd(state, iter->cmd);
+
+            /* Free list iterator and command */
+            kfree(iter->cmd);
+            kfree(iter);
         }
-
-        case XPMEM_DETACH: {
-            printk("Received XPMEM_DETACH request(vaddr: %llu)\n",
-                (unsigned long long)cmd->detach.vaddr
-            );
-
-            if (xpmem_detach_remote(&(cmd->detach))) {
-                printk("Request failed\n");
-            }
-
-            ns_state->remote_requested = 1;
-            cmd->type = XPMEM_DETACH_COMPLETE;
-            break;
-        }
-
-        default:
-            printk(KERN_ERR "Invalid remote XPMEM write: %d\n", cmd->type);
-            ret = -EINVAL;
-            break;
     }
 
-    spin_unlock(&(ns_state->lock));
-    return ret;
-}
 
-static unsigned int remote_poll(struct file * filp, struct poll_table_struct * pollp) {
-    unsigned int ret = 0;
-    struct ns_xpmem_state * ns_state = (struct ns_xpmem_state *)filp->private_data;
-
-    if (!ns_state || !ns_state->initialized) {
-        return -EBADF;
-    }
-
-    poll_wait(filp, &(ns_state->ns_wq), pollp);
-
-    spin_lock(&(ns_state->lock));
-    if (ns_state->remote_requested) {
-        printk("REMOTE POLL: read\n");
-        ret = POLLIN | POLLRDNORM;
-    } else {
-        printk("REMOTE POLL: write\n");
-        ret = POLLOUT | POLLWRNORM;
-    }
-    spin_unlock(&(ns_state->lock));
-    
-    return ret;
-}
-
-static struct file_operations local_fops = {
-    .open       = local_open,
-    .release    = local_release,
-    .read       = local_read,
-    .write      = local_write,
-    .poll       = local_poll,
-};
-
-static struct file_operations remote_fops = {
-    .open       = remote_open,
-    .release    = remote_release,
-    .read       = remote_read,
-    .write      = remote_write,
-    .poll       = remote_poll,
-};
-
-int xpmem_ns_init(struct xpmem_partition * part) {
-    part->ns_state = kzalloc(sizeof(struct ns_xpmem_state), GFP_KERNEL);
-    if (!part->ns_state) {
-        return -1;
-    }
-
-    spin_lock_init(&(part->ns_state->lock));
-    mutex_init(&(part->ns_state->mutex));
-    init_waitqueue_head(&(part->ns_state->client_wq));
-    init_waitqueue_head(&(part->ns_state->ns_wq));
-
-    part->ns_state->local_fd = -1;
-    part->ns_state->remote_fd = -1;
-    part->ns_state->initialized = 1;
     return 0;
 }
 
-int xpmem_ns_deinit(struct xpmem_partition * part) {
-    if (!part) {
+
+static xpmem_link_id_t
+alloc_xpmem_link_id(struct xpmem_ns_state * state)
+{
+    return (xpmem_link_id_t)atomic_inc_return(&(state->uniq_link));
+}
+
+static xpmem_domid_t 
+alloc_xpmem_domid(struct xpmem_ns_state * state)
+{
+    return (xpmem_domid_t)atomic_inc_return(&(state->uniq_domid));
+}
+
+struct xpmem_partition *
+xpmem_get_partition(void)
+{
+    extern struct xpmem_partition * xpmem_my_part;
+    return xpmem_my_part;
+}
+
+
+int
+xpmem_add_connection(struct xpmem_partition * part,
+                     int (*in_cmd_fn)(struct xpmem_cmd_ex *))
+{
+    struct xpmem_ns_state * state   = part->ns_state;
+    xpmem_link_id_t         link_id = 0;
+    xpmem_domid_t           domid   = 0;
+
+    if (!state || !state->initialized) {
+        return -1;
+    }
+
+    link_id = alloc_xpmem_link_id(state);
+
+    if (!htable_insert(state->link_map, (uintptr_t)link_id, (uintptr_t)in_cmd_fn)) {
+        return -1;
+    }
+
+    return 0;
+}
+
+
+/* Package an XPMEM request and write to the name server */
+int
+xpmem_cmd_request(struct xpmem_partition * part,
+                  xpmem_link_id_t          link_id
+                  struct xpmem_cmd_ex    * cmd)
+{
+    struct xpmem_ns_state    * state = part->ns_state;
+    struct xpmem_cmd_ex_iter * iter  = NULL;
+
+    unsigned long flags = 0;
+
+    if (!state || !state->initialized) {
+        return -1;
+    }
+
+    iter = kmalloc(sizeof(struct xpmem_cmd_ex_iter), GFP_KERNEL);
+    if (!iter) {
+        return -ENOMEM;
+    }
+
+    /* Full command copy */
+    {
+        uint64_t pfn_len = 0;
+
+        if (cmd->type == XPMEM_ATTACH_COMPLETE) {
+            pfn_len = sizeof(uint64_t) * cmd->attach.num_pfns;
+        }
+
+        iter->cmd = kmalloc(sizeof(struct xpmem_cmd_ex) + pfn_len, GFP_KERNEL);
+        if (!iter->cmd) {
+            kfree(iter);
+            return -ENOMEM;
+        }
+
+        memcpy(iter->cmd, cmd, sizeof(struct xpmem_cmd_ex) + pfn_len);
+    }
+
+    iter->link_id = link_id;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        list_add_tail(&(iter->node), &(state->cmd_list));
+        state->cmd_issued = 1;
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    mb();
+    wake_up_interruptible(&(state->ns_waitq));
+
+    return 0;
+}
+
+
+int
+xpmem_ns_init(struct xpmem_partition * part)
+{
+    struct xpmem_ns_state * state = NULL;
+
+    state = kzalloc(sizeof(struct xpmem_ns_state), GFP_KERNEL);
+    if (!state) {
+        return -1;
+    }
+
+    /* Create hashtables */
+    state->link_map = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
+    if (!state->link_map) {
+        kfree(state);
+        return -1;
+    }
+
+    state->domid_map = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
+    if (!state->domid_map) {
+        free_htable(state->link_map, 0, 0);
+        kfree(state);
+        return -1;
+    }
+
+    state->segid_map = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
+    if (!state->segid_map) {
+        free_htable(state->link_map, 0, 0);
+        free_htable(state->domid_map, 0, 0);
+        kfree(state);
+        return -1;
+    }
+
+    /* Create kernel thread */
+    state->ns_thread = kthread_create(xpmem_ns_thread_fn, state, "kxpmem-ns");
+    if (!state->ns_thread) {
+        free_htable(state->link_map, 0, 0);
+        free_htable(state->domid_map, 0, 0);
+        free_htable(state->segid_map, 0, 0);
+        kfree(state);
+        return -1;
+    }
+
+    /* Create everything else */
+    INIT_LIST_HEAD(&(state->cmd_list));
+    spin_lock_init(&(state->lock));
+    init_waitqueue_head(&(state->ns_waitq));
+
+    atomic_set(&(state->uniq_link), 0);
+    atomic_set(&(state->uniq_domid), 0);
+
+    state->initialized = 1;
+    part->ns_state = state;
+
+    return 0;
+}
+
+int
+xpmem_ns_deinit(struct xpmem_partition * part)
+{
+    struct xpmem_ns_state * state = part->ns_state;
+
+    if (!state) {
         return 0;
     }
 
-    if (part->ns_state) {
-        kfree(part->ns_state);
-    }
+    /* Free hashtables */
+    free_htable(state->link_map, 0, 0);
+    free_htable(state->domid_map, 0, 0);
+    free_htable(state->segid_map, 0, 0);
 
+    /* Free kernel thread */
+    kthread_stop(state->ns_thread);
+
+    kfree(state);
     part->ns_state = NULL;
-    return 0;
-}
 
-
-int xpmem_local_connect(struct ns_xpmem_state * state) {
-    if (!state || !state->initialized) {
-        return -1;
-    }
-
-    spin_lock(&(state->lock));
-    if (state->local_fd != -1) {
-        printk(KERN_ERR "XPMEM local channel already connected\n");
-        goto out;
-    }
-
-    state->local_fd = anon_inode_getfd("xpmem-ext-local", &local_fops, state, O_RDWR);
-    if (state->local_fd < 0) {
-        printk(KERN_ERR "Error creating XPMEM local inode\n");
-    }
-
-out:
-    spin_unlock(&(state->lock));
-    return state->local_fd;
-}
-
-int xpmem_local_disconnect(struct ns_xpmem_state * state) {
-    if (!state || !state->initialized) {
-        return -1;
-    }
-
-    spin_lock(&(state->lock));
-    state->local_fd = -1;
-    spin_unlock(&(state->lock));
-    return 0;
-}
-
-int xpmem_remote_connect(struct ns_xpmem_state * state) {
-    if (!state || !state->initialized) {
-        return -1;
-    }
-
-    spin_lock(&(state->lock));
-    if (state->remote_fd != -1) {
-        printk(KERN_ERR "XPMEM remote channel already connected\n");
-        goto out;
-    }
-
-    state->remote_fd = anon_inode_getfd("xpmem-ext-remote", &remote_fops, state, O_RDWR);
-    if (state->remote_fd < 0) {
-        printk(KERN_ERR "Error creating XPMEM remote inode\n");
-    }
-
-out:
-    spin_unlock(&(state->lock));
-    return state->remote_fd;
-}
-
-int xpmem_remote_disconnect(struct ns_xpmem_state * state) {
-    if (!state || !state->initialized) {
-        return -1;
-    }
-
-    spin_lock(&(state->lock));
-    state->remote_fd = -1;
-    spin_unlock(&(state->lock));
     return 0;
 }

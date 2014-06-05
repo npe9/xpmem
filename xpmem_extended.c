@@ -2,8 +2,7 @@
  * XPMEM extensions for multiple domain support.
  *
  * This file implements XPMEM commands for remote processes, requesting
- * get/release, attach/detach to local XPMEM data. It's hacky in places but I
- * don't think that's avoidable
+ * get/release, attach/detach to local XPMEM data.
  *
  * This code is independent of code implementing transport interfaces -
  * those exist in xpmem_{ns,palacios,pisces}.c

@@ -32,10 +32,12 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
+#include <xpmem_ns.h>
 
 /* TODO: set this based on some configure option */
-#define EXT_PALACIOS
+//#define EXT_PALACIOS
 //#define EXT_NS
+#define EXT_FWD
 
 struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
 
@@ -315,6 +317,7 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case XPMEM_CMD_FORK_END: {
 		return xpmem_fork_end();
 	}
+    /*
     case XPMEM_CMD_EXT_LOCAL_CONNECT: { 
         return xpmem_local_connect(xpmem_my_part->ns_state);
     }
@@ -327,6 +330,7 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case XPMEM_CMD_EXT_REMOTE_DISCONNECT: {
         return xpmem_remote_disconnect(xpmem_my_part->ns_state);
     }
+    */
 	default:
 		break;
 	}
@@ -428,7 +432,11 @@ xpmem_init(void)
     extend_enabled = 1;
 #elif defined(EXT_NS)
     xpmem_ns_init(xpmem_my_part);
-    xpmem_extended_ops = &ns_ops;
+//    xpmem_extended_ops = &ns_ops;
+    extend_enabled = 1;
+#elif defined(EXT_FWD)
+    xpmem_fwd_init(xpmem_my_part);
+//    xpmem_extended_ops = &ns_ops;
     extend_enabled = 1;
 #else
     xpmem_extended_ops = NULL;
@@ -465,8 +473,13 @@ xpmem_exit(void)
 	//remove_proc_entry("debug_printk", xpmem_unpin_procfs_dir);
 	//remove_proc_entry(XPMEM_MODULE_NAME, NULL);
     
+#if defined(EXT_PALACIOS)
     xpmem_palacios_deinit(xpmem_my_part);
+#elif defined(EXT_NS)
     xpmem_ns_deinit(xpmem_my_part);
+#elif defined(EXT_FWD)
+    xpmem_fwd_deinit(xpmem_my_part);
+#endif
 
 	printk("SGI XPMEM kernel module v%s unloaded\n",
 	       XPMEM_CURRENT_VERSION_STRING);

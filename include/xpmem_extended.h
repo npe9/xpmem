@@ -55,6 +55,15 @@ struct xpmem_cmd_detach_ex {
     uint64_t vaddr;
 };
 
+
+typedef int64_t xpmem_domid_t;
+typedef int64_t xpmem_link_t;
+
+
+struct xpmem_cmd_domid_req_ex {
+    xpmem_domid_t domid;
+};
+
 typedef enum {
     XPMEM_MAKE,
     XPMEM_MAKE_COMPLETE,
@@ -68,6 +77,15 @@ typedef enum {
     XPMEM_ATTACH_COMPLETE,
     XPMEM_DETACH,
     XPMEM_DETACH_COMPLETE,
+
+    /* Name service commands */
+    XPMEM_PING_NS,
+    XPMEM_PONG_NS,
+
+    /* Request a domid */
+    XPMEM_DOMID_REQUEST,
+    XPMEM_DOMID_RESPONSE,
+
 } xpmem_op_t;
 
 typedef enum {
@@ -76,65 +94,30 @@ typedef enum {
     ENCLAVE,
 } xpmem_endpoint_t;
 
-struct xpmem_dom {
-    /* Name server routing info */
-    struct {
-        int id;
-        int fd;
-        xpmem_endpoint_t type;
-    } ns;
-
-    /* Within enclave routing info */
-    struct {
-        int id;
-        int fd;
-        xpmem_endpoint_t type;
-    } enclave;
-};
 
 struct xpmem_cmd_ex {
-    struct xpmem_dom src_dom;
-    struct xpmem_dom dst_dom;
+    xpmem_domid_t src_dom;
+    xpmem_domid_t dst_dom;
     xpmem_op_t type;
 
     union {
-        struct xpmem_cmd_make_ex make;
-        struct xpmem_cmd_remove_ex remove;
-        struct xpmem_cmd_get_ex get;
-        struct xpmem_cmd_release_ex release;
-        struct xpmem_cmd_attach_ex attach;
-        struct xpmem_cmd_detach_ex detach;
-    };  
+        struct xpmem_cmd_make_ex      make;
+        struct xpmem_cmd_remove_ex    remove;
+        struct xpmem_cmd_get_ex       get;
+        struct xpmem_cmd_release_ex   release;
+        struct xpmem_cmd_attach_ex    attach;
+        struct xpmem_cmd_detach_ex    detach;
+        struct xpmem_cmd_domid_req_ex domid_req;
+    }; 
 };
 
-struct ns_xpmem_state {
-    int initialized;
-    int local_fd;
-    int remote_fd;
 
-    /* pending/in progress local cmd */
-    struct xpmem_cmd_ex cmd;
-    int requested;
-    int processed;
-    int complete;
+/* Package XPMEM command into xpmem_cmd_ex structure and pass to forwarding/name
+ * service layer*/
+//int xpmem_make_extended(xpmem_segid_t segid
 
-    /* issued remote cmd */
-    struct xpmem_cmd_ex remote_cmd;
-    int remote_requested;
 
-    /* protect cmd access */
-    spinlock_t lock;
-
-    /* Serialize client access to cmd/NS */
-    struct mutex mutex;
-
-    /* waitq for clients */
-    wait_queue_head_t client_wq;
-
-    /* waitq for name server */
-    wait_queue_head_t ns_wq;
-};
-
+/* Invoke XPMEM operation on behalf of remote process */
 int xpmem_get_remote(struct xpmem_cmd_get_ex * get_ex);
 int xpmem_release_remote(struct xpmem_cmd_release_ex * release_ex);
 int xpmem_attach_remote(struct xpmem_cmd_attach_ex * attach_ex);
@@ -142,5 +125,7 @@ int xpmem_detach_remote(struct xpmem_cmd_detach_ex * detach_ex);
 
 unsigned long xpmem_map_pfn_range(u64 * pfns, u64 num_pfns);
 void xpmem_detach_vaddr(u64 vaddr);
+
+
 
 #endif /* _XPMEM_EXTENDED_H */

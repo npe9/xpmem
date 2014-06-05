@@ -247,8 +247,9 @@ struct xpmem_partition {
 	atomic_t n_unpinned; 	/* # of pages unpinned by xpmem */
 
     /* extended xpmem states */
-    struct palacios_xpmem_state * palacios_state;
-    struct ns_xpmem_state * ns_state;
+    struct xpmem_palacios_state * palacios_state;
+    struct xpmem_ns_state       * ns_state;
+    struct xpmem_fwd_state      * fwd_state;
 };
 
 /*
@@ -397,10 +398,10 @@ extern int xpmem_palacios_deinit(struct xpmem_partition *);
 /* found in xpmem_ns.c */
 extern int xpmem_ns_init(struct xpmem_partition *);
 extern int xpmem_ns_deinit(struct xpmem_partition *);
-extern int xpmem_local_connect(struct ns_xpmem_state *);
-extern int xpmem_local_disconnect(struct ns_xpmem_state *);
-extern int xpmem_remote_connect(struct ns_xpmem_state *);
-extern int xpmem_remote_disconnect(struct ns_xpmem_state *);
+
+/* found in xpmem_fwd.c */
+extern int xpmem_fwd_init(struct xpmem_partition *);
+extern int xpmem_fwd_deinit(struct xpmem_partition *);
 
 
 /*
