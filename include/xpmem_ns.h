@@ -14,6 +14,15 @@
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
 
+/* The well-known name server's domid */
+#define XPMEM_NS_DOMID 1
+
+
+typedef enum {
+    XPMEM_CONN_LOCAL,
+    XPMEM_CONN_REMOTE,
+} xpmem_connection_t;
+
 
 struct xpmem_partition *
 xpmem_get_partition(void);
@@ -21,6 +30,7 @@ xpmem_get_partition(void);
 
 xpmem_link_t
 xpmem_add_connection(struct xpmem_partition * part,
+                     xpmem_connection_t       type,
                      int (*in_cmd_fn) (struct xpmem_cmd_ex *, void * priv_data),
                      void * priv_data);
 

@@ -63,7 +63,7 @@ struct xpmem_cmd_ex_iter {
     struct list_head      node;
 };
 
-static struct xpmem_palacios_state palacios_devs[MAX_DEVICES];
+static struct xpmem_palacios_state * palacios_devs[MAX_DEVICES];
 static int dev_off = 0;
 DEFINE_SPINLOCK(palacios_lock);
 
@@ -155,7 +155,7 @@ xpmem_work_fn(struct work_struct * work)
  * 
  * We copy an xpmem command out of the device, which must happen here and not in
  * the work queue because antoher interrupt may happen before the work queue is
- * scheduled, thereby blowing away the .
+ * scheduled, thereby blowing away the command in the BAR.
  */
 static irqreturn_t 
 irq_handler(int    irq, 
@@ -218,6 +218,30 @@ irq_handler(int    irq,
 
 
 
+
+/* Callback for commands being issued by the XPMEM name/forwarding service */
+static int
+xpmem_cmd_fn(struct xpmem_cmd_ex * cmd, 
+             void                * priv_data)
+{
+    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)priv_data;
+    unsigned long                 flags = 0;
+
+    if (!state->initialized) {
+        return -1;
+    }
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        xpmem_hcall(state->bar_state.xpmem_hcall_id, cmd);
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return 0;
+}
+
+
+
 static const struct pci_device_id 
 xpmem_ids[] =
 {
@@ -237,7 +261,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
     spin_lock_irqsave(&(palacios_lock), flags);
     {
-        palacios_state = &(palacios_devs[dev_off]);
+        palacios_state = palacios_devs[dev_off];
     }
     spin_unlock_irqrestore(&(palacios_lock), flags);
 
@@ -294,6 +318,19 @@ xpmem_probe_driver(struct pci_dev             * dev,
         goto err_unmap;
     }
 
+    /* Add connection to name/forwarding service */
+    palacios_state->link = xpmem_add_connection(
+            palacios_state->part, 
+            XPMEM_CONN_REMOTE,
+            xpmem_cmd_fn, 
+            (void *)palacios_state);
+
+    if (palacios_state->link <= 0) {
+        printk(KERN_ERR "Failed to register Palacios XPMEM interface with"
+            " name/forwarding service\n");
+        goto err_unmap;
+    }
+
 
     spin_lock_init(&(palacios_state->lock));
     palacios_state->workq = create_singlethread_workqueue("xpmem-work");
@@ -335,40 +372,16 @@ xpmem_driver =
 
 
 
-/* Callback for commands being issued by the XPMEM name/forwarding service */
-int
-xpmem_cmd_fn(struct xpmem_cmd_ex * cmd, 
-             void                * priv_data)
-{
-    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)priv_data;
-    unsigned long                 flags = 0;
-
-    if (!state->initialized) {
-        return -1;
-    }
-
-    spin_lock_irqsave(&(state->lock), flags);
-    {
-        xpmem_hcall(state->bar_state.xpmem_hcall_id, cmd);
-    }
-    spin_unlock_irqrestore(&(state->lock), flags);
-
-    return 0;
-}
-
-
 int
 xpmem_palacios_init(struct xpmem_partition * part) {
-    int           ret   = 0;
-    unsigned long flags = 0;
+    struct xpmem_palacios_state * state = NULL;
+    unsigned long                 flags = 0;
+    int                           ret   = 0;
 
-
-    spin_lock_irqsave(&(palacios_lock), flags);
-    {
-        part->palacios_state = &(palacios_devs[dev_off]);
+    state = kzalloc(sizeof(struct xpmem_palacios_state), GFP_KERNEL);
+    if (!state) {
+        return -1;
     }
-    spin_unlock_irqrestore(&(palacios_lock), flags);
-
 
     /* Register PCI driver */
     ret = pci_register_driver(&xpmem_driver);
@@ -377,17 +390,17 @@ xpmem_palacios_init(struct xpmem_partition * part) {
         printk(KERN_ERR "Failed to register Palacios XPMEM driver\n");
     }
 
+    /* Save partition pointer */
+    state->part = part;
 
-    /* Add connection to name/forwarding service */
-    part->palacios_state->part = part;
-    part->palacios_state->link = 
-        xpmem_add_connection(part, xpmem_cmd_fn, (void *)part->palacios_state);
-
-    if (part->palacios_state->link <= 0) {
-        printk(KERN_ERR "Failed to register Palacios XPMEM interface with"
-            " name/forwarding service\n");
-        ret = -1;
+    spin_lock_irqsave(&(palacios_lock), flags);
+    {
+        palacios_devs[dev_off] = state;
     }
+    spin_unlock_irqrestore(&(palacios_lock), flags);
+
+    /* Save pointer to this state */
+    part->palacios_state = state;
 
     return ret;
 }

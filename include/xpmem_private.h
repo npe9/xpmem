@@ -239,6 +239,7 @@ struct xpmem_attachment {
 	struct mm_struct *mm;	/* mm struct attached to */
 };
 
+
 struct xpmem_partition {
 	struct xpmem_hashlist *tg_hashtable;	/* locks + tg hash lists */
 
@@ -248,6 +249,7 @@ struct xpmem_partition {
 
     /* extended xpmem states */
     struct xpmem_palacios_state * palacios_state;
+    struct xpmem_domain_state   * domain_state;
     struct xpmem_ns_state       * ns_state;
     struct xpmem_fwd_state      * fwd_state;
 };
@@ -390,6 +392,11 @@ extern struct file_operations xpmem_debug_printk_procfs_fops;
 /* found in xpmem_mmu_notifier.c */
 extern int xpmem_mmu_notifier_init(struct xpmem_thread_group *);
 extern void xpmem_mmu_notifier_unlink(struct xpmem_thread_group *);
+
+
+/* found in xpmem_domain.c */
+extern int xpmem_domain_init(struct xpmem_partition *);
+extern int xpmem_domain_deinit(struct xpmem_partition *);
 
 /* found in xpmem_palacios.c */
 extern int xpmem_palacios_init(struct xpmem_partition *);

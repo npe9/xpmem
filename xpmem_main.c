@@ -35,9 +35,8 @@
 #include <xpmem_ns.h>
 
 /* TODO: set this based on some configure option */
-//#define EXT_PALACIOS
-//#define EXT_NS
-#define EXT_FWD
+#define XPMEM_EXTENDED
+#define XPMEM_NS
 
 struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
 
@@ -426,22 +425,19 @@ xpmem_init(void)
 	//debug_printk_entry->uid = current->cred->uid;
 	//debug_printk_entry->gid = current->cred->gid;
     
-#if defined(EXT_PALACIOS)
+#ifdef XPMEM_EXTENDED
+    xpmem_domain_init(xpmem_my_part);
     xpmem_palacios_init(xpmem_my_part);
-    xpmem_extended_ops = &palacios_ops;
-    extend_enabled = 1;
-#elif defined(EXT_NS)
+
+  #ifdef XPMEM_NS
     xpmem_ns_init(xpmem_my_part);
-//    xpmem_extended_ops = &ns_ops;
-    extend_enabled = 1;
-#elif defined(EXT_FWD)
-    xpmem_fwd_init(xpmem_my_part);
-//    xpmem_extended_ops = &ns_ops;
+  #else
+    xpmem_fwd_int(xpmem_my_part);
+  #endif /* XPMEM_NS */
     extend_enabled = 1;
 #else
-    xpmem_extended_ops = NULL;
     extend_enabled = 0;
-#endif
+#endif /* XPMEM_EXTENDED */
 
 	printk("SGI XPMEM kernel module v%s loaded\n",
 	       XPMEM_CURRENT_VERSION_STRING);
@@ -473,13 +469,16 @@ xpmem_exit(void)
 	//remove_proc_entry("debug_printk", xpmem_unpin_procfs_dir);
 	//remove_proc_entry(XPMEM_MODULE_NAME, NULL);
     
-#if defined(EXT_PALACIOS)
+#ifdef XPMEM_EXTENDED
+    xpmem_domain_deinit(xpmem_my_part);
     xpmem_palacios_deinit(xpmem_my_part);
-#elif defined(EXT_NS)
+
+  #ifdef XPMEM_NS
     xpmem_ns_deinit(xpmem_my_part);
-#elif defined(EXT_FWD)
-    xpmem_fwd_deinit(xpmem_my_part);
-#endif
+  #else
+    xpmem_fwd_deint(xpmem_my_part);
+  #endif /* XPMEM_NS */
+#endif /* XPMEM_EXTENDED */
 
 	printk("SGI XPMEM kernel module v%s unloaded\n",
 	       XPMEM_CURRENT_VERSION_STRING);

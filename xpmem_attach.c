@@ -360,7 +360,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
 	ap_tg = xpmem_tg_ref_by_apid(apid);
 	if (IS_ERR(ap_tg)) {
         if (extend_enabled) {
-            return xpmem_extended_ops->attach(xpmem_my_part, apid, offset, size, at_vaddr_p);
+            return xpmem_attach_remote(xpmem_my_part, apid, offset, size, at_vaddr_p);
         }
 		return PTR_ERR(ap_tg);
     }
@@ -524,7 +524,7 @@ xpmem_detach(u64 at_vaddr)
         ret = -EINVAL;
         up_write(&current->mm->mmap_sem);
         if (extend_enabled) {
-            ret = xpmem_extended_ops->detach(xpmem_my_part, at_vaddr);
+            ret = xpmem_detach_remote(xpmem_my_part, at_vaddr);
         }
 		return ret;
 	}

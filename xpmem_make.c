@@ -39,7 +39,7 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg)
 	segid.uniq = (unsigned short)uniq;
 
     if (extend_enabled) {
-        xpmem_extended_ops->make(xpmem_my_part, segid_p);
+        xpmem_make_remote(xpmem_my_part, segid_p);
         atomic_set(&seg_tg->uniq_apid_ex, 0);
         seg_tg->uniq_apid_ex_base = segid.uniq;
     }
@@ -229,7 +229,7 @@ xpmem_remove(xpmem_segid_t segid)
 	xpmem_tg_deref(seg_tg);
 
     if (extend_enabled) {
-        xpmem_extended_ops->remove(xpmem_my_part, segid);
+        xpmem_remove_remote(xpmem_my_part, segid);
     }
 
 	return ret;

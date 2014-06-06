@@ -74,6 +74,7 @@ struct xpmem_fwd_state {
     int             initialized;     /* device initialization */
     spinlock_t      lock;            /* state lock */
     xpmem_link_t    ns_link;         /* link to the name server */
+    xpmem_link_t    local_link;      /* link to our own domain */
     xpmem_domid_t   domid;           /* domid for this partition */
     atomic_t        uniq_link;       /* unique link generation */
 
@@ -238,7 +239,9 @@ xpmem_ping_ns(struct xpmem_fwd_state * state,
                 continue;
             }
 
-            xpmem_send_cmd_link(state, search_id, &ping_cmd);
+            if (xpmem_send_cmd_link(state, search_id, &ping_cmd)) {
+                printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", search_id);
+            }
         }
     }
 }
@@ -264,7 +267,9 @@ xpmem_pong_ns(struct xpmem_fwd_state * state,
                 continue;
             }
 
-            xpmem_send_cmd_link(state, search_id, &pong_cmd);
+            if (xpmem_send_cmd_link(state, search_id, &pong_cmd)) {
+                printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", search_id);
+            }
         }
     }
 }
@@ -308,7 +313,10 @@ xpmem_fwd_process_ping(struct xpmem_fwd_state * state,
             if (xpmem_have_ns_link(state)) {
                 /* Send PONG back to the source */
                 cmd->type = XPMEM_PONG_NS;
-                xpmem_send_cmd_link(state, link, cmd);
+
+                if (xpmem_send_cmd_link(state, link, cmd)) {
+                    printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", link);
+                }
             } else {
                 /* Broadcast the PING to everyone but the source */
                 xpmem_ping_ns(state, link);
@@ -328,6 +336,19 @@ xpmem_fwd_process_ping(struct xpmem_fwd_state * state,
                 state->ns_link = link;
             }
             spin_unlock_irqrestore(&(state->lock), flags);
+
+            /* Update the domid map to remember this link */
+            {
+                int ret = 0;
+
+                ret = htable_insert(state->domid_map,
+                        (uintptr_t)XPMEM_NS_DOMID,
+                        (uintptr_t)link);
+
+                if (ret == 0) {
+                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                }
+            }
 
             /* Broadcast the PONG to all our neighbors, except the source */
             xpmem_pong_ns(state, link);
@@ -351,15 +372,20 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
                         xpmem_link_t             link,
                         struct xpmem_cmd_ex    * cmd)
 {
+    /* There's no reason not to reuse the input command struct for responses */
+    struct xpmem_cmd_ex * out_cmd  = cmd;
+    xpmem_link_t          out_link = link;
+
     switch (cmd->type) {
         case XPMEM_DOMID_REQUEST: {
             /* A domid is requested by someone downstream from us on link
-             * 'link'. If we can't reach the nameserver, just drop it, because
-             * the request should not come through us unless we have a route
-             * already
+             * 'link'. If we can't reach the nameserver, just return failure,
+             * because the request should not come through us unless we have a
+             * route already
              */
             if (!xpmem_have_ns_link(state)) {
-                return;
+                out_cmd->domid_req.domid = -1;
+                goto out_domid_req;
             }
 
             /* Buffer the request */
@@ -369,45 +395,83 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
                 iter = kmalloc(sizeof(struct xpmem_domid_req_iter), GFP_KERNEL);
                 if (!iter) {
                     printk(KERN_ERR "XPMEM: out of memory\n");
-                    return;
+                    out_cmd->domid_req.domid = -1;
+                    goto out_domid_req;
                 }
 
                 iter->link = link;
                 list_add_tail(&(iter->node), &(state->domid_req_list));
+
+                /* Forward request up to the nameserver */
+                out_link = state->ns_link;
             }
 
-            /* Forward to the nameserver */
-            xpmem_send_cmd_link(state, state->ns_link, cmd);
+            break;
+
+            out_domid_req:
+            {
+                out_cmd->type   = XPMEM_DOMID_RESPONSE;
+                out_cmd->src_dom = state->domid;
+            }
+
             break;
         }
 
         case XPMEM_DOMID_RESPONSE: {
             /* We've been allocated a domid.
              *
-             * If our domain has no domid, assign it.
+             * If our domain has no domid, take it for ourselves it.
              * Otherwise, assign it to a link that has requested a domid from us
              */
              
             if (state->domid == 0) {
                 state->domid = cmd->domid_req.domid;
+
+                /* Update the domid map to remember our own domid */
+                {
+                    int ret = 0;
+
+                    ret = htable_insert(state->domid_map,
+                            (uintptr_t)state->domid,
+                            (uintptr_t)state->local_link);
+
+                    if (ret == 0) {
+                        printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                    }
+                }
+
+                return;
             } else {
                 struct xpmem_domid_req_iter * iter = NULL;
 
                 if (list_empty(&(state->domid_req_list))) {
                     printk(KERN_ERR "XPMEM: we currently do not support the buffering of"
                         " XPMEM domids\n");
-                    break;
+                    return;
                 }
 
                 iter = list_first_entry(&(state->domid_req_list),
                             struct xpmem_domid_req_iter,
                             node);
                 list_del(&(iter->node));
-                
-                /* Forward the domid to this link */
-                xpmem_send_cmd_link(state, iter->link, cmd);
 
+                /* Forward the domid to this link */
+                out_link = iter->link;
                 kfree(iter);
+
+                /* Update the domid map to remember who has this */
+                {
+                    int ret = 0;
+
+                    ret = htable_insert(state->domid_map,
+                            (uintptr_t)cmd->domid_req.domid,
+                            (uintptr_t)out_link);
+
+                    if (ret == 0) {
+                        printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                        out_cmd->domid_req.domid = -1;
+                    }
+                }
             }
 
             break;
@@ -417,6 +481,11 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
                 cmd_to_string(cmd->type));
             return;
         }
+    }
+
+    /* Send the response */
+    if (xpmem_send_cmd_link(state, out_link, out_cmd)) {
+        printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", out_link);
     }
 }
 
@@ -429,7 +498,36 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
                      xpmem_link_t              link,
                      struct xpmem_cmd_ex     * cmd)
 {
+    /* There's no reason not to reuse the input command struct for responses */
+    struct xpmem_cmd_ex * out_cmd  = cmd;
+    xpmem_link_t          out_link = link;
+
+
     switch (cmd->type) {
+
+        case XPMEM_MAKE:
+        case XPMEM_REMOVE:
+        case XPMEM_GET:
+        case XPMEM_RELEASE:
+        case XPMEM_ATTACH:
+        case XPMEM_DETACH:
+        case XPMEM_MAKE_COMPLETE:
+        case XPMEM_REMOVE_COMPLETE:
+        case XPMEM_GET_COMPLETE:
+        case XPMEM_RELEASE_COMPLETE:
+        case XPMEM_ATTACH_COMPLETE:
+        case XPMEM_DETACH_COMPLETE: {
+            out_link = htable_search(state->domid_map,
+                (uintptr_t)cmd->dst_dom);
+
+            if (out_link == 0) {
+                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
+                    " This should be impossible\n", cmd->dst_dom);
+                return;
+            }
+
+            break;
+        }
 
         default: {
             printk(KERN_ERR "XPMEM: unknown operation: %s\n",
@@ -438,6 +536,10 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
         }
     }
 
+    /* Send the response */
+    if (xpmem_send_cmd_link(state, out_link, out_cmd)) {
+        printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", out_link);
+    }
 }
 
 
@@ -548,14 +650,6 @@ xpmem_fwd_thread_fn(void * arg)
 
 
 
-
-struct xpmem_partition *
-xpmem_get_partition(void)
-{
-    extern struct xpmem_partition * xpmem_my_part;
-    return xpmem_my_part;
-}
-
 static xpmem_link_t
 alloc_xpmem_link(struct xpmem_fwd_state * state)
 {
@@ -569,8 +663,17 @@ alloc_xpmem_link(struct xpmem_fwd_state * state)
 }
 
 
+#ifdef XPMEM_FWD
+struct xpmem_partition *
+xpmem_get_partition(void)
+{
+    extern struct xpmem_partition * xpmem_my_part;
+    return xpmem_my_part;
+}
+
 xpmem_link_t
 xpmem_add_connection(struct xpmem_partition * part,
+                     xpmem_connection_t       type,
                      int (*in_cmd_fn)(struct xpmem_cmd_ex *, void * priv_data),
                      void                   * priv_data)
 {
@@ -587,6 +690,10 @@ xpmem_add_connection(struct xpmem_partition * part,
         struct xpmem_link_connection * conn  = NULL;
         unsigned long                  flags = 0;
         int                            error = 0;
+
+        if (type == XPMEM_CONN_LOCAL) {
+            state->local_link = link;
+        }
 
         conn = kmalloc(sizeof(struct xpmem_link_connection), GFP_KERNEL);
         if (!conn) {
@@ -690,7 +797,7 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
 
     return 0;
 }
-
+#endif
 
 /*
  * Timer function for pinging the name server
@@ -715,7 +822,10 @@ xpmem_ping_timer_fn(unsigned long data)
         memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
 
         domid_req.type = XPMEM_DOMID_REQUEST;
-        xpmem_send_cmd_link(state, state->ns_link, &domid_req);
+
+        if (xpmem_send_cmd_link(state, state->ns_link, &domid_req)) {
+            printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", state->ns_link);
+        }
     } else {
         /* Reset and restart the timer */
         state->ping_timer.expires = jiffies + (PING_PERIOD * HZ);
@@ -730,11 +840,10 @@ xpmem_ping_timer_fn(unsigned long data)
 int
 xpmem_fwd_init(struct xpmem_partition * part)
 {
-    struct xpmem_fwd_state * state = NULL;
 
-    state = kzalloc(sizeof(struct xpmem_fwd_state), GFP_KERNEL);
+    struct xpmem_fwd_state * state = kzalloc(sizeof(struct xpmem_fwd_state), GFP_KERNEL);
     if (!state) {
-        return -1;
+        return -1; 
     }
 
     /* Create hashtables */
@@ -774,6 +883,7 @@ xpmem_fwd_init(struct xpmem_partition * part)
     state->domid_issued = 0;
     state->cmd_issued   = 0;
     state->ns_link      = -1;
+    state->local_link   = -1;
     state->domid        = -1;
 
     state->initialized  = 1;

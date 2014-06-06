@@ -75,6 +75,7 @@
 struct xpmem_ns_state {
     int             initialized;     /* device initialization */
     spinlock_t      lock;            /* state lock */
+    xpmem_link_t    local_link;      /* link to our own domain */
     xpmem_domid_t   domid;           /* domid for this partition */
     atomic_t        uniq_link;       /* unique link generation */
     xpmem_segid_t   uniq_segid;      /* unique segid generation */
@@ -278,7 +279,7 @@ xpmem_ns_process_domid(struct xpmem_ns_state * state,
 
             /* Update domid map */
             {
-                int ret   = 0;
+                int ret = 0;
 
                 ret = htable_insert(state->domid_map,
                         (uintptr_t)out_cmd->domid_req.domid,
@@ -293,9 +294,8 @@ xpmem_ns_process_domid(struct xpmem_ns_state * state,
 
             out_domid_req:
             {
-                cmd->type    = XPMEM_DOMID_RESPONSE;
-                cmd->dst_dom = cmd->src_dom;
-                cmd->src_dom = state->domid;
+                out_cmd->type    = XPMEM_DOMID_RESPONSE;
+                out_cmd->src_dom = state->domid;
             }
 
             break;
@@ -685,13 +685,6 @@ xpmem_ns_thread_fn(void * arg)
 
 
 
-struct xpmem_partition *
-xpmem_get_partition(void)
-{
-    extern struct xpmem_partition * xpmem_my_part;
-    return xpmem_my_part;
-}
-
 static xpmem_link_t
 alloc_xpmem_link(struct xpmem_ns_state * state)
 {
@@ -705,8 +698,16 @@ alloc_xpmem_link(struct xpmem_ns_state * state)
 }
 
 
+struct xpmem_partition *
+xpmem_get_partition(void)
+{
+    extern struct xpmem_partition * xpmem_my_part;
+    return xpmem_my_part;
+}
+
 xpmem_link_t
 xpmem_add_connection(struct xpmem_partition * part,
+                     xpmem_connection_t       type,
                      int (*in_cmd_fn)(struct xpmem_cmd_ex *, void * priv_data),
                      void                   * priv_data)
 {
@@ -723,6 +724,24 @@ xpmem_add_connection(struct xpmem_partition * part,
         struct xpmem_link_connection * conn  = NULL;
         unsigned long                  flags = 0;
         int                            error = 0;
+
+        if (type == XPMEM_CONN_LOCAL) {
+            state->local_link = link;
+
+            /* Update the domid map to remember our own domid */
+            {
+                int ret = 0;
+
+                ret = htable_insert(state->domid_map,
+                        (uintptr_t)state->domid,
+                        (uintptr_t)state->local_link);
+
+                if (ret == 0) {
+                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                }
+            }
+
+        }
 
         conn = kmalloc(sizeof(struct xpmem_link_connection), GFP_KERNEL);
         if (!conn) {
@@ -828,16 +847,13 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
 }
 
 
-
 int
 xpmem_ns_init(struct xpmem_partition * part)
 {
-    struct xpmem_ns_state * state = NULL;
-
-    state = kzalloc(sizeof(struct xpmem_ns_state), GFP_KERNEL);
+    struct xpmem_ns_state * state = kzalloc(sizeof(struct xpmem_ns_state), GFP_KERNEL);
     if (!state) {
-        return -1;
-    }
+        return -1; 
+    }   
 
     /* Create hashtables */
     state->domid_map = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
@@ -884,8 +900,8 @@ xpmem_ns_init(struct xpmem_partition * part)
     state->domid_issued = 0;
     state->cmd_issued   = 0;
 
-    /* Name server gets domid 1 */
-    state->domid        = 1;
+    /* Name server gets a well-known domid */
+    state->domid        = XPMEM_NS_DOMID;
     state->uniq_segid   = MIN_UNIQ_SEGID;
     state->uniq_domid   = MIN_UNIQ_DOMID;
 
