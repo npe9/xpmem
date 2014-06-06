@@ -286,7 +286,7 @@ xpmem_pong_ns(struct xpmem_fwd_state * state,
             }
 
             if (xpmem_get_conn(state, search_id)) {
-                if (xpmem_send_cmd_link(state, search_id, &ping_cmd)) {
+                if (xpmem_send_cmd_link(state, search_id, &pong_cmd)) {
                     printk(KERN_ERR "XPMEM: cannot send PONG on link %lli\n", search_id);
                 }
             }
