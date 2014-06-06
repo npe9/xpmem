@@ -383,15 +383,11 @@ xpmem_palacios_init(struct xpmem_partition * part) {
         return -1;
     }
 
-    /* Register PCI driver */
-    ret = pci_register_driver(&xpmem_driver);
-
-    if (ret != 0) {
-        printk(KERN_ERR "Failed to register Palacios XPMEM driver\n");
-    }
-
     /* Save partition pointer */
     state->part = part;
+
+    /* Save pointer to this state */
+    part->palacios_state = state;
 
     spin_lock_irqsave(&(palacios_lock), flags);
     {
@@ -399,8 +395,12 @@ xpmem_palacios_init(struct xpmem_partition * part) {
     }
     spin_unlock_irqrestore(&(palacios_lock), flags);
 
-    /* Save pointer to this state */
-    part->palacios_state = state;
+    /* Register PCI driver */
+    ret = pci_register_driver(&xpmem_driver);
+
+    if (ret != 0) {
+        printk(KERN_ERR "Failed to register Palacios XPMEM driver\n");
+    }
 
     return ret;
 }
