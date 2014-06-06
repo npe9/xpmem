@@ -200,16 +200,21 @@ dom_type_to_string(xpmem_endpoint_t p)
 }
 
 
+static struct xpmem_link_connection *
+xpmem_get_conn(struct xpmem_fwd_state * state,
+               xpmem_link_t             link)
+{
+    return (struct xpmem_link_connection *)
+        htable_search(state->link_map, (uintptr_t)link);
+}
+
 /* Send a command along a connection link */
 static int
 xpmem_send_cmd_link(struct xpmem_fwd_state * state,
                     xpmem_link_t             link, 
                     struct xpmem_cmd_ex    * cmd)
 {
-    struct xpmem_link_connection * conn = NULL;
-
-    conn = (struct xpmem_link_connection *)
-        htable_search(state->link_map, (uintptr_t)link);
+    struct xpmem_link_connection * conn = xpmem_get_conn(state, link);
 
     if (conn == NULL) {
         return -1;
@@ -244,9 +249,12 @@ xpmem_ping_ns(struct xpmem_fwd_state * state,
                 continue;
             }
 
-            if (xpmem_send_cmd_link(state, search_id, &ping_cmd)) {
-                printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", search_id);
+            if (xpmem_get_conn(state, search_id)) {
+                if (xpmem_send_cmd_link(state, search_id, &ping_cmd)) {
+                    printk(KERN_ERR "XPMEM: cannot send PING on link %lli\n", search_id);
+                }
             }
+
         }
     }
 }
@@ -277,8 +285,10 @@ xpmem_pong_ns(struct xpmem_fwd_state * state,
                 continue;
             }
 
-            if (xpmem_send_cmd_link(state, search_id, &pong_cmd)) {
-                printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", search_id);
+            if (xpmem_get_conn(state, search_id)) {
+                if (xpmem_send_cmd_link(state, search_id, &ping_cmd)) {
+                    printk(KERN_ERR "XPMEM: cannot send PONG on link %lli\n", search_id);
+                }
             }
         }
     }
