@@ -239,6 +239,11 @@ xpmem_ping_ns(struct xpmem_fwd_state * state,
                 continue;
             }
 
+            /* Don't PING the local domain */
+            if (search_id == state->local_link) {
+                continue;
+            }
+
             if (xpmem_send_cmd_link(state, search_id, &ping_cmd)) {
                 printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", search_id);
             }
@@ -264,6 +269,11 @@ xpmem_pong_ns(struct xpmem_fwd_state * state,
             xpmem_link_t search_id = (xpmem_link_t)i;
 
             if (search_id == skip) {
+                continue;
+            }
+
+            /* Don't PONG the local domain */
+            if (search_id == state->local_link) {
                 continue;
             }
 
