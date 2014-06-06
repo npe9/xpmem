@@ -318,6 +318,8 @@ xpmem_probe_driver(struct pci_dev             * dev,
         goto err_unmap;
     }
 
+    printk("Palacios state partition: %p\n", (void *)palacios_state->part);
+
     /* Add connection to name/forwarding service */
     palacios_state->link = xpmem_add_connection(
             palacios_state->part, 

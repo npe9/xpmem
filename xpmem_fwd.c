@@ -698,8 +698,12 @@ xpmem_add_connection(struct xpmem_partition * part,
                      int (*in_cmd_fn)(struct xpmem_cmd_ex *, void * priv_data),
                      void                   * priv_data)
 {
-    struct xpmem_fwd_state * state = part->fwd_state;
+    struct xpmem_fwd_state * state = NULL;
     xpmem_link_t             link  = 0;        
+
+    printk("xpmem_add_connection: part: %p\n", (void *)part);
+
+    state = part->fwd_state;
 
     if (!state || !state->initialized) {
         return -1;
