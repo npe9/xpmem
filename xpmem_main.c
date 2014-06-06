@@ -426,14 +426,15 @@ xpmem_init(void)
 	//debug_printk_entry->gid = current->cred->gid;
     
 #ifdef XPMEM_EXTENDED
-    xpmem_domain_init(xpmem_my_part);
-    xpmem_palacios_init(xpmem_my_part);
-
   #ifdef XPMEM_NS
     xpmem_ns_init(xpmem_my_part);
   #else
     xpmem_fwd_int(xpmem_my_part);
   #endif /* XPMEM_NS */
+
+    xpmem_domain_init(xpmem_my_part);
+    xpmem_palacios_init(xpmem_my_part);
+
     extend_enabled = 1;
 #else
     extend_enabled = 0;

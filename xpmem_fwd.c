@@ -663,13 +663,14 @@ alloc_xpmem_link(struct xpmem_fwd_state * state)
 }
 
 
-#ifdef XPMEM_FWD
 struct xpmem_partition *
 xpmem_get_partition(void)
 {
     extern struct xpmem_partition * xpmem_my_part;
     return xpmem_my_part;
 }
+
+EXPORT_SYMBOL(xpmem_get_partition);
 
 xpmem_link_t
 xpmem_add_connection(struct xpmem_partition * part,
@@ -722,6 +723,7 @@ xpmem_add_connection(struct xpmem_partition * part,
     return link;
 }
 
+EXPORT_SYMBOL(xpmem_add_connection);
 
 int
 xpmem_cmd_deliver(struct xpmem_partition * part,
@@ -797,7 +799,8 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
 
     return 0;
 }
-#endif
+
+EXPORT_SYMBOL(xpmem_cmd_deliver);
 
 /*
  * Timer function for pinging the name server
@@ -860,15 +863,6 @@ xpmem_fwd_init(struct xpmem_partition * part)
         return -1;
     }
 
-    /* Create kernel thread */
-    state->fwd_thread = kthread_create(xpmem_fwd_thread_fn, state, "kxpmem-fwd");
-    if (!state->fwd_thread) {
-        free_htable(state->domid_map, 0, 0);
-        free_htable(state->link_map, 1, 0);
-        kfree(state);
-        return -1;
-    }
-
     /* Create everything else */
     INIT_LIST_HEAD(&(state->ping_list));
     INIT_LIST_HEAD(&(state->domid_list));
@@ -886,8 +880,6 @@ xpmem_fwd_init(struct xpmem_partition * part)
     state->local_link   = -1;
     state->domid        = -1;
 
-    state->initialized  = 1;
-
     /* Set up the timer */
     init_timer(&(state->ping_timer));
     state->ping_timer.expires = jiffies + (PING_PERIOD * HZ);
@@ -897,7 +889,22 @@ xpmem_fwd_init(struct xpmem_partition * part)
     /* Start the timer */
     add_timer(&(state->ping_timer));
 
+
+    /* Create kernel thread */
+    state->fwd_thread = kthread_create(xpmem_fwd_thread_fn, state, "kxpmem-fwd");
+    if (!state->fwd_thread) {
+        free_htable(state->domid_map, 0, 0);
+        free_htable(state->link_map, 1, 0);
+        kfree(state);
+        return -1;
+    }
+
+    /* Start kernel thread */
+    wake_up_process(state->ns_thread);
+
     part->fwd_state = state;
+
+    state->initialized  = 1;
     return 0;
 }
 

@@ -604,6 +604,8 @@ xpmem_ns_thread_fn(void * arg)
 
     while (1) {
         unsigned long flags;
+        
+        printk("XPMEM name server\n");
 
         spin_lock_irqsave(&(state->lock), flags);
         {
@@ -625,6 +627,8 @@ xpmem_ns_thread_fn(void * arg)
          *
          *  (3) Command available on cmd list
          */
+
+        printk("XPMEM: ns about to sleep\n");
         mb();
         wait_event_interruptible(state->ns_waitq,
             ( (state->ping_issued  == 1) || 
@@ -632,6 +636,7 @@ xpmem_ns_thread_fn(void * arg)
               (state->cmd_issued   == 1)
             )
         );
+        printk("XPMEM: ns awake!\n");
         
 
         if (state->ping_issued) {
@@ -705,6 +710,8 @@ xpmem_get_partition(void)
     return xpmem_my_part;
 }
 
+EXPORT_SYMBOL(xpmem_get_partition);
+
 xpmem_link_t
 xpmem_add_connection(struct xpmem_partition * part,
                      xpmem_connection_t       type,
@@ -770,6 +777,8 @@ xpmem_add_connection(struct xpmem_partition * part,
     return link;
 }
 
+EXPORT_SYMBOL(xpmem_add_connection);
+
 
 int
 xpmem_cmd_deliver(struct xpmem_partition * part,
@@ -814,6 +823,7 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
          (cmd->type == XPMEM_PONG_NS)
        )
     {
+        printk("XPMEM: command copied to ping list\n");
         spin_lock_irqsave(&(state->lock), flags);
         {
             list_add_tail(&(iter->node), &(state->ping_list));
@@ -824,6 +834,7 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
                 (cmd->type == XPMEM_DOMID_RESPONSE)
               )
     {
+        printk("XPMEM: command copied to domid list\n");
         spin_lock_irqsave(&(state->lock), flags);
         {
             list_add_tail(&(iter->node), &(state->domid_list));
@@ -831,6 +842,7 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
         }
         spin_unlock_irqrestore(&(state->lock), flags);
     } else {
+        printk("XPMEM: command copied to cmd list\n");
         spin_lock_irqsave(&(state->lock), flags);
         {
             list_add_tail(&(iter->node), &(state->cmd_list));
@@ -845,6 +857,8 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
 
     return 0;
 }
+
+EXPORT_SYMBOL(xpmem_cmd_deliver);
 
 
 int
@@ -877,16 +891,6 @@ xpmem_ns_init(struct xpmem_partition * part)
         return -1;
     }
 
-    /* Create kernel thread */
-    state->ns_thread = kthread_create(xpmem_ns_thread_fn, state, "kxpmem-ns");
-    if (!state->ns_thread) {
-        free_htable(state->domid_map, 0, 0);
-        free_htable(state->link_map, 1, 0);
-        free_htable(state->segid_map, 0, 0);
-        kfree(state);
-        return -1;
-    }
-
     /* Create everything else */
     INIT_LIST_HEAD(&(state->ping_list));
     INIT_LIST_HEAD(&(state->domid_list));
@@ -905,9 +909,22 @@ xpmem_ns_init(struct xpmem_partition * part)
     state->uniq_segid   = MIN_UNIQ_SEGID;
     state->uniq_domid   = MIN_UNIQ_DOMID;
 
-    state->initialized  = 1;
+    /* Create kernel thread */
+    state->ns_thread = kthread_create(xpmem_ns_thread_fn, state, "kxpmem-ns");
+    if (!state->ns_thread) {
+        free_htable(state->domid_map, 0, 0);
+        free_htable(state->link_map, 1, 0);
+        free_htable(state->segid_map, 0, 0);
+        kfree(state);
+        return -1;
+    }
+
+    /* Start kernel thread */
+    wake_up_process(state->ns_thread);
 
     part->ns_state = state;
+
+    state->initialized  = 1;
     return 0;
 }
 
