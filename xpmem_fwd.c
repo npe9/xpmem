@@ -900,7 +900,7 @@ xpmem_fwd_init(struct xpmem_partition * part)
     }
 
     /* Start kernel thread */
-    wake_up_process(state->ns_thread);
+    wake_up_process(state->fwd_thread);
 
     part->fwd_state = state;
 
