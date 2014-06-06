@@ -36,7 +36,8 @@
 
 /* TODO: set this based on some configure option */
 #define XPMEM_EXTENDED
-#define XPMEM_NS
+//#define XPMEM_NS
+#define XPMEM_FWD
 
 struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
 
@@ -429,7 +430,7 @@ xpmem_init(void)
   #ifdef XPMEM_NS
     xpmem_ns_init(xpmem_my_part);
   #else
-    xpmem_fwd_int(xpmem_my_part);
+    xpmem_fwd_init(xpmem_my_part);
   #endif /* XPMEM_NS */
 
     xpmem_domain_init(xpmem_my_part);
@@ -477,7 +478,7 @@ xpmem_exit(void)
   #ifdef XPMEM_NS
     xpmem_ns_deinit(xpmem_my_part);
   #else
-    xpmem_fwd_deint(xpmem_my_part);
+    xpmem_fwd_deinit(xpmem_my_part);
   #endif /* XPMEM_NS */
 #endif /* XPMEM_EXTENDED */
 
