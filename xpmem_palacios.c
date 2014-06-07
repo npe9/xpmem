@@ -410,6 +410,8 @@ xpmem_palacios_deinit(struct xpmem_partition * part)
 {
     pci_unregister_driver(&xpmem_driver);
 
+    printk("XPMEM palacios deinited\n");
+
     return 0;
 }
 

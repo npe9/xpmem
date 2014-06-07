@@ -592,6 +592,8 @@ xpmem_domain_deinit(struct xpmem_partition * part)
     kfree(state);
     part->domain_state = NULL;
 
+    printk("XPMEM domain deinited\n");
+
     return 0;
 }
 

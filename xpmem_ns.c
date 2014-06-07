@@ -9,7 +9,6 @@
 
 
 #include <linux/module.h>
-#include <linux/list.h>
 #include <linux/kthread.h>
 #include <linux/timer.h>
 #include <linux/delay.h>
@@ -27,48 +26,65 @@
  * enclave connected to the domain, as well as one for local processes.
  *
  * Each domain in the system has a map of local connection links to a list of
- * XPMEM domids accessible via those links. For example, consider the following
- * topology:
+ * XPMEM domids accessible "down the tree" via those links. The map also
+ * includes the "upstream" link through which the name server may be reached.
+ *
+ * For example, consider the following topology:
  *
  *               <XPMEM name server>
  *                       ^
  *                       |
  *                       |
- *                  <  Dom 1  >
+ *                       v
+ *                  <  Dom 2  >
  *                   ^       ^
  *                   |       |
  *                   |       |
- *                <Dom 2>  <Dom 3>
+ *                   v       v
+ *                <Dom 3>  <Dom 4>
  *                   ^
  *                   |
  *                   |
- *                <Dom 4>
+ *                   v 
+ *                <Dom 5>
  *
  * The maps look like:
  *
- * <Domain 0 (name server) map>
- *   [0: local] (local processes (domid 0) are connected via link 0)
- *   [1: <1, 2, 3, 4>] (domids 1, 2, 3, and 4 are downstream via link 1)
- *
- * <Domain 1 map>
- *   [0: local] (local processes (domid 1) are connected via link 0)
- *   [1: <2,4>] (domids 2 and 4 are downstream via link 1)
- *   [2: <3>]   (domid 3 is downstream via link 2)
+ * <Domain 1 (name server) map>
+ *   [0: 1] (local processes are connected via link 1)
+ *   [2: 2] (domid 2 is connected via link 2)
+ *   [3: 2] (domid 3 is connected via link 2)
+ *   [4: 2] (domid 4 is connected via link 2)
+ *   [5: 2] (domid 5 is connected via link 2)
  *
  * <Domain 2 map>
- *   [0: local] (local processes (domid 2) are connected via link 0)
- *   [1: <4>] (domid 4 is downstream via link 1)
+ *   [0: 1] (local processes are connected via link 1)
+ *   [1: 2] (domid 1 (name server) is connected via link 2)
+ *   [3: 3] (domid 3 is connected via link 3)
+ *   [4: 4] (domid 4 is connected via link 4)
+ *   [5: 3] (domid 5 is connected via link 3)
  *
  * <Domain 3 map>
- *   [0: local] (local processes (domid 3) are connected via link 0)
+ *   [0: 1] (local processes are connected via link 1)
+ *   [1: 2] (domid 1 (name server) is connected via link 2)
+ *   [2: 2] (domid 2 is connected via link 2)
+ *   [5: 3] (domid 5 is connected via link 3)
  *
  * <Domain 4 map>
- *   [0: local] (local processes (domid 4) are connected via link 0)
+ *   [0: 1] (local processes are connected via link 1)
+ *   [1: 2] (domid 1 (name server) is connected via link 2)
+ *   [2: 2] (domid 2 is connected via link 2)
+ *
+ * <Domain 5 map>
+ *   [0: 1] (local processes are connected via link 1)
+ *   [1: 2] (domid 1 (name server) is connected via link 2)
+ *   [3: 2] (domid 3 is connected via link 2)
+ *
+ *
  *
  */
 
 #define XPMEM_MAX_LINK_ID 16
-
 #define MIN_UNIQ_SEGID    32
 #define MIN_UNIQ_DOMID    32
 
@@ -77,45 +93,20 @@ struct xpmem_ns_state {
     spinlock_t      lock;            /* state lock */
     xpmem_link_t    local_link;      /* link to our own domain */
     xpmem_domid_t   domid;           /* domid for this partition */
+
     atomic_t        uniq_link;       /* unique link generation */
-    xpmem_segid_t   uniq_segid;      /* unique segid generation */
-    xpmem_domid_t   uniq_domid;      /* unique domid generation */
+    atomic_t        uniq_segid;      /* unique segid generation */
+    atomic_t        uniq_domid;      /* unique domid generation */
 
 
-    /* ping list */
-    struct list_head  ping_list;
-    int               ping_issued;
-
-    /* domid list */
-    struct list_head  domid_list;
-    int               domid_issued;
-
-    /* command list */
-    struct list_head cmd_list;
-    int              cmd_issued;
-
+    /* map of XPMEM segids to XPMEM domids */
+    struct xpmem_hashtable * segid_map;
 
     /* map of XPMEM domids to local link ids (as specified above) */
     struct xpmem_hashtable * domid_map;
 
     /* map of link ids to connection structs */
     struct xpmem_hashtable * link_map;
-
-    /* map of XPMEM segids to XPMEM domids */
-    struct xpmem_hashtable * segid_map;
-
-    /* waitq for name service */
-    wait_queue_head_t    ns_waitq;
-
-    /* kernel thread for running the name service */
-    struct task_struct * ns_thread;
-};
-
-
-struct xpmem_cmd_ex_iter {
-    struct xpmem_cmd_ex * cmd;
-    xpmem_link_t          link;
-    struct list_head      node;
 };
 
 
@@ -123,7 +114,6 @@ struct xpmem_link_connection {
     int (*in_cmd_fn)(struct xpmem_cmd_ex *, void * priv_data); 
     void * priv_data;
 };
-    
 
 
 static u32
@@ -195,16 +185,223 @@ dom_type_to_string(xpmem_endpoint_t p)
 }
 
 
+static int
+alloc_xpmem_segid(struct xpmem_ns_state * state, xpmem_segid_t * segid)
+{
+    struct xpmem_id * id   = NULL;
+    int32_t           uniq = 0;
+
+    uniq = atomic_inc_return(&(state->uniq_segid));
+
+    if (uniq > XPMEM_MAX_UNIQ_SEGID) {
+        return -1;
+    }
+
+    id       = (struct xpmem_id *)segid;
+    id->uniq = (unsigned short)(uniq * XPMEM_MAX_UNIQ_APID);
+
+    return 0;
+}
+
+static xpmem_domid_t
+alloc_xpmem_domid(struct xpmem_ns_state * state)
+{
+    return (xpmem_domid_t)atomic_inc_return(&(state->uniq_domid));
+}
+
+static xpmem_link_t
+alloc_xpmem_link(struct xpmem_ns_state * state)
+{
+    xpmem_link_t id = (xpmem_link_t)atomic_inc_return(&(state->uniq_link));
+
+    if (id > XPMEM_MAX_LINK_ID) {
+        return -1;
+    }
+
+    return id;
+}
+
+
+/* Hashtable helpers */
+static int
+xpmem_add_segid(struct xpmem_ns_state * state, 
+                xpmem_segid_t           segid,
+                xpmem_domid_t           domid)
+{
+    unsigned long flags  = 0;
+    int           status = 0;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        status = htable_insert(state->segid_map,
+                    (uintptr_t)segid,
+                    (uintptr_t)domid);
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return status;
+}
+
+static int
+xpmem_add_domid(struct xpmem_ns_state * state, 
+                xpmem_domid_t           domid,
+                xpmem_link_t            link)
+{
+    unsigned long flags  = 0;
+    int           status = 0;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        status = htable_insert(state->domid_map,
+                    (uintptr_t)domid,
+                    (uintptr_t)link);
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return status;
+}
+
+static int
+xpmem_add_link(struct xpmem_ns_state        * state, 
+               xpmem_link_t                   link,
+               struct xpmem_link_connection * conn)
+{
+    unsigned long flags  = 0;
+    int           status = 0;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        status = htable_insert(state->link_map,
+                    (uintptr_t)link,
+                    (uintptr_t)conn);
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return status;
+}
+
+static xpmem_domid_t
+xpmem_search_or_remove_segid(struct xpmem_ns_state * state,
+                             xpmem_segid_t           segid,
+                             int                     remove)
+{
+    unsigned long flags  = 0;
+    xpmem_domid_t result = 0;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        if (remove) {
+            result = (xpmem_domid_t)htable_remove(state->segid_map,
+                        (uintptr_t)segid, 
+                        0);
+        } else {
+            result = (xpmem_domid_t)htable_search(state->segid_map,
+                        (uintptr_t)segid); 
+        }
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return result;
+}
+
+static xpmem_domid_t
+xpmem_search_segid(struct xpmem_ns_state * state,
+                   xpmem_segid_t           segid)
+{
+    return xpmem_search_or_remove_segid(state, segid, 0);
+}
+
+static xpmem_domid_t
+xpmem_remove_segid(struct xpmem_ns_state * state,
+                   xpmem_segid_t           segid)
+{
+    return xpmem_search_or_remove_segid(state, segid, 1);
+}
+
+static xpmem_link_t
+xpmem_search_or_remove_domid(struct xpmem_ns_state * state,
+                             xpmem_domid_t           domid,
+                             int                     remove)
+{
+    unsigned long flags  = 0;
+    xpmem_link_t  result = 0;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        if (remove) {
+            result = (xpmem_link_t)htable_remove(state->domid_map,
+                        (uintptr_t)domid,
+                        0);
+        } else {
+            result = (xpmem_link_t)htable_search(state->domid_map,
+                        (uintptr_t)domid);
+        }
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return result;
+}
+
+static xpmem_link_t
+xpmem_search_domid(struct xpmem_ns_state * state,
+                  xpmem_link_t             link)
+{
+    return xpmem_search_or_remove_domid(state, link, 0);
+}
+
+static xpmem_link_t
+xpmem_remove_domid(struct xpmem_ns_state * state,
+                  xpmem_link_t             link)
+{
+    return xpmem_search_or_remove_domid(state, link, 1);
+}
+
+
+static struct xpmem_link_connection *
+xpmem_search_or_remove_link(struct xpmem_ns_state * state,
+                            xpmem_link_t            link,
+                            int                     remove)
+{
+    unsigned long                  flags  = 0;
+    struct xpmem_link_connection * result = NULL;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        if (remove) {
+            result = (struct xpmem_link_connection *)htable_remove(state->link_map,
+                        (uintptr_t)link,
+                        1);
+        } else {
+            result = (struct xpmem_link_connection *)htable_search(state->link_map,
+                        (uintptr_t)link);
+        }
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return result;
+}
+
+static struct xpmem_link_connection *
+xpmem_search_link(struct xpmem_ns_state * state,
+                  xpmem_link_t            link)
+{
+    return xpmem_search_or_remove_link(state, link, 0);
+}
+
+static struct xpmem_link_connection *
+xpmem_remove_link(struct xpmem_ns_state * state,
+                  xpmem_link_t            link)
+{
+    return xpmem_search_or_remove_link(state, link, 1);
+}
+
 /* Send a command along a connection link */
 static int
 xpmem_send_cmd_link(struct xpmem_ns_state * state,
                     xpmem_link_t            link, 
                     struct xpmem_cmd_ex   * cmd)
 {
-    struct xpmem_link_connection * conn = NULL;
-
-    conn = (struct xpmem_link_connection *)
-        htable_search(state->link_map, (uintptr_t)link);
+    struct xpmem_link_connection * conn = xpmem_search_link(state, link);
 
     if (conn == NULL) {
         return -1;
@@ -212,7 +409,6 @@ xpmem_send_cmd_link(struct xpmem_ns_state * state,
 
     return conn->in_cmd_fn(cmd, conn->priv_data);
 }
-
 
 
 /* Process an XPMEM_PING/PONG_NS command */
@@ -254,13 +450,6 @@ xpmem_ns_process_ping(struct xpmem_ns_state * state,
     }
 }
 
-static xpmem_domid_t
-alloc_xpmem_domid(struct xpmem_ns_state * state)
-{
-    xpmem_domid_t domid = state->uniq_domid;
-    state->uniq_domid++;
-    return domid;
-}
 
 /* Process an XPMEM_DOMID_REQUEST/RESPONSE command */
 static void
@@ -274,22 +463,18 @@ xpmem_ns_process_domid(struct xpmem_ns_state * state,
 
     switch (cmd->type) {
         case XPMEM_DOMID_REQUEST: {
+            int ret = 0;
+
             /* A domid is requested by someone downstream from us on 'link' */
             out_cmd->domid_req.domid = alloc_xpmem_domid(state);
 
             /* Update domid map */
-            {
-                int ret = 0;
+            ret = xpmem_add_domid(state, out_cmd->domid_req.domid, link);
 
-                ret = htable_insert(state->domid_map,
-                        (uintptr_t)out_cmd->domid_req.domid,
-                        (uintptr_t)link);
-
-                if (ret == 0) {
-                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
-                    out_cmd->domid_req.domid = -1;
-                    goto out_domid_req;
-                }
+            if (ret == 0) {
+                printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                out_cmd->domid_req.domid = -1;
+                goto out_domid_req;
             }
 
             out_domid_req:
@@ -327,26 +512,6 @@ xpmem_ns_process_domid(struct xpmem_ns_state * state,
 }
 
 
-static int
-alloc_xpmem_segid(struct xpmem_ns_state * state, xpmem_segid_t * segid)
-{
-    struct xpmem_id * id   = NULL;
-    int32_t           uniq = 0;
-
-    uniq = state->uniq_segid;
-
-    if (uniq > XPMEM_MAX_UNIQ_SEGID) {
-        return -1;
-    }
-
-    state->uniq_segid++;
-
-    id       = (struct xpmem_id *)segid;
-    id->uniq = (unsigned short)(uniq * XPMEM_MAX_UNIQ_APID);
-
-    return 0;
-}
-
 
 /* Process a regular XPMEM command. If we get here we are connected to the name
  * server already and have a domid
@@ -372,9 +537,7 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
             }
 
             /* Store in hashtable */
-            ret = htable_insert(state->segid_map, 
-                    (uintptr_t)cmd->make.segid, 
-                    (uintptr_t)cmd->src_dom);
+            ret = xpmem_add_segid(state, cmd->make.segid, cmd->src_dom);
 
             if (ret == 0) {
                 printk(KERN_ERR "XPMEM: cannot insert into segid hashtable\n");
@@ -398,15 +561,12 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
             xpmem_domid_t domid = 0;
 
             /* Remove segid from map */
-            domid = (xpmem_domid_t)htable_remove(state->segid_map, 
-                    (uintptr_t)cmd->remove.segid, 
-                    0);
+            domid = xpmem_remove_segid(state, cmd->remove.segid); 
 
             if (domid == 0) {
                 printk(KERN_ERR "XPMEM: cannot remove segid %lli from hashtable\n",
                     cmd->remove.segid);
             }
-
 
             {
                 out_cmd->type    = XPMEM_REMOVE_COMPLETE;
@@ -422,8 +582,7 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
             xpmem_domid_t domid = 0;
 
             /* Search segid map */
-            domid = (xpmem_domid_t)htable_search(state->segid_map, 
-                    (uintptr_t)cmd->get.segid);
+            domid = xpmem_search_segid(state, cmd->get.segid);
 
             if (domid == 0) {
                 printk(KERN_ERR "XPMEM: cannot find segid %lli in hashtable\n",
@@ -431,8 +590,8 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
                 goto err_get;
             }
 
-            out_link = (xpmem_link_t)htable_search(state->domid_map,
-                    (uintptr_t)domid);
+            /* Search domid map for link */
+            out_link = xpmem_search_domid(state, domid);
 
             if (out_link == 0) {
                 printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
@@ -469,8 +628,8 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
             {
                 xpmem_domid_t domid = 0;
 
-                domid = (xpmem_domid_t)htable_search(state->segid_map,
-                        (uintptr_t)*((xpmem_segid_t *)&search_id));
+                /* Search segid map */
+                domid = xpmem_search_segid(state, *((xpmem_segid_t *)&search_id));
 
                 if (domid == 0) {
                     printk(KERN_ERR "XPMEM: cannot find apid %lli in hashtable\n",
@@ -478,8 +637,8 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
                     goto err_release;
                 }
 
-                out_link = (xpmem_link_t)htable_search(state->domid_map,
-                        (uintptr_t)domid);
+                /* Search domid map for link */
+                out_link = xpmem_search_domid(state, domid);
 
                 if (out_link == 0) {
                     printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
@@ -516,8 +675,8 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
             {
                 xpmem_domid_t domid = 0;
 
-                domid = (xpmem_domid_t)htable_search(state->segid_map,
-                        (uintptr_t)*((xpmem_segid_t *)&search_id));
+                /* Search segid map */
+                domid = xpmem_search_segid(state, *((xpmem_segid_t *)&search_id));
 
                 if (domid == 0) {
                     printk(KERN_ERR "XPMEM: cannot find apid %lli in hashtable\n",
@@ -525,8 +684,8 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
                     goto err_attach;
                 }
 
-                out_link = (xpmem_link_t)htable_search(state->domid_map,
-                        (uintptr_t)domid);
+                /* Search domid map for link */
+                out_link = xpmem_search_domid(state, domid);
 
                 if (out_link == 0) {
                     printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
@@ -566,12 +725,12 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
         case XPMEM_RELEASE_COMPLETE:
         case XPMEM_ATTACH_COMPLETE:
         case XPMEM_DETACH_COMPLETE: {
-            out_link = (xpmem_link_t)htable_search(state->domid_map,
-                    (uintptr_t)cmd->dst_dom);
+            out_link = xpmem_search_domid(state, cmd->dst_dom);
 
             if (out_link == 0) {
                 printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
                     " This should be impossible\n", cmd->dst_dom);
+                return;
             }
 
             break; 
@@ -594,114 +753,7 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
 }
 
 
-/*
- * This is the kernel thread implementing the name service
- */
-static int
-xpmem_ns_thread_fn(void * arg)
-{
-    struct xpmem_ns_state * state = (struct xpmem_ns_state *)arg;
-
-    while (1) {
-        unsigned long flags;
-        
-        printk("XPMEM name server\n");
-
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            state->ping_issued = !list_empty(&(state->ping_list));
-            state->domid_issued = !list_empty(&(state->domid_list));
-            state->cmd_issued = !list_empty(&(state->cmd_list));
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
-
-
-        /* The condition for processing is:
-         *  (1) PING/PONG in ping list
-         *
-         *              OR
-         *
-         *  (2) DOMID req/response in domid list
-         *
-         *              OR
-         *
-         *  (3) Command available on cmd list
-         */
-
-        printk("XPMEM: ns about to sleep\n");
-        mb();
-        wait_event_interruptible(state->ns_waitq,
-            ( (state->ping_issued  == 1) || 
-              (state->domid_issued == 1) ||
-              (state->cmd_issued   == 1)
-            )
-        );
-        printk("XPMEM: ns awake!\n");
-        
-
-        if (state->ping_issued) {
-            struct xpmem_cmd_ex_iter * iter = NULL;
-
-            spin_lock_irqsave(&(state->lock), flags);
-            {
-                iter = list_first_entry(&(state->ping_list), struct xpmem_cmd_ex_iter, node);
-                list_del(&(iter->node));
-            }
-            spin_unlock_irqrestore(&(state->lock), flags);
-
-            xpmem_ns_process_ping(state, iter->link, iter->cmd);
-
-            kfree(iter->cmd);
-            kfree(iter);
-        } else if (state->domid_issued) {
-            struct xpmem_cmd_ex_iter * iter = NULL;
-
-            spin_lock_irqsave(&(state->lock), flags);
-            {
-                iter = list_first_entry(&(state->ping_list), struct xpmem_cmd_ex_iter, node);
-                list_del(&(iter->node));
-            }
-            spin_unlock_irqrestore(&(state->lock), flags);
-
-            xpmem_ns_process_domid(state, iter->link, iter->cmd);
-
-            kfree(iter->cmd);
-            kfree(iter);
-        } else {
-            struct xpmem_cmd_ex_iter * iter = NULL;
-
-            spin_lock_irqsave(&(state->lock), flags);
-            {
-                iter = list_first_entry(&(state->cmd_list), struct xpmem_cmd_ex_iter, node);
-                list_del(&(iter->node));
-            }
-            spin_unlock_irqrestore(&(state->lock), flags);
-
-            xpmem_ns_process_cmd(state, iter->link, iter->cmd);
-
-            kfree(iter->cmd);
-            kfree(iter);
-        }
-    }
-
-    return 0;
-}
-
-
-
-
-static xpmem_link_t
-alloc_xpmem_link(struct xpmem_ns_state * state)
-{
-    xpmem_link_t id = (xpmem_link_t)atomic_inc_return(&(state->uniq_link));
-
-    if (id > XPMEM_MAX_LINK_ID) {
-        return -1;
-    }
-
-    return id;
-}
-
+/* Interface */
 
 struct xpmem_partition *
 xpmem_get_partition(void)
@@ -729,25 +781,18 @@ xpmem_add_connection(struct xpmem_partition * part,
 
     if (link > 0) {
         struct xpmem_link_connection * conn  = NULL;
-        unsigned long                  flags = 0;
         int                            error = 0;
 
         if (type == XPMEM_CONN_LOCAL) {
             state->local_link = link;
 
             /* Update the domid map to remember our own domid */
-            {
-                int ret = 0;
+            error = xpmem_add_domid(state, state->domid, state->local_link);
 
-                ret = htable_insert(state->domid_map,
-                        (uintptr_t)state->domid,
-                        (uintptr_t)state->local_link);
-
-                if (ret == 0) {
-                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
-                }
+            if (error == 0) {
+                printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                return -1;
             }
-
         }
 
         conn = kmalloc(sizeof(struct xpmem_link_connection), GFP_KERNEL);
@@ -759,18 +804,12 @@ xpmem_add_connection(struct xpmem_partition * part,
         conn->in_cmd_fn = in_cmd_fn;
         conn->priv_data = priv_data;
 
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            if (htable_insert(state->link_map, (uintptr_t)link,
-                        (uintptr_t)conn) == 0) {
-                error = -1;
-            }
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
+        /* Update the link map */
+        error = xpmem_add_link(state, link, conn);
 
-        if (error) {
+        if (error == 0) {
             printk(KERN_ERR "XPMEM: cannot insert into link hashtable\n");
-            return error;
+            return -1;
         }
     }
 
@@ -785,75 +824,27 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
                   xpmem_link_t             link,
                   struct xpmem_cmd_ex    * cmd)
 {
-    struct xpmem_ns_state *   state = part->ns_state;
-    struct xpmem_cmd_ex_iter * iter  = NULL;
-    unsigned long              flags = 0;
+    struct xpmem_ns_state * state = part->ns_state;
 
     if (!state || !state->initialized) {
         return -1;
     }
 
-    iter = kmalloc(sizeof(struct xpmem_cmd_ex_iter), GFP_KERNEL);
-    if (!iter) {
-        return -ENOMEM;
+    switch (cmd->type) {
+        case XPMEM_PING_NS:
+        case XPMEM_PONG_NS:
+            xpmem_ns_process_ping(state, link, cmd);
+            break;
+
+        case XPMEM_DOMID_REQUEST:
+        case XPMEM_DOMID_RESPONSE:
+            xpmem_ns_process_domid(state, link, cmd);
+            break;
+
+        default:
+            xpmem_ns_process_cmd(state, link, cmd);
+            break;
     }
-
-    /* Full command copy */
-    {
-        uint64_t pfn_len = 0;
-
-        if (cmd->type == XPMEM_ATTACH_COMPLETE) {
-            pfn_len = sizeof(uint64_t) * cmd->attach.num_pfns;
-        }
-
-        iter->cmd = kmalloc(sizeof(struct xpmem_cmd_ex) + pfn_len, GFP_KERNEL);
-        if (!iter->cmd) {
-            kfree(iter);
-            return -ENOMEM;
-        }
-
-        memcpy(iter->cmd, cmd, sizeof(struct xpmem_cmd_ex) + pfn_len);
-    }
-
-    iter->link = link;
-
-
-    /* Put on the correct list */
-    if ( (cmd->type == XPMEM_PING_NS) ||
-         (cmd->type == XPMEM_PONG_NS)
-       )
-    {
-        printk("XPMEM: command copied to ping list\n");
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            list_add_tail(&(iter->node), &(state->ping_list));
-            state->ping_issued = 1;
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
-    } else if ( (cmd->type == XPMEM_DOMID_REQUEST) ||
-                (cmd->type == XPMEM_DOMID_RESPONSE)
-              )
-    {
-        printk("XPMEM: command copied to domid list\n");
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            list_add_tail(&(iter->node), &(state->domid_list));
-            state->domid_issued = 1;
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
-    } else {
-        printk("XPMEM: command copied to cmd list\n");
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            list_add_tail(&(iter->node), &(state->cmd_list));
-            state->cmd_issued = 1;
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
-    }
-
-
-    mb();
-    wake_up_interruptible(&(state->ns_waitq));
 
     return 0;
 }
@@ -892,39 +883,16 @@ xpmem_ns_init(struct xpmem_partition * part)
     }
 
     /* Create everything else */
-    INIT_LIST_HEAD(&(state->ping_list));
-    INIT_LIST_HEAD(&(state->domid_list));
-    INIT_LIST_HEAD(&(state->cmd_list));
-
     spin_lock_init(&(state->lock));
     atomic_set(&(state->uniq_link), 0);
-    init_waitqueue_head(&(state->ns_waitq));
-
-    state->ping_issued  = 0;
-    state->domid_issued = 0;
-    state->cmd_issued   = 0;
+    atomic_set(&(state->uniq_segid), MIN_UNIQ_SEGID);
+    atomic_set(&(state->uniq_domid), MIN_UNIQ_DOMID);
 
     /* Name server gets a well-known domid */
     state->domid        = XPMEM_NS_DOMID;
-    state->uniq_segid   = MIN_UNIQ_SEGID;
-    state->uniq_domid   = MIN_UNIQ_DOMID;
-
-    /* Create kernel thread */
-    state->ns_thread = kthread_create(xpmem_ns_thread_fn, state, "kxpmem-ns");
-    if (!state->ns_thread) {
-        free_htable(state->domid_map, 0, 0);
-        free_htable(state->link_map, 1, 0);
-        free_htable(state->segid_map, 0, 0);
-        kfree(state);
-        return -1;
-    }
-
-    /* Start kernel thread */
-    wake_up_process(state->ns_thread);
-
-    part->ns_state = state;
-
+    part->ns_state      = state;
     state->initialized  = 1;
+
     return 0;
 }
 
@@ -942,35 +910,10 @@ xpmem_ns_deinit(struct xpmem_partition * part)
     free_htable(state->link_map, 1, 0);
     free_htable(state->segid_map, 0, 0);
 
-    /* Free kernel threads */
-    kthread_stop(state->ns_thread);
-
-    /* Free ping/domid/cmd lists */
-    {
-        struct xpmem_cmd_ex_iter * iter = NULL;
-        struct xpmem_cmd_ex_iter * next = NULL;
-
-        list_for_each_entry_safe(iter, next, &(state->ping_list), node) {
-            list_del(&(iter->node));
-            kfree(iter->cmd);
-            kfree(iter);
-        }
-
-        list_for_each_entry_safe(iter, next, &(state->domid_list), node) {
-            list_del(&(iter->node));
-            kfree(iter->cmd);
-            kfree(iter);
-        }
-
-        list_for_each_entry_safe(iter, next, &(state->cmd_list), node) {
-            list_del(&(iter->node));
-            kfree(iter->cmd);
-            kfree(iter);
-        }
-    }
-
     kfree(state);
     part->ns_state = NULL;
+
+    printk("XPMEM ns deinited\n");
 
     return 0;
 }

@@ -27,43 +27,61 @@
  * enclave connected to the domain, as well as one for local processes.
  *
  * Each domain in the system has a map of local connection links to a list of
- * XPMEM domids accessible via those links. For example, consider the following
- * topology:
+ * XPMEM domids accessible "down the tree" via those links. The map also
+ * includes the "upstream" link through which the name server may be reached.
+ *
+ * For example, consider the following topology:
  *
  *               <XPMEM name server>
  *                       ^
  *                       |
  *                       |
- *                  <  Dom 1  >
+ *                       v
+ *                  <  Dom 2  >
  *                   ^       ^
  *                   |       |
  *                   |       |
- *                <Dom 2>  <Dom 3>
+ *                   v       v
+ *                <Dom 3>  <Dom 4>
  *                   ^
  *                   |
  *                   |
- *                <Dom 4>
+ *                   v 
+ *                <Dom 5>
  *
  * The maps look like:
  *
- * <Domain 0 (name server) map>
- *   [0: local] (local processes (domid 0) are connected via link 0)
- *   [1: <1, 2, 3, 4>] (domids 1, 2, 3, and 4 are downstream via link 1)
- *
- * <Domain 1 map>
- *   [0: local] (local processes (domid 1) are connected via link 0)
- *   [1: <2,4>] (domids 2 and 4 are downstream via link 1)
- *   [2: <3>]   (domid 3 is downstream via link 2)
+ * <Domain 1 (name server) map>
+ *   [0: 1] (local processes are connected via link 1)
+ *   [2: 2] (domid 2 is connected via link 2)
+ *   [3: 2] (domid 3 is connected via link 2)
+ *   [4: 2] (domid 4 is connected via link 2)
+ *   [5: 2] (domid 5 is connected via link 2)
  *
  * <Domain 2 map>
- *   [0: local] (local processes (domid 2) are connected via link 0)
- *   [1: <4>] (domid 4 is downstream via link 1)
+ *   [0: 1] (local processes are connected via link 1)
+ *   [1: 2] (domid 1 (name server) is connected via link 2)
+ *   [3: 3] (domid 3 is connected via link 3)
+ *   [4: 4] (domid 4 is connected via link 4)
+ *   [5: 3] (domid 5 is connected via link 3)
  *
  * <Domain 3 map>
- *   [0: local] (local processes (domid 3) are connected via link 0)
+ *   [0: 1] (local processes are connected via link 1)
+ *   [1: 2] (domid 1 (name server) is connected via link 2)
+ *   [2: 2] (domid 2 is connected via link 2)
+ *   [5: 3] (domid 5 is connected via link 3)
  *
  * <Domain 4 map>
- *   [0: local] (local processes (domid 4) are connected via link 0)
+ *   [0: 1] (local processes are connected via link 1)
+ *   [1: 2] (domid 1 (name server) is connected via link 2)
+ *   [2: 2] (domid 2 is connected via link 2)
+ *
+ * <Domain 5 map>
+ *   [0: 1] (local processes are connected via link 1)
+ *   [1: 2] (domid 1 (name server) is connected via link 2)
+ *   [3: 2] (domid 3 is connected via link 2)
+ *
+ *
  *
  */
 
@@ -73,28 +91,11 @@
 struct xpmem_fwd_state {
     int             initialized;     /* device initialization */
     spinlock_t      lock;            /* state lock */
-    xpmem_link_t    ns_link;         /* link to the name server */
     xpmem_link_t    local_link;      /* link to our own domain */
     xpmem_domid_t   domid;           /* domid for this partition */
+
     atomic_t        uniq_link;       /* unique link generation */
 
-
-    /* ping list */
-    struct list_head  ping_list;
-    int               ping_issued;
-
-    /* domid list */
-    struct list_head  domid_list;
-    int               domid_issued;
-
-    /* command list */
-    struct list_head cmd_list;
-    int              cmd_issued;
-
-    /* list of outstanding domid requests for this domain. Requests that cannot
-     * be immediately serviced are put on this list
-     */
-    struct list_head domid_req_list;
 
     /* map of XPMEM domids to local link ids (as specified above) */
     struct xpmem_hashtable * domid_map;
@@ -102,22 +103,19 @@ struct xpmem_fwd_state {
     /* map of link ids to connection structs */
     struct xpmem_hashtable * link_map;
 
-    /* waitq for forwarding service */
-    wait_queue_head_t    fwd_waitq;
 
-    /* kernel thread for running the forwarding service */
-    struct task_struct * fwd_thread;
+    /* "Upstream" link to the nameserver */
+    xpmem_link_t    ns_link; 
+
+    /* list of outstanding domid requests for this domain. Requests that cannot
+     * be immediately serviced are put on this list
+     */
+    struct list_head domid_req_list;
 
     /* timer set off at state creation that pings the nameserver */
     struct timer_list ping_timer;
 };
 
-
-struct xpmem_cmd_ex_iter {
-    struct xpmem_cmd_ex * cmd;
-    xpmem_link_t          link;
-    struct list_head      node;
-};
 
 struct xpmem_domid_req_iter {
     xpmem_link_t     link;
@@ -200,13 +198,136 @@ dom_type_to_string(xpmem_endpoint_t p)
 }
 
 
-static struct xpmem_link_connection *
-xpmem_get_conn(struct xpmem_fwd_state * state,
-               xpmem_link_t             link)
+
+static xpmem_link_t
+alloc_xpmem_link(struct xpmem_fwd_state * state)
 {
-    return (struct xpmem_link_connection *)
-        htable_search(state->link_map, (uintptr_t)link);
+    xpmem_link_t id = (xpmem_link_t)atomic_inc_return(&(state->uniq_link));
+
+    if (id > XPMEM_MAX_LINK_ID) {
+        return -1;
+    }
+
+    return id;
 }
+
+/* Hashtable helpers */
+static int
+xpmem_add_domid(struct xpmem_fwd_state * state,
+                xpmem_domid_t            domid,
+                xpmem_link_t             link)
+{
+    unsigned long flags  = 0;
+    int           status = 0;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        status = htable_insert(state->domid_map,
+                    (uintptr_t)domid,
+                    (uintptr_t)link);
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return status;
+}
+
+static int
+xpmem_add_link(struct xpmem_fwd_state       * state,
+               xpmem_link_t                   link,
+               struct xpmem_link_connection * conn)
+{
+    unsigned long flags  = 0;
+    int           status = 0;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        status = htable_insert(state->link_map,
+                    (uintptr_t)link,
+                    (uintptr_t)conn);
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return status;
+}
+
+
+static xpmem_link_t
+xpmem_search_or_remove_domid(struct xpmem_fwd_state * state,
+                             xpmem_domid_t            domid,
+                             int                      remove)
+{
+    unsigned long flags  = 0;
+    xpmem_link_t  result = 0;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        if (remove) {
+            result = (xpmem_link_t)htable_remove(state->domid_map,
+                        (uintptr_t)domid,
+                        0);
+        } else {
+            result = (xpmem_link_t)htable_search(state->domid_map,
+                        (uintptr_t)domid);
+        }
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return result;
+}
+
+static xpmem_link_t
+xpmem_search_domid(struct xpmem_fwd_state * state,
+                  xpmem_link_t              link)
+{
+    return xpmem_search_or_remove_domid(state, link, 0);
+}
+
+static xpmem_link_t
+xpmem_remove_domid(struct xpmem_fwd_state * state,
+                  xpmem_link_t              link)
+{
+    return xpmem_search_or_remove_domid(state, link, 1);
+}
+
+
+static struct xpmem_link_connection *
+xpmem_search_or_remove_link(struct xpmem_fwd_state * state,
+                            xpmem_link_t             link,
+                            int                      remove)
+{
+    unsigned long                  flags  = 0;
+    struct xpmem_link_connection * result = NULL;
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        if (remove) {
+            result = (struct xpmem_link_connection *)htable_remove(state->link_map,
+                        (uintptr_t)link,
+                        1);
+        } else {
+            result = (struct xpmem_link_connection *)htable_search(state->link_map,
+                        (uintptr_t)link);
+        }
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return result;
+}
+
+static struct xpmem_link_connection *
+xpmem_search_link(struct xpmem_fwd_state * state,
+                  xpmem_link_t             link)
+{
+        return xpmem_search_or_remove_link(state, link, 0);
+}
+
+static struct xpmem_link_connection *
+xpmem_remove_link(struct xpmem_fwd_state * state,
+                  xpmem_link_t             link)
+{
+        return xpmem_search_or_remove_link(state, link, 1);
+}
+
 
 /* Send a command along a connection link */
 static int
@@ -214,7 +335,7 @@ xpmem_send_cmd_link(struct xpmem_fwd_state * state,
                     xpmem_link_t             link, 
                     struct xpmem_cmd_ex    * cmd)
 {
-    struct xpmem_link_connection * conn = xpmem_get_conn(state, link);
+    struct xpmem_link_connection * conn = xpmem_search_link(state, link);
 
     if (conn == NULL) {
         return -1;
@@ -249,7 +370,7 @@ xpmem_ping_ns(struct xpmem_fwd_state * state,
                 continue;
             }
 
-            if (xpmem_get_conn(state, search_id)) {
+            if (xpmem_search_link(state, search_id)) {
                 if (xpmem_send_cmd_link(state, search_id, &ping_cmd)) {
                     printk(KERN_ERR "XPMEM: cannot send PING on link %lli\n", search_id);
                 }
@@ -285,7 +406,7 @@ xpmem_pong_ns(struct xpmem_fwd_state * state,
                 continue;
             }
 
-            if (xpmem_get_conn(state, search_id)) {
+            if (xpmem_search_link(state, search_id)) {
                 if (xpmem_send_cmd_link(state, search_id, &pong_cmd)) {
                     printk(KERN_ERR "XPMEM: cannot send PONG on link %lli\n", search_id);
                 }
@@ -320,8 +441,6 @@ xpmem_fwd_process_ping(struct xpmem_fwd_state * state,
                        xpmem_link_t             link,
                        struct xpmem_cmd_ex    * cmd)
 {
-    unsigned long flags;
-
     switch (cmd->type) {
         case XPMEM_PING_NS: {
             /* Do we know the way to the nameserver that is not through the link
@@ -346,6 +465,9 @@ xpmem_fwd_process_ping(struct xpmem_fwd_state * state,
         }
 
         case XPMEM_PONG_NS: {
+            unsigned long flags = 0;
+            int           ret   = 0;
+
             /* We received a PONG. So, the nameserver can be found through this
              * link
              */
@@ -358,16 +480,10 @@ xpmem_fwd_process_ping(struct xpmem_fwd_state * state,
             spin_unlock_irqrestore(&(state->lock), flags);
 
             /* Update the domid map to remember this link */
-            {
-                int ret = 0;
+            ret = xpmem_add_domid(state, XPMEM_NS_DOMID, link);
 
-                ret = htable_insert(state->domid_map,
-                        (uintptr_t)XPMEM_NS_DOMID,
-                        (uintptr_t)link);
-
-                if (ret == 0) {
-                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
-                }
+            if (ret == 0) {
+                printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
             }
 
             /* Broadcast the PONG to all our neighbors, except the source */
@@ -411,6 +527,7 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
             /* Buffer the request */
             {
                 struct xpmem_domid_req_iter * iter = NULL;
+                unsigned long                 flags = 0;
 
                 iter = kmalloc(sizeof(struct xpmem_domid_req_iter), GFP_KERNEL);
                 if (!iter) {
@@ -420,7 +537,12 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
                 }
 
                 iter->link = link;
-                list_add_tail(&(iter->node), &(state->domid_req_list));
+
+                spin_lock_irqsave(&(state->lock), flags);
+                {
+                    list_add_tail(&(iter->node), &(state->domid_req_list));
+                }
+                spin_unlock_irqrestore(&(state->lock), flags);
 
                 /* Forward request up to the nameserver */
                 out_link = state->ns_link;
@@ -438,6 +560,7 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
         }
 
         case XPMEM_DOMID_RESPONSE: {
+            int ret = 0;
             /* We've been allocated a domid.
              *
              * If our domain has no domid, take it for ourselves it.
@@ -448,21 +571,16 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
                 state->domid = cmd->domid_req.domid;
 
                 /* Update the domid map to remember our own domid */
-                {
-                    int ret = 0;
+                ret = xpmem_add_domid(state, state->domid, state->local_link);
 
-                    ret = htable_insert(state->domid_map,
-                            (uintptr_t)state->domid,
-                            (uintptr_t)state->local_link);
-
-                    if (ret == 0) {
-                        printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
-                    }
+                if (ret == 0) {
+                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
                 }
 
                 return;
             } else {
                 struct xpmem_domid_req_iter * iter = NULL;
+                unsigned long                 flags = 0;
 
                 if (list_empty(&(state->domid_req_list))) {
                     printk(KERN_ERR "XPMEM: we currently do not support the buffering of"
@@ -470,27 +588,25 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
                     return;
                 }
 
-                iter = list_first_entry(&(state->domid_req_list),
-                            struct xpmem_domid_req_iter,
-                            node);
-                list_del(&(iter->node));
+                spin_lock_irqsave(&(state->lock), flags);
+                {
+                    iter = list_first_entry(&(state->domid_req_list),
+                                struct xpmem_domid_req_iter,
+                                node);
+                    list_del(&(iter->node));
+                }
+                spin_unlock_irqrestore(&(state->lock), flags);
 
                 /* Forward the domid to this link */
                 out_link = iter->link;
                 kfree(iter);
 
                 /* Update the domid map to remember who has this */
-                {
-                    int ret = 0;
+                ret = xpmem_add_domid(state, cmd->domid_req.domid, out_link);
 
-                    ret = htable_insert(state->domid_map,
-                            (uintptr_t)cmd->domid_req.domid,
-                            (uintptr_t)out_link);
-
-                    if (ret == 0) {
-                        printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
-                        out_cmd->domid_req.domid = -1;
-                    }
+                if (ret == 0) {
+                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                    out_cmd->domid_req.domid = -1;
                 }
             }
 
@@ -524,7 +640,6 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
 
 
     switch (cmd->type) {
-
         case XPMEM_MAKE:
         case XPMEM_REMOVE:
         case XPMEM_GET:
@@ -537,8 +652,7 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
         case XPMEM_RELEASE_COMPLETE:
         case XPMEM_ATTACH_COMPLETE:
         case XPMEM_DETACH_COMPLETE: {
-            out_link = htable_search(state->domid_map,
-                (uintptr_t)cmd->dst_dom);
+            out_link = xpmem_search_domid(state, cmd->dst_dom);
 
             if (out_link == 0) {
                 printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
@@ -556,132 +670,15 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
         }
     }
 
-    /* Send the response */
+    /* Write the response */
     if (xpmem_send_cmd_link(state, out_link, out_cmd)) {
         printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", out_link);
     }
 }
 
 
-/*
- * This is the kernel thread implementing the forwarding service
- *
- * Normal XPMEM commands are only processed if the domain has allocated a domid
- * from the nameserver. Without a domid, all commands will be buffered in the
- * queue until the domid is allocated.
- *
- * domids are allocated by sending special XPMEM commands. XPMEM_REQUEST_DOMID
- * will formulate a request and send it to the nameserver. Before this command
- * can be sent, however, the domain must know which link to send the command
- * on. This knowledge is gained by sending XPMEM_PING_NS commands along all
- * connected links and waiting for an XPMEM_PONG_NS on one of them.
- *
- * Thus, the kernel thread will always process XPMEM_PING/PONG_NS commands.
- * These commands are placed in the ping_list as opposed to the normal cmd_list.
- */
-static int
-xpmem_fwd_thread_fn(void * arg)
-{
-    struct xpmem_fwd_state * state = (struct xpmem_fwd_state *)arg;
 
-    while (1) {
-        unsigned long flags;
-
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            state->ping_issued = !list_empty(&(state->ping_list));
-            state->domid_issued = !list_empty(&(state->domid_list));
-            state->cmd_issued = !list_empty(&(state->cmd_list));
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
-
-
-        /* The condition for processing is:
-         *  (1) PING/PONG in ping list
-         *
-         *              OR
-         *
-         *  (2) DOMID req/response in domid list
-         *
-         *              OR
-         *
-         *  (3) Command available on cmd list
-         *              AND
-         *      this domain has a domid
-         */
-        mb();
-        wait_event_interruptible(state->fwd_waitq,
-            ( (state->ping_issued  == 1) || 
-              (state->domid_issued == 1) ||
-                ( (state->cmd_issued == 1) &&
-                  (state->domid       > 0)
-                )
-            )
-        );
-        
-
-        if (state->ping_issued) {
-            struct xpmem_cmd_ex_iter * iter = NULL;
-
-            spin_lock_irqsave(&(state->lock), flags);
-            {
-                iter = list_first_entry(&(state->ping_list), struct xpmem_cmd_ex_iter, node);
-                list_del(&(iter->node));
-            }
-            spin_unlock_irqrestore(&(state->lock), flags);
-
-            xpmem_fwd_process_ping(state, iter->link, iter->cmd);
-
-            kfree(iter->cmd);
-            kfree(iter);
-        } else if (state->domid_issued) {
-            struct xpmem_cmd_ex_iter * iter = NULL;
-
-            spin_lock_irqsave(&(state->lock), flags);
-            {
-                iter = list_first_entry(&(state->ping_list), struct xpmem_cmd_ex_iter, node);
-                list_del(&(iter->node));
-            }
-            spin_unlock_irqrestore(&(state->lock), flags);
-
-            xpmem_fwd_process_domid(state, iter->link, iter->cmd);
-
-            kfree(iter->cmd);
-            kfree(iter);
-        } else {
-            struct xpmem_cmd_ex_iter * iter = NULL;
-
-            spin_lock_irqsave(&(state->lock), flags);
-            {
-                iter = list_first_entry(&(state->cmd_list), struct xpmem_cmd_ex_iter, node);
-                list_del(&(iter->node));
-            }
-            spin_unlock_irqrestore(&(state->lock), flags);
-
-            xpmem_fwd_process_cmd(state, iter->link, iter->cmd);
-
-            kfree(iter->cmd);
-            kfree(iter);
-        }
-    }
-
-    return 0;
-}
-
-
-
-static xpmem_link_t
-alloc_xpmem_link(struct xpmem_fwd_state * state)
-{
-    xpmem_link_t id = (xpmem_link_t)atomic_inc_return(&(state->uniq_link));
-
-    if (id > XPMEM_MAX_LINK_ID) {
-        return -1;
-    }
-
-    return id;
-}
-
+/* Interface */
 
 struct xpmem_partition *
 xpmem_get_partition(void)
@@ -713,7 +710,6 @@ xpmem_add_connection(struct xpmem_partition * part,
 
     if (link > 0) {
         struct xpmem_link_connection * conn  = NULL;
-        unsigned long                  flags = 0;
         int                            error = 0;
 
         if (type == XPMEM_CONN_LOCAL) {
@@ -729,18 +725,12 @@ xpmem_add_connection(struct xpmem_partition * part,
         conn->in_cmd_fn = in_cmd_fn;
         conn->priv_data = priv_data;
 
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            if (htable_insert(state->link_map, (uintptr_t)link,
-                        (uintptr_t)conn) == 0) {
-                error = -1;
-            }
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
+        /* Update the link map */
+        error = xpmem_add_link(state, link, conn);
 
-        if (error) {
+        if (error == 0) {
             printk(KERN_ERR "XPMEM: cannot insert into link hashtable\n");
-            return error;
+            return -1;
         }
     }
 
@@ -755,71 +745,31 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
                   struct xpmem_cmd_ex    * cmd)
 {
     struct xpmem_fwd_state *   state = part->fwd_state;
-    struct xpmem_cmd_ex_iter * iter  = NULL;
-    unsigned long              flags = 0;
 
     if (!state || !state->initialized) {
         return -1;
     }
 
-    iter = kmalloc(sizeof(struct xpmem_cmd_ex_iter), GFP_KERNEL);
-    if (!iter) {
-        return -ENOMEM;
-    }
+    switch (cmd->type) {
+        case XPMEM_PING_NS:
+        case XPMEM_PONG_NS:
+            xpmem_fwd_process_ping(state, link, cmd);
+            break;
 
-    /* Full command copy */
-    {
-        uint64_t pfn_len = 0;
+        case XPMEM_DOMID_REQUEST:
+        case XPMEM_DOMID_RESPONSE:
+            xpmem_fwd_process_domid(state, link, cmd);
+            break;
 
-        if (cmd->type == XPMEM_ATTACH_COMPLETE) {
-            pfn_len = sizeof(uint64_t) * cmd->attach.num_pfns;
-        }
+        default:
+            if (state->domid <= 0) {
+                printk(KERN_ERR "This domain has no XPMEM domid. Are you running the nameserver anywhere?\n");
+                return -1;
+            }
 
-        iter->cmd = kmalloc(sizeof(struct xpmem_cmd_ex) + pfn_len, GFP_KERNEL);
-        if (!iter->cmd) {
-            kfree(iter);
-            return -ENOMEM;
-        }
-
-        memcpy(iter->cmd, cmd, sizeof(struct xpmem_cmd_ex) + pfn_len);
-    }
-
-    iter->link = link;
-
-
-    /* Put on the correct list */
-    if ( (cmd->type == XPMEM_PING_NS) ||
-         (cmd->type == XPMEM_PONG_NS)
-       )
-    {
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            list_add_tail(&(iter->node), &(state->ping_list));
-            state->ping_issued = 1;
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
-    } else if ( (cmd->type == XPMEM_DOMID_REQUEST) ||
-                (cmd->type == XPMEM_DOMID_RESPONSE)
-              )
-    {
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            list_add_tail(&(iter->node), &(state->domid_list));
-            state->domid_issued = 1;
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
-    } else {
-        spin_lock_irqsave(&(state->lock), flags);
-        {
-            list_add_tail(&(iter->node), &(state->cmd_list));
-            state->cmd_issued = 1;
-        }
-        spin_unlock_irqrestore(&(state->lock), flags);
-    }
-
-
-    mb();
-    wake_up_interruptible(&(state->fwd_waitq));
+            xpmem_fwd_process_cmd(state, link, cmd);
+            break;
+    }   
 
     return 0;
 }
@@ -888,21 +838,14 @@ xpmem_fwd_init(struct xpmem_partition * part)
     }
 
     /* Create everything else */
-    INIT_LIST_HEAD(&(state->ping_list));
-    INIT_LIST_HEAD(&(state->domid_list));
-    INIT_LIST_HEAD(&(state->cmd_list));
-    INIT_LIST_HEAD(&(state->domid_req_list));
-
     spin_lock_init(&(state->lock));
     atomic_set(&(state->uniq_link), 0);
-    init_waitqueue_head(&(state->fwd_waitq));
+    INIT_LIST_HEAD(&(state->domid_req_list));
 
-    state->ping_issued  = 0;
-    state->domid_issued = 0;
-    state->cmd_issued   = 0;
     state->ns_link      = -1;
     state->local_link   = -1;
     state->domid        = -1;
+    part->fwd_state     = state;
 
     /* Set up the timer */
     init_timer(&(state->ping_timer));
@@ -912,21 +855,6 @@ xpmem_fwd_init(struct xpmem_partition * part)
     
     /* Start the timer */
     add_timer(&(state->ping_timer));
-
-
-    /* Create kernel thread */
-    state->fwd_thread = kthread_create(xpmem_fwd_thread_fn, state, "kxpmem-fwd");
-    if (!state->fwd_thread) {
-        free_htable(state->domid_map, 0, 0);
-        free_htable(state->link_map, 1, 0);
-        kfree(state);
-        return -1;
-    }
-
-    /* Start kernel thread */
-    wake_up_process(state->fwd_thread);
-
-    part->fwd_state = state;
 
     state->initialized  = 1;
     return 0;
@@ -945,43 +873,20 @@ xpmem_fwd_deinit(struct xpmem_partition * part)
     free_htable(state->domid_map, 0, 0);
     free_htable(state->link_map, 1, 0);
 
-    /* Free kernel threads */
-    kthread_stop(state->fwd_thread);
-
-    /* Free ping/domid/cmd lists */
-    {
-        struct xpmem_cmd_ex_iter * iter = NULL;
-        struct xpmem_cmd_ex_iter * next = NULL;
-
-        list_for_each_entry_safe(iter, next, &(state->ping_list), node) {
-            list_del(&(iter->node));
-            kfree(iter->cmd);
-            kfree(iter);
-        }
-
-        list_for_each_entry_safe(iter, next, &(state->domid_list), node) {
-            list_del(&(iter->node));
-            kfree(iter->cmd);
-            kfree(iter);
-        }
-
-        list_for_each_entry_safe(iter, next, &(state->cmd_list), node) {
-            list_del(&(iter->node));
-            kfree(iter->cmd);
-            kfree(iter);
-        }
-    }
-
-
     /* Free domid req list */
     {
-        struct xpmem_domid_req_iter * iter = NULL;
-        struct xpmem_domid_req_iter * next = NULL;
+        struct xpmem_domid_req_iter * iter  = NULL;
+        struct xpmem_domid_req_iter * next  = NULL;
+        unsigned long                 flags = 0; 
 
-        list_for_each_entry_safe(iter, next, &(state->domid_req_list), node) {
-            list_del(&(iter->node));
-            kfree(iter);
+        spin_lock_irqsave(&(state->lock), flags);
+        {
+            list_for_each_entry_safe(iter, next, &(state->domid_req_list), node) {
+                list_del(&(iter->node));
+                kfree(iter);
+            }
         }
+        spin_unlock_irqrestore(&(state->lock), flags);
     }
 
     kfree(state);

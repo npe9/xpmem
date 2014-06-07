@@ -463,14 +463,8 @@ out_1:
 void __exit
 xpmem_exit(void)
 {
-	kfree(xpmem_my_part->tg_hashtable);
-	kfree(xpmem_my_part);
+    printk("Deiniting XPMEM\n");
 
-	misc_deregister(&xpmem_dev_handle);
-	//remove_proc_entry("global_pages", xpmem_unpin_procfs_dir);
-	//remove_proc_entry("debug_printk", xpmem_unpin_procfs_dir);
-	//remove_proc_entry(XPMEM_MODULE_NAME, NULL);
-    
 #ifdef XPMEM_EXTENDED
     xpmem_domain_deinit(xpmem_my_part);
     xpmem_palacios_deinit(xpmem_my_part);
@@ -482,6 +476,14 @@ xpmem_exit(void)
   #endif /* XPMEM_NS */
 #endif /* XPMEM_EXTENDED */
 
+	kfree(xpmem_my_part->tg_hashtable);
+	kfree(xpmem_my_part);
+
+	misc_deregister(&xpmem_dev_handle);
+	//remove_proc_entry("global_pages", xpmem_unpin_procfs_dir);
+	//remove_proc_entry("debug_printk", xpmem_unpin_procfs_dir);
+	//remove_proc_entry(XPMEM_MODULE_NAME, NULL);
+    
 	printk("SGI XPMEM kernel module v%s unloaded\n",
 	       XPMEM_CURRENT_VERSION_STRING);
 }
