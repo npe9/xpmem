@@ -265,8 +265,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
     }
     spin_unlock_irqrestore(&(palacios_lock), flags);
 
-    memset(palacios_state, 0, sizeof(struct xpmem_palacios_state));
-
     if (dev->vendor != XPMEM_VENDOR_ID) {
         return ret;
     }
