@@ -16,7 +16,7 @@ xpmem-y := 	xpmem_main.o \
 		xpmem_palacios.o \
 		xpmem_hashtable.o \
 		xpmem_syms.o \
-		xpmem_fwd.o
+		xpmem_ns.o
 
 xpmem-objs := $(xpmem-y)
 obj-m := xpmem.o

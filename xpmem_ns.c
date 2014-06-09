@@ -111,8 +111,9 @@ struct xpmem_ns_state {
 
 
 struct xpmem_link_connection {
+    xpmem_connection_t conn_type;
+    void             * priv_data;
     int (*in_cmd_fn)(struct xpmem_cmd_ex *, void * priv_data); 
-    void * priv_data;
 };
 
 
@@ -421,6 +422,8 @@ xpmem_ns_process_ping(struct xpmem_ns_state * state,
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
 
+    printk("Process ns ping\n");
+
     switch (cmd->type) {
         case XPMEM_PING_NS: {
             /* Respond with a PONG to the source */
@@ -460,6 +463,8 @@ xpmem_ns_process_domid(struct xpmem_ns_state * state,
     /* There's no reason not to reuse the input command struct for responses */
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
+
+    printk("Process ns domid\n");
 
     switch (cmd->type) {
         case XPMEM_DOMID_REQUEST: {
@@ -524,6 +529,8 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
     /* There's no reason not to reuse the input command struct for responses */
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
+
+    printk("Process ns command\n");
 
     switch (cmd->type) {
         case XPMEM_MAKE: {
@@ -801,8 +808,9 @@ xpmem_add_connection(struct xpmem_partition * part,
             return -ENOMEM;
         }
 
-        conn->in_cmd_fn = in_cmd_fn;
         conn->priv_data = priv_data;
+        conn->conn_type = type;
+        conn->in_cmd_fn = in_cmd_fn;
 
         /* Update the link map */
         error = xpmem_add_link(state, link, conn);
@@ -817,6 +825,33 @@ xpmem_add_connection(struct xpmem_partition * part,
 }
 
 EXPORT_SYMBOL(xpmem_add_connection);
+
+
+int
+xpmem_remove_connection(struct xpmem_partition * part,
+                        xpmem_link_t             link)
+{
+    struct xpmem_ns_state        * state = NULL;
+    struct xpmem_link_connection * conn  = NULL;
+
+    state = part->ns_state;
+    conn  = xpmem_remove_link(state, link);
+
+    if (!conn) {
+        return -1; 
+    }   
+
+    if (conn->conn_type == XPMEM_CONN_LOCAL) {
+        state->local_link = -1; 
+    }   
+
+    kfree(conn);
+
+    return 0;
+}
+
+EXPORT_SYMBOL(xpmem_remove_connection);
+
 
 
 int
@@ -889,6 +924,7 @@ xpmem_ns_init(struct xpmem_partition * part)
     atomic_set(&(state->uniq_domid), MIN_UNIQ_DOMID);
 
     /* Name server gets a well-known domid */
+    state->local_link   = -1;
     state->domid        = XPMEM_NS_DOMID;
     part->ns_state      = state;
     state->initialized  = 1;

@@ -123,8 +123,9 @@ struct xpmem_domid_req_iter {
 };
 
 struct xpmem_link_connection {
+    xpmem_connection_t conn_type;
+    void             * priv_data;
     int (*in_cmd_fn)(struct xpmem_cmd_ex *, void * priv_data); 
-    void * priv_data;
 };
     
 
@@ -303,7 +304,7 @@ xpmem_search_or_remove_link(struct xpmem_fwd_state * state,
         if (remove) {
             result = (struct xpmem_link_connection *)htable_remove(state->link_map,
                         (uintptr_t)link,
-                        1);
+                        0);
         } else {
             result = (struct xpmem_link_connection *)htable_search(state->link_map,
                         (uintptr_t)link);
@@ -441,6 +442,9 @@ xpmem_fwd_process_ping(struct xpmem_fwd_state * state,
                        xpmem_link_t             link,
                        struct xpmem_cmd_ex    * cmd)
 {
+
+    printk("xpmem fwd ping\n");
+
     switch (cmd->type) {
         case XPMEM_PING_NS: {
             /* Do we know the way to the nameserver that is not through the link
@@ -511,6 +515,8 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
     /* There's no reason not to reuse the input command struct for responses */
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
+
+    printk("xpmem fwd domid\n");
 
     switch (cmd->type) {
         case XPMEM_DOMID_REQUEST: {
@@ -637,6 +643,8 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
     /* There's no reason not to reuse the input command struct for responses */
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
+    
+    printk("xpmem fwd cmd\n");
 
 
     switch (cmd->type) {
@@ -698,8 +706,6 @@ xpmem_add_connection(struct xpmem_partition * part,
     struct xpmem_fwd_state * state = NULL;
     xpmem_link_t             link  = 0;        
 
-    printk("xpmem_add_connection: part: %p\n", (void *)part);
-
     state = part->fwd_state;
 
     if (!state || !state->initialized) {
@@ -722,8 +728,9 @@ xpmem_add_connection(struct xpmem_partition * part,
             return -ENOMEM;
         }
 
-        conn->in_cmd_fn = in_cmd_fn;
         conn->priv_data = priv_data;
+        conn->conn_type = type;
+        conn->in_cmd_fn = in_cmd_fn;
 
         /* Update the link map */
         error = xpmem_add_link(state, link, conn);
@@ -740,11 +747,36 @@ xpmem_add_connection(struct xpmem_partition * part,
 EXPORT_SYMBOL(xpmem_add_connection);
 
 int
+xpmem_remove_connection(struct xpmem_partition * part,
+                        xpmem_link_t             link)
+{
+    struct xpmem_fwd_state       * state = NULL;
+    struct xpmem_link_connection * conn  = NULL;
+
+    state = part->fwd_state;
+    conn  = xpmem_remove_link(state, link);
+
+    if (!conn) {
+        return -1;
+    }
+
+    if (conn->conn_type == XPMEM_CONN_LOCAL) {
+        state->local_link = -1;
+    }
+
+    kfree(conn);
+
+    return 0;
+}
+
+EXPORT_SYMBOL(xpmem_remove_connection);
+
+int
 xpmem_cmd_deliver(struct xpmem_partition * part,
                   xpmem_link_t             link,
                   struct xpmem_cmd_ex    * cmd)
 {
-    struct xpmem_fwd_state *   state = part->fwd_state;
+    struct xpmem_fwd_state * state = part->fwd_state;
 
     if (!state || !state->initialized) {
         return -1;
@@ -799,6 +831,8 @@ xpmem_ping_timer_fn(unsigned long data)
         memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
 
         domid_req.type = XPMEM_DOMID_REQUEST;
+
+        printk("Sending DOMID request\n");
 
         if (xpmem_send_cmd_link(state, state->ns_link, &domid_req)) {
             printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", state->ns_link);

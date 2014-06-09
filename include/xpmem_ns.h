@@ -35,6 +35,10 @@ xpmem_add_connection(struct xpmem_partition * part,
                      void * priv_data);
 
 int
+xpmem_remove_connection(struct xpmem_partition * part,
+                        xpmem_link_t             link);
+
+int
 xpmem_cmd_deliver(struct xpmem_partition * part,
                   xpmem_link_t             link,
                   struct xpmem_cmd_ex    * cmd);
