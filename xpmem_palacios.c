@@ -46,6 +46,7 @@ struct xpmem_bar_state {
 struct xpmem_palacios_state {
     int                       initialized; /* device initialization */
     spinlock_t                lock;        /* state lock */
+    unsigned int              irq;         /* irq number */
     xpmem_link_t              link;        /* XPMEM connection link */
     struct xpmem_partition  * part;        /* pointer to XPMEM partition */
 
@@ -258,12 +259,15 @@ xpmem_probe_driver(struct pci_dev             * dev,
     unsigned long bar_size = 0;
     unsigned long flags    = 0;
     int           ret      = -1;
+    int           dev_no   = 0;
 
     spin_lock_irqsave(&(palacios_lock), flags);
     {
-        palacios_state = palacios_devs[dev_off];
+        dev_no = dev_off;
     }
     spin_unlock_irqrestore(&(palacios_lock), flags);
+
+    palacios_state = palacios_devs[dev_no];
 
     if (dev->vendor != XPMEM_VENDOR_ID) {
         return ret;
@@ -310,13 +314,20 @@ xpmem_probe_driver(struct pci_dev             * dev,
         goto err_unmap;
     }
 
-    /* Register IRQ handler */
-    if ((ret = request_irq(dev->irq, irq_handler, IRQF_SHARED, "xpmem", palacios_state))) {
-        printk("Failed to request IRQ for Palacios XPMEM device (irq = %d)\n", dev->irq);
-        goto err_unmap;
-    }
+    {
+        char buf[16];
 
-    printk("Palacios state partition: %p\n", (void *)palacios_state->part);
+        memset(buf, 0, 16);
+        snprintf(buf, 16, "xpmem_%d", dev_no);
+
+        /* Register IRQ handler */
+        if ((ret = request_irq(dev->irq, irq_handler, IRQF_SHARED, buf, palacios_state))) {
+            printk("Failed to request IRQ for Palacios XPMEM device (irq = %d)\n", dev->irq);
+            goto err_unmap;
+        }
+
+        palacios_state->irq = ret;
+    }
 
     /* Add connection to name/forwarding service */
     palacios_state->link = xpmem_add_connection(
@@ -374,9 +385,10 @@ xpmem_driver =
 
 int
 xpmem_palacios_init(struct xpmem_partition * part) {
-    struct xpmem_palacios_state * state = NULL;
-    unsigned long                 flags = 0;
-    int                           ret   = 0;
+    struct xpmem_palacios_state * state  = NULL;
+    unsigned long                 flags  = 0;
+    int                           ret    = 0;
+    int                           dev_no = 0;
 
     state = kzalloc(sizeof(struct xpmem_palacios_state), GFP_KERNEL);
     if (!state) {
@@ -391,7 +403,8 @@ xpmem_palacios_init(struct xpmem_partition * part) {
 
     spin_lock_irqsave(&(palacios_lock), flags);
     {
-        palacios_devs[dev_off] = state;
+        dev_no = dev_off;
+        palacios_devs[dev_no] = state;
     }
     spin_unlock_irqrestore(&(palacios_lock), flags);
 
@@ -409,6 +422,26 @@ int
 xpmem_palacios_deinit(struct xpmem_partition * part)
 {
     pci_unregister_driver(&xpmem_driver);
+
+    {
+        unsigned long flags  = 0;
+        int           dev_no = 0;
+        int           i      = 0;
+
+        spin_lock_irqsave(&palacios_lock, flags);
+        {
+            dev_no = dev_off;
+        }
+        spin_unlock_irqrestore(&palacios_lock, flags);
+
+        for (i = 0; i < dev_no; i++) {
+            struct xpmem_palacios_state * state = palacios_devs[i];
+            if (!state)
+                continue;
+
+            free_irq(state->irq, state);
+        }
+    }
 
     printk("XPMEM palacios deinited\n");
 
