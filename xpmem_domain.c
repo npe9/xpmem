@@ -629,6 +629,11 @@ xpmem_make_remote(struct xpmem_partition * part,
         /* Wait for completion */
         mb();
         wait_event_interruptible(state->dom_waitq, state->cmd_complete == 1);
+        
+        /* Check command completion  */
+        if (state->cmd_complete == 0) {
+            return -1;
+        }
 
         /* Grab allocated segid */
         *segid = state->cmd->make.segid;
@@ -668,6 +673,11 @@ xpmem_remove_remote(struct xpmem_partition * part,
         /* Wait for completion */
         mb();
         wait_event_interruptible(state->dom_waitq, state->cmd_complete == 1);
+
+        /* Check command completion  */
+        if (state->cmd_complete == 0) {
+            return -1;
+        }
     }
 
     mutex_unlock(&(state->mutex));
@@ -712,6 +722,11 @@ xpmem_get_remote(struct xpmem_partition * part,
         mb();
         wait_event_interruptible(state->dom_waitq, state->cmd_complete == 1);
 
+        /* Check command completion  */
+        if (state->cmd_complete == 0) {
+            return -1;
+        }
+
         /* Grab allocated apid */
         *apid = state->cmd->get.apid;
     }
@@ -750,6 +765,11 @@ xpmem_release_remote(struct xpmem_partition * part,
         /* Wait for completion */
         mb();
         wait_event_interruptible(state->dom_waitq, state->cmd_complete == 1);
+
+        /* Check command completion  */
+        if (state->cmd_complete == 0) {
+            return -1;
+        }
     }
 
     mutex_unlock(&(state->mutex));
@@ -791,6 +811,11 @@ xpmem_attach_remote(struct xpmem_partition * part,
         /* Wait for completion */
         mb();
         wait_event_interruptible(state->dom_waitq, state->cmd_complete == 1);
+
+        /* Check command completion  */
+        if (state->cmd_complete == 0) {
+            return -1;
+        }
 
         /* Map pfn list */
         if (state->cmd->attach.num_pfns > 0) {
@@ -837,6 +862,11 @@ xpmem_detach_remote(struct xpmem_partition * part,
         /* Wait for completion */
         mb();
         wait_event_interruptible(state->dom_waitq, state->cmd_complete == 1);
+
+        /* Check command completion  */
+        if (state->cmd_complete == 0) {
+            return -1;
+        }
     }
 
     mutex_unlock(&(state->mutex));
