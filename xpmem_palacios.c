@@ -59,8 +59,7 @@ struct xpmem_palacios_state {
 
 
 static struct xpmem_palacios_state palacios_devs[MAX_DEVICES];
-static int dev_off = 0;
-DEFINE_SPINLOCK(palacios_lock);
+atomic_t dev_off = ATOMIC_INIT(0);
 
 
 
@@ -220,15 +219,10 @@ xpmem_probe_driver(struct pci_dev             * dev,
     struct xpmem_palacios_state * palacios_state = NULL;
 
     unsigned long bar_size = 0;
-    unsigned long flags    = 0;
     int           ret      = -1;
     int           dev_no   = 0;
 
-    spin_lock_irqsave(&(palacios_lock), flags);
-    {
-        dev_no = dev_off;
-    }
-    spin_unlock_irqrestore(&(palacios_lock), flags);
+    dev_no = atomic_read(&dev_off);
 
     /* Remember the state with the driver's private data field */
     palacios_state = &(palacios_devs[dev_no]);
@@ -313,11 +307,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
     INIT_WORK(&(palacios_state->worker), xpmem_work_fn);
 
     palacios_state->initialized = 1;
-    spin_lock_irqsave(&(palacios_lock), flags);
-    {
-        ++dev_off;
-    }
-    spin_unlock_irqrestore(&(palacios_lock), flags);
+    atomic_inc(&dev_off);
 
     printk("Palacios XPMEM PCI device enabled\n");
     return 0;
@@ -356,16 +346,10 @@ xpmem_driver =
 int
 xpmem_palacios_init(struct xpmem_partition * part) {
     struct xpmem_palacios_state * state  = NULL;
-    unsigned long                 flags  = 0;
     int                           ret    = 0;
     int                           dev_no = 0;
 
-    spin_lock_irqsave(&(palacios_lock), flags);
-    {
-        dev_no = dev_off;
-        state = &(palacios_devs[dev_no]);
-    }
-    spin_unlock_irqrestore(&(palacios_lock), flags);
+    dev_no = atomic_read(&dev_off);
 
     memset(state, 0, sizeof(struct xpmem_palacios_state));
 
