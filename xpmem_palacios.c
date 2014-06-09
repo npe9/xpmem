@@ -144,6 +144,10 @@ xpmem_work_fn(struct work_struct * work)
         return;
     }
 
+    if (cmd_size == 0) {
+        return;
+    }
+
     cmd = kmalloc(cmd_size, GFP_KERNEL);
     if (!cmd) {
         return;
@@ -315,6 +319,9 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
     palacios_state->initialized = 1;
     atomic_inc(&dev_off);
+
+    /* Signal device initialization by clearing irq status */
+    xpmem_irq_clear_hcall(palacios_state->bar_state.xpmem_irq_clear_hcall_id);
 
     printk("Palacios XPMEM PCI device enabled\n");
     return 0;
