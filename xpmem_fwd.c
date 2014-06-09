@@ -903,6 +903,9 @@ xpmem_fwd_deinit(struct xpmem_partition * part)
         return 0;
     }
 
+    /* Stop timer */
+    del_timer(&(state->ping_timer));
+
     /* Free hashtables */
     free_htable(state->domid_map, 0, 0);
     free_htable(state->link_map, 1, 0);
@@ -922,6 +925,7 @@ xpmem_fwd_deinit(struct xpmem_partition * part)
         }
         spin_unlock_irqrestore(&(state->lock), flags);
     }
+
 
     kfree(state);
     part->fwd_state = NULL;
