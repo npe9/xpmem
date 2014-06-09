@@ -222,6 +222,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
     int           ret      = -1;
     int           dev_no   = 0;
 
+    /* Index into global list */
     dev_no = atomic_read(&dev_off);
 
     /* Remember the state with the driver's private data field */
@@ -349,7 +350,11 @@ xpmem_palacios_init(struct xpmem_partition * part) {
     int                           ret    = 0;
     int                           dev_no = 0;
 
+    /* Index into global list */
     dev_no = atomic_read(&dev_off);
+
+    /* Get the state */
+    state = &(palacios_devs[dev_no]);
 
     memset(state, 0, sizeof(struct xpmem_palacios_state));
 
