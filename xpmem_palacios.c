@@ -230,7 +230,9 @@ xpmem_probe_driver(struct pci_dev             * dev,
     }
     spin_unlock_irqrestore(&(palacios_lock), flags);
 
+    /* Remember the state with the driver's private data field */
     palacios_state = &(palacios_devs[dev_no]);
+    pci_set_drvdata(dev, (void *)palacios_state);
 
     if (dev->vendor != XPMEM_VENDOR_ID) {
         return ret;
@@ -331,6 +333,12 @@ err:
 static void 
 xpmem_remove_driver(struct pci_dev * dev)
 {
+    struct xpmem_palacios_state * state  = NULL;
+
+    /* Get the index with the driver's private data field */
+    state = (struct xpmem_palacios_state *)pci_get_drvdata(dev);;
+
+    free_irq(state->irq, state);
 }
 
 
@@ -367,7 +375,6 @@ xpmem_palacios_init(struct xpmem_partition * part) {
     /* Save pointer to this state */
     part->palacios_state = state;
 
-
     /* Register PCI driver */
     ret = pci_register_driver(&xpmem_driver);
 
@@ -382,26 +389,6 @@ int
 xpmem_palacios_deinit(struct xpmem_partition * part)
 {
     pci_unregister_driver(&xpmem_driver);
-
-    {
-        unsigned long flags  = 0;
-        int           dev_no = 0;
-        int           i      = 0;
-
-        spin_lock_irqsave(&palacios_lock, flags);
-        {
-            dev_no = dev_off;
-        }
-        spin_unlock_irqrestore(&palacios_lock, flags);
-
-        for (i = 0; i < dev_no; i++) {
-            struct xpmem_palacios_state * state = &(palacios_devs[i]);
-            if (!state)
-                continue;
-
-            free_irq(state->irq, state);
-        }
-    }
 
     printk("XPMEM palacios deinited\n");
 
