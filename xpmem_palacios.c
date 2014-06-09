@@ -284,10 +284,12 @@ xpmem_probe_driver(struct pci_dev             * dev,
         snprintf(buf, 16, "xpmem_%d", dev_no);
 
         /* Register IRQ handler */
-        if ((palacios_state->irq = request_irq(dev->irq, irq_handler, IRQF_SHARED, buf, palacios_state))) {
+        if (request_irq(dev->irq, irq_handler, IRQF_SHARED, buf, palacios_state) != 0) {
             printk("Failed to request IRQ for Palacios XPMEM device (irq = %d)\n", dev->irq);
             goto err_unmap;
         }
+
+        palacios_state->irq = dev->irq;
     }
 
     /* Add connection to name/forwarding service */
