@@ -13,5 +13,4 @@
 
 int xpmem_linux_symbol_init(void);
 
-
-#endif
+#endif /* _XPMEM_SYMS_H */

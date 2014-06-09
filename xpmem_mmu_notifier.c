@@ -99,6 +99,7 @@ xpmem_invalidate_range(struct mmu_notifier *mn, struct mm_struct *mm,
 	//	tlb_flush_mmu(tlb, start, end);
 	if (tlb.need_flush)
 		tlb_flush_mmu(&tlb);
+		//tlb_flush_mmu(&tlb, start, end);
 
 	vma = find_vma_intersection(mm, start, end);
 	if (vma == NULL) {

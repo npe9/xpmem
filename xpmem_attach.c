@@ -19,8 +19,6 @@
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
 
-extern void (*zap_page_range_fn)(struct vm_area_struct *, unsigned long, unsigned long, struct zap_details     *);
-
 /*
  * This function is called whenever a XPMEM address segment is unmapped.
  * We only expect this to occur from a XPMEM detach operation, and if that
@@ -752,7 +750,7 @@ xpmem_clear_PTEs_of_att(struct xpmem_attachment *att, u64 start, u64 end,
 			vma = att->at_vma;
 		else
 			vma = find_vma(att->mm, att->at_vaddr);
-		zap_page_range_fn(vma, unpin_at, invalidate_len, NULL);
+		zap_page_range(vma, unpin_at, invalidate_len, NULL);
 
 		/* Only clear the flag if all pages were zapped */
 		if (offset_start == 0 && att->at_size == invalidate_len)

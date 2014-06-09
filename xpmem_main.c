@@ -32,12 +32,13 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
-#include <xpmem_ns.h>
+#include <xpmem_syms.h>
 
 /* TODO: set this based on some configure option */
 #define XPMEM_EXTENDED
 #define XPMEM_NS
 //#define XPMEM_FWD
+
 
 struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
 
@@ -440,6 +441,8 @@ xpmem_init(void)
 #else
     extend_enabled = 0;
 #endif /* XPMEM_EXTENDED */
+
+    xpmem_linux_symbol_init();
 
 	printk("SGI XPMEM kernel module v%s loaded\n",
 	       XPMEM_CURRENT_VERSION_STRING);
