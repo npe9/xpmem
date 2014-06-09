@@ -329,6 +329,7 @@ xpmem_remove_driver(struct pci_dev * dev)
     /* Get the index with the driver's private data field */
     state = (struct xpmem_palacios_state *)pci_get_drvdata(dev);;
 
+    /* Free the irq */
     free_irq(state->irq, state);
 }
 
@@ -378,6 +379,8 @@ int
 xpmem_palacios_deinit(struct xpmem_partition * part)
 {
     pci_unregister_driver(&xpmem_driver);
+
+    part->palacios_state->initialized = 0;
 
     printk("XPMEM palacios deinited\n");
 
