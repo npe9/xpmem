@@ -173,6 +173,10 @@ irq_handler(int    irq,
 {
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)data;
 
+    if (!state->initialized) {
+        return IRQ_HANDLED;
+    }
+
     /* Queue work for worker thread */
     queue_work(state->workq, &(state->worker));
 
