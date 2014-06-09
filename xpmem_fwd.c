@@ -573,7 +573,7 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
              * Otherwise, assign it to a link that has requested a domid from us
              */
              
-            if (state->domid == 0) {
+            if (state->domid <= 0) {
                 state->domid = cmd->domid_req.domid;
 
                 /* Update the domid map to remember our own domid */
