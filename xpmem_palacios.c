@@ -140,7 +140,9 @@ xpmem_work_fn(struct work_struct * work)
     /* Grab command size */
     cmd_size = state->bar_state.xpmem_cmd_size;
 
-    printk("cmd size: %llu\n", cmd_size);
+    if (cmd_size == 0) {
+        return;
+    }
 
     cmd = kmalloc(cmd_size, GFP_KERNEL);
     if (!cmd) {
