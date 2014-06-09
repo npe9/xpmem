@@ -55,14 +55,8 @@ struct xpmem_palacios_state {
 
     struct workqueue_struct * workq;       /* Workq for handling interrupts */
     struct work_struct        worker;      /* Worker struct */
-
-    struct list_head          cmd_list;    /* List of commands received from device */
 };
 
-struct xpmem_cmd_ex_iter {
-    struct xpmem_cmd_ex * cmd;
-    struct list_head      node;
-};
 
 static struct xpmem_palacios_state * palacios_devs[MAX_DEVICES];
 static int dev_off = 0;
@@ -130,47 +124,13 @@ read_bar(void __iomem * xpmem_bar,
 void 
 xpmem_work_fn(struct work_struct * work)
 {
-    struct xpmem_palacios_state * state = NULL;
-    struct xpmem_cmd_ex_iter    * iter  = NULL;
-    unsigned long                 flags = 0;
-   
+    struct xpmem_palacios_state * state    = NULL;
+    struct xpmem_cmd_ex         * cmd      = NULL;
+    u64                           cmd_size = 0;
+
     state = container_of(work, struct xpmem_palacios_state, worker);
-
-    spin_lock_irqsave(&(state->lock), flags);
-    {
-        iter = list_first_entry(&(state->cmd_list), struct xpmem_cmd_ex_iter, node);
-        list_del(&(iter->node));
-    }
-    spin_unlock_irqrestore(&(state->lock), flags);
-
-    /* Deliver the command */
-    xpmem_cmd_deliver(state->part, state->link, iter->cmd);
-
-    kfree(iter->cmd);
-    kfree(iter);
-}
-
-
-/*
- * Interrupt handler for Palacios XPMEM device.
- * 
- * We copy an xpmem command out of the device, which must happen here and not in
- * the work queue because antoher interrupt may happen before the work queue is
- * scheduled, thereby blowing away the command in the BAR.
- */
-static irqreturn_t 
-irq_handler(int    irq, 
-            void * data)
-{
-    struct xpmem_palacios_state * state = NULL; 
-    struct xpmem_cmd_ex_iter    * iter  = NULL;
-    unsigned long                 flags = 0;
-
-    u64 cmd_size = 0;
-
-    state = (struct xpmem_palacios_state *)data; 
     if (!state->initialized) {
-        return IRQ_NONE;
+        return;
     }
 
     /* Read BAR header */
@@ -178,41 +138,42 @@ irq_handler(int    irq,
              (void *)&(state->bar_state), 
              sizeof(state->bar_state));
 
-
-    iter = kmalloc(sizeof(struct xpmem_cmd_ex_iter), GFP_ATOMIC);
-    if (!iter) {
-        return IRQ_NONE;
-    }
-
     /* Grab command size */
     cmd_size = state->bar_state.xpmem_cmd_size;
 
-    iter->cmd = kmalloc(cmd_size, GFP_ATOMIC);
-    if (!iter->cmd) {
-        kfree(iter);
-        return IRQ_NONE;
+    cmd = kmalloc(cmd_size, GFP_KERNEL);
+    if (!cmd) {
+        return;
     }
 
     /* Read command from BAR */
     xpmem_read_cmd_hcall(
         state->bar_state.xpmem_read_cmd_hcall_id, 
         cmd_size,
-        __pa(iter->cmd));
-
-
-    spin_lock_irqsave(&(state->lock), flags);
-    {
-        list_add_tail(&(iter->node), &(state->cmd_list));
-    }
-    spin_unlock_irqrestore(&(state->lock), flags);
-
-
-    /* Queue work for worker thread */
-    queue_work(state->workq, &(state->worker));
-
+        __pa(cmd)
+    );
 
     /* Clear device interrupt flag */
     xpmem_irq_clear_hcall(state->bar_state.xpmem_irq_clear_hcall_id);
+
+    /* Deliver the command */
+    xpmem_cmd_deliver(state->part, state->link, cmd);
+
+    kfree(cmd);
+}
+
+
+/*
+ * Interrupt handler for Palacios XPMEM device.
+ */
+static irqreturn_t 
+irq_handler(int    irq, 
+            void * data)
+{
+    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)data;
+
+    /* Queue work for worker thread */
+    queue_work(state->workq, &(state->worker));
 
     return IRQ_HANDLED;
 }
@@ -346,7 +307,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
     spin_lock_init(&(palacios_state->lock));
     palacios_state->workq = create_singlethread_workqueue("xpmem-work");
     INIT_WORK(&(palacios_state->worker), xpmem_work_fn);
-    INIT_LIST_HEAD(&(palacios_state->cmd_list));
 
     palacios_state->initialized = 1;
     spin_lock_irqsave(&(palacios_lock), flags);
