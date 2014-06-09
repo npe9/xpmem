@@ -646,6 +646,9 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
     
     printk("xpmem fwd cmd\n");
 
+    if (link == state->local_link) {
+        cmd->src_dom = state->domid;
+    }
 
     switch (cmd->type) {
         case XPMEM_MAKE:
@@ -653,7 +656,11 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
         case XPMEM_GET:
         case XPMEM_RELEASE:
         case XPMEM_ATTACH:
-        case XPMEM_DETACH:
+        case XPMEM_DETACH: {
+            if (link == state->local_link) {
+                cmd->dst_dom = XPNEN_NS_DOMID;
+            }
+        }
         case XPMEM_MAKE_COMPLETE:
         case XPMEM_REMOVE_COMPLETE:
         case XPMEM_GET_COMPLETE:
