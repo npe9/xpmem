@@ -904,7 +904,7 @@ xpmem_fwd_deinit(struct xpmem_partition * part)
     }
 
     /* Stop timer */
-    del_timer(&(state->ping_timer));
+    del_timer_sync(&(state->ping_timer));
 
     /* Free hashtables */
     free_htable(state->domid_map, 0, 0);
