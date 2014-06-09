@@ -493,6 +493,20 @@ xpmem_fwd_process_ping(struct xpmem_fwd_state * state,
             /* Broadcast the PONG to all our neighbors, except the source */
             xpmem_pong_ns(state, link);
 
+            /* Do we have a domid? */
+            if (state->domid <= 0) {
+                struct xpmem_cmd_ex domid_req;
+                memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
+
+                domid_req.type = XPMEM_DOMID_REQUEST;
+
+                printk("Sending DOMID request\n");
+
+                if (xpmem_send_cmd_link(state, state->ns_link, &domid_req)) {
+                    printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", state->ns_link);
+                }
+            }
+
             break;
         }
 
@@ -839,18 +853,7 @@ xpmem_ping_timer_fn(unsigned long data)
         return;
     }
 
-    if (xpmem_have_ns_link(state)) {
-        struct xpmem_cmd_ex domid_req;
-        memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
-
-        domid_req.type = XPMEM_DOMID_REQUEST;
-
-        printk("Sending DOMID request\n");
-
-        if (xpmem_send_cmd_link(state, state->ns_link, &domid_req)) {
-            printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", state->ns_link);
-        }
-    } else {
+    if (!xpmem_have_ns_link(state)) {
         /* Reset and restart the timer */
         state->ping_timer.expires = jiffies + (PING_PERIOD * HZ);
         add_timer(&(state->ping_timer));
@@ -896,7 +899,7 @@ xpmem_fwd_init(struct xpmem_partition * part)
 
     /* Set up the timer */
     init_timer(&(state->ping_timer));
-    state->ping_timer.expires = jiffies + (PING_PERIOD * HZ);
+    state->ping_timer.expires = jiffies + HZ;
     state->ping_timer.data = (unsigned long)state;
     state->ping_timer.function = xpmem_ping_timer_fn;
     
