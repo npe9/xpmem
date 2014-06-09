@@ -646,8 +646,13 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
     
     printk("xpmem fwd cmd\n");
 
+    /* If the command is coming from the local domain, it is routed to the NS,
+     * regardless of whether it's a request or a completion
+     *
+     * The src, however, is only send for requests
+     */
     if (link == state->local_link) {
-        cmd->src_dom = state->domid;
+        cmd->dst_dom = XPMEM_NS_DOMID;
     }
 
     switch (cmd->type) {
@@ -658,7 +663,7 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
         case XPMEM_ATTACH:
         case XPMEM_DETACH: {
             if (link == state->local_link) {
-                cmd->dst_dom = XPNEN_NS_DOMID;
+                cmd->src_dom = state->domid;
             }
         }
         case XPMEM_MAKE_COMPLETE:
@@ -667,6 +672,7 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
         case XPMEM_RELEASE_COMPLETE:
         case XPMEM_ATTACH_COMPLETE:
         case XPMEM_DETACH_COMPLETE: {
+
             out_link = xpmem_search_domid(state, cmd->dst_dom);
 
             if (out_link == 0) {
