@@ -93,6 +93,7 @@ struct xpmem_fwd_state {
     spinlock_t      lock;            /* state lock */
     xpmem_link_t    local_link;      /* link to our own domain */
     xpmem_domid_t   domid;           /* domid for this partition */
+    int             domid_requested; /* have we requested a domid */
 
     atomic_t        uniq_link;       /* unique link generation */
 
@@ -493,19 +494,35 @@ xpmem_fwd_process_ping(struct xpmem_fwd_state * state,
             /* Broadcast the PONG to all our neighbors, except the source */
             xpmem_pong_ns(state, link);
 
-            /* Do we have a domid? */
-            if (state->domid <= 0) {
-                struct xpmem_cmd_ex domid_req;
-                memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
+            /* Have we requested a domid */
+            {
+                unsigned long flags = 0;
+                int domid_requested = 0;
 
-                domid_req.type = XPMEM_DOMID_REQUEST;
+                spin_lock_irqsave(&(state->lock), flags); 
+                {
+                    domid_requested = state->domid_requested;
+                    if (!domid_requested) {
+                        state->domid_requested = 1;
+                    }
+                }
+                spin_unlock_irqrestore(&(state->lock), flags);
 
-                printk("Sending DOMID request\n");
 
-                if (xpmem_send_cmd_link(state, state->ns_link, &domid_req)) {
-                    printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", state->ns_link);
+                if (!domid_requested) {
+                    struct xpmem_cmd_ex domid_req;
+                    memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
+
+                    domid_req.type = XPMEM_DOMID_REQUEST;
+
+                    printk("Sending DOMID request\n");
+
+                    if (xpmem_send_cmd_link(state, state->ns_link, &domid_req)) {
+                        printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", state->ns_link);
+                    }
                 }
             }
+
 
             break;
         }

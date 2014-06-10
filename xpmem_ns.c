@@ -717,7 +717,9 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
         }
 
         case XPMEM_DETACH: {
-            /* Ignore detaches for now */
+            /* Ignore detaches for now, because it's not clear how to figure out
+             * a destination domain from just a virtual address
+             */
             {
                 out_cmd->type    = XPMEM_DETACH_COMPLETE;
                 out_cmd->dst_dom = cmd->src_dom;

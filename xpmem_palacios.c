@@ -72,7 +72,7 @@ xpmem_hcall(u32                   hcall_id,
     __asm__ volatile(
         VMCALL
         : "=a"(ret)
-        : "a"(hcall_id), "b"(cmd->type), "c"(cmd)
+        : "a"(hcall_id), "b"(cmd)
     );
 }
 
@@ -140,10 +140,7 @@ xpmem_work_fn(struct work_struct * work)
     /* Grab command size */
     cmd_size = state->bar_state.xpmem_cmd_size;
 
-    if (cmd_size == 0) {
-        return;
-    }
-
+    /* Could be a spurious IRQ */
     if (cmd_size == 0) {
         return;
     }
