@@ -130,7 +130,7 @@ xpmem_work_fn(struct work_struct * work)
     struct xpmem_cmd_ex         * cmd      = NULL;
     u64                           cmd_size = 0;
     u64                           pfn_size = 0;
-    u64                         * pfn_list = NULL;
+    void                        * pfn_buf  = NULL;
 
     state = container_of(work, struct xpmem_palacios_state, worker);
     if (!state->initialized) {
@@ -159,8 +159,8 @@ xpmem_work_fn(struct work_struct * work)
     printk("pfn_size: %llu\n", pfn_size);
 
     if (pfn_size > 0) {
-        pfn_list = kmalloc(pfn_size, GFP_KERNEL);
-        if (!pfn_list) {
+        pfn_buf = kmalloc(pfn_size, GFP_KERNEL);
+        if (!pfn_buf) {
             kfree(cmd);
             return;
         }
@@ -170,12 +170,20 @@ xpmem_work_fn(struct work_struct * work)
     xpmem_read_cmd_hcall(
         state->bar_state.xpmem_read_cmd_hcall_id, 
         (u64)(void *)cmd,
-        (u64)(void *)pfn_list
+        (u64)pfn_buf
     );
 
     /* Save the pfn list */
     if (pfn_size > 0) {
-        cmd->attach.pfns = pfn_list;
+        cmd->attach.pfns = kmalloc(pfn_size, GFP_KERNEL);
+        if (!cmd->attach.pfns) {
+            kfree(pfn_buf);
+            kfree(cmd);
+            return;
+        }
+
+        memcpy(cmd->attach.pfns, pfn_buf, pfn_size);
+        kfree(pfn_buf);
 
         {
             int i = 0;
