@@ -745,8 +745,8 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
     if (state->domid <= 0) {
         printk(KERN_ERR "This domain has no XPMEM domid. Are you running the nameserver anywhere?\n");
 
-        xpmem_set_complete(out_cmd);
         xpmem_set_failure(out_cmd);
+        xpmem_set_complete(out_cmd);
         
         if (xpmem_send_cmd_link(state, out_link, out_cmd)) {
             printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", out_link);

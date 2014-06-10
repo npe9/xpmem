@@ -527,19 +527,23 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         case XPMEM_RELEASE_COMPLETE:
         case XPMEM_ATTACH_COMPLETE: 
         case XPMEM_DETACH_COMPLETE: {
-            unsigned long pfn_len = 0;
-            
-            if (cmd->type == XPMEM_ATTACH_COMPLETE) {
-                pfn_len = cmd->attach.num_pfns * sizeof(u64);
-            }
-
-            state->cmd = kmalloc(sizeof(struct xpmem_cmd_ex) + pfn_len, GFP_KERNEL);
+            state->cmd = kmalloc(sizeof(struct xpmem_cmd_ex), GFP_KERNEL);
             if (!state->cmd) {
                 printk(KERN_ERR "XPMEM: out of memory\n");
                 break;
             }
 
-            memcpy(state->cmd, cmd, sizeof(struct xpmem_cmd_ex) + pfn_len);
+            *state->cmd = *cmd;
+            
+            if (cmd->type == XPMEM_ATTACH_COMPLETE) {
+                state->cmd->attach.pfns = kmalloc(sizeof(u64) * cmd->attach.num_pfns, GFP_KERNEL);
+                if (!state->cmd->attach.pfns) {
+                    printk(KERN_ERR "XPMEM: out of memory\n");
+                    break;
+                }
+
+                memcpy(state->cmd->attach.pfns, cmd->attach.pfns, cmd->attach.num_pfns * sizeof(u64));
+            }
 
             state->cmd_complete = 1;
 

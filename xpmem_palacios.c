@@ -156,6 +156,8 @@ xpmem_work_fn(struct work_struct * work)
         return;
     }
 
+    printk("pfn_size: %llu\n", pfn_size);
+
     if (pfn_size > 0) {
         pfn_list = kmalloc(pfn_size, GFP_KERNEL);
         if (!pfn_list) {
@@ -174,15 +176,16 @@ xpmem_work_fn(struct work_struct * work)
     /* Save the pfn list */
     if (pfn_size > 0) {
         cmd->attach.pfns = pfn_list;
-    }
 
-    {
-        int i = 0;
+        {
+            int i = 0;
 
-        printk("Palacios: attach complete. %llu pfns. list:\n", cmd->attach.num_pfns);
+            printk("Palacios: attach complete. %llu pfns. list:\n", cmd->attach.num_pfns);
 
-        for (i = 0; i < cmd->attach.num_pfns; i++) {
-            printk("%d: %llu\n", i, cmd->attach.pfns[i]);
+            for (i = 0; i < cmd->attach.num_pfns; i++) {
+                printk("%d: %llu\n", i, cmd->attach.pfns[i]);
+            }
+
         }
     }
 

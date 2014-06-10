@@ -250,6 +250,8 @@ struct xpmem_partition {
     /* extended xpmem states */
     struct xpmem_palacios_state * palacios_state;
     struct xpmem_domain_state   * domain_state;
+
+    /* mutually exclusive */
     struct xpmem_ns_state       * ns_state;
     struct xpmem_fwd_state      * fwd_state;
 };
