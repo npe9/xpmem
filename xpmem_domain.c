@@ -444,6 +444,9 @@ xpmem_detach_vaddr(u64 vaddr)
             if (remote->vaddr == vaddr) {
                 vm_munmap(remote->vaddr, remote->size);
                 list_del(&(remote->node));
+
+                /* detach remote? */
+
                 kfree(remote);
                 break;
             }

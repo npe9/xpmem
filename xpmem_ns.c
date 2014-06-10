@@ -234,6 +234,8 @@ xpmem_add_segid(struct xpmem_ns_state * state,
 
     spin_lock_irqsave(&(state->lock), flags);
     {
+        printk("Inserting %lli (domid %lli) in map %p\n",
+             segid, domid, (void *)state->segid_map);
         status = htable_insert(state->segid_map,
                     (uintptr_t)segid,
                     (uintptr_t)domid);
@@ -296,6 +298,8 @@ xpmem_search_or_remove_segid(struct xpmem_ns_state * state,
                         (uintptr_t)segid, 
                         0);
         } else {
+            printk("Searching %lli in map %p\n",
+                 segid, (void *)state->segid_map);
             result = (xpmem_domid_t)htable_search(state->segid_map,
                         (uintptr_t)segid); 
         }
@@ -532,6 +536,33 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
 
     printk("Process ns command\n");
 
+    /* If the command is coming from the local domain, it is routed to the NS,
+     * regardless of whether it's a request or completion. So, we set the
+     * dst_dom field
+     *
+     * The src, however, it only set for requests
+     */
+    if (link == state->local_link) {
+        cmd->dst_dom = XPMEM_NS_DOMID;
+    }
+
+    /* Set the src dom if needed */
+    switch (cmd->type) {
+        case XPMEM_MAKE:
+        case XPMEM_REMOVE:
+        case XPMEM_GET:
+        case XPMEM_RELEASE:
+        case XPMEM_ATTACH:
+        case XPMEM_DETACH:
+            if (link == state->local_link) {
+                cmd->src_dom = state->domid;
+            }
+            break;
+
+        default:
+            break;
+    }
+
     switch (cmd->type) {
         case XPMEM_MAKE: {
             int ret = 0;
@@ -551,6 +582,8 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
                 out_cmd->make.segid = -1;
                 goto out_make;
             }
+
+            printk("XPMEM: added segid %lli to hashtable\n", cmd->make.segid);
 
 
             out_make: 

@@ -40,6 +40,9 @@ struct xpmem_bar_state {
 
     /* size of command to read from device */
     u64 xpmem_cmd_size;
+
+    /* size of pfn list to read from device */
+    u64 xpmem_pfn_size;
 };
 
 
@@ -89,15 +92,14 @@ xpmem_irq_clear_hcall(u32 hcall_id)
 
 static void
 xpmem_read_cmd_hcall(u32 hcall_id,
-                     u64 buf_size,
-                     u64 buffer_pa)
-                     
+                     u64 cmd_va,
+                     u64 pfn_va)
 {
     unsigned long long ret = 0;
     __asm__ volatile(
         VMCALL
         : "=a"(ret)
-        : "a"(hcall_id), "b"(buf_size), "c"(buffer_pa)
+        : "a"(hcall_id), "b"(cmd_va), "c"(pfn_va)
     );
 }
 
@@ -126,6 +128,8 @@ xpmem_work_fn(struct work_struct * work)
     struct xpmem_palacios_state * state    = NULL;
     struct xpmem_cmd_ex         * cmd      = NULL;
     u64                           cmd_size = 0;
+    u64                           pfn_size = 0;
+    u64                         * pfn_list = NULL;
 
     state = container_of(work, struct xpmem_palacios_state, worker);
     if (!state->initialized) {
@@ -137,25 +141,39 @@ xpmem_work_fn(struct work_struct * work)
              (void *)&(state->bar_state), 
              sizeof(state->bar_state));
 
-    /* Grab command size */
+    /* Grab size fields */
     cmd_size = state->bar_state.xpmem_cmd_size;
+    pfn_size = state->bar_state.xpmem_pfn_size;
 
     /* Could be a spurious IRQ */
-    if (cmd_size == 0) {
+    if (cmd_size != sizeof(struct xpmem_cmd_ex)) {
         return;
     }
 
-    cmd = kmalloc(cmd_size, GFP_KERNEL);
+    cmd = kmalloc(sizeof(struct xpmem_cmd_ex), GFP_KERNEL);
     if (!cmd) {
         return;
+    }
+
+    if (pfn_size > 0) {
+        pfn_list = kmalloc(pfn_size, GFP_KERNEL);
+        if (!pfn_list) {
+            kfree(cmd);
+            return;
+        }
     }
 
     /* Read command from BAR */
     xpmem_read_cmd_hcall(
         state->bar_state.xpmem_read_cmd_hcall_id, 
-        cmd_size,
-        __pa(cmd)
+        (u64)(void *)cmd,
+        (u64)(void *)pfn_list
     );
+
+    /* Save the pfn list */
+    if (pfn_size > 0) {
+        cmd->attach.pfns = pfn_list;
+    }
 
     /* Clear device interrupt flag */
     xpmem_irq_clear_hcall(state->bar_state.xpmem_irq_clear_hcall_id);
@@ -163,7 +181,13 @@ xpmem_work_fn(struct work_struct * work)
     /* Deliver the command */
     xpmem_cmd_deliver(state->part, state->link, cmd);
 
+
+    /* Free up */
     kfree(cmd);
+
+    if (pfn_size > 0) {
+        kfree(cmd->attach.pfns);
+    }
 }
 
 
