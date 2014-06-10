@@ -534,7 +534,34 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
 
-    printk("Process ns command\n");
+    printk("Process ns command %s\n", cmd_to_string(cmd->type));
+
+    /* If the command is coming from the local domain, it is routed to the NS,
+     * regardless of whether it's a request or completion. So, we set the
+     * dst_dom field
+     *
+     * The src, however, it only set for requests
+     */
+    if (link == state->local_link) {
+        cmd->dst_dom = XPMEM_NS_DOMID;
+    }
+
+    /* Set the src dom if needed */
+    switch (cmd->type) {
+        case XPMEM_MAKE:
+        case XPMEM_REMOVE:
+        case XPMEM_GET:
+        case XPMEM_RELEASE:
+        case XPMEM_ATTACH:
+        case XPMEM_DETACH:
+            if (link == state->local_link) {
+                cmd->src_dom = state->domid;
+            }
+            break;
+
+        default:
+            break;
+    }
 
     /* If the command is coming from the local domain, it is routed to the NS,
      * regardless of whether it's a request or completion. So, we set the
@@ -767,6 +794,10 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
         case XPMEM_RELEASE_COMPLETE:
         case XPMEM_ATTACH_COMPLETE:
         case XPMEM_DETACH_COMPLETE: {
+            /* The destination is now the original source */
+            cmd->dst_dom = cmd->src_dom;
+
+            /* Search for the appropriate link */
             out_link = xpmem_search_domid(state, cmd->dst_dom);
 
             if (out_link == 0) {
@@ -786,6 +817,8 @@ xpmem_ns_process_cmd(struct xpmem_ns_state * state,
         }
     }
 
+    printk("XPMEM: sending cmd %s to link %lli\n",
+        cmd_to_string(out_cmd->type), out_link);
 
     /* Write the response */
     if (xpmem_send_cmd_link(state, out_link, out_cmd)) {

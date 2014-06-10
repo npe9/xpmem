@@ -14,6 +14,7 @@
 #include <linux/wait.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
+#include <linux/delay.h>
 
 #include <xpmem.h>
 #include <xpmem_private.h>
@@ -223,6 +224,19 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
 
     if (!state->initialized) {
         return -1;
+    }
+
+    if (cmd->type == XPMEM_ATTACH_COMPLETE) {
+        uint64_t i = 0;
+
+        printk("guest PFN list:\n");
+
+        for (i = 0; i < cmd->attach.num_pfns; i++) {
+            printk("%llu: %llu\n", i, cmd->attach.pfns[i]);
+        }
+
+
+        mdelay(5000);
     }
 
     spin_lock_irqsave(&(state->lock), flags);

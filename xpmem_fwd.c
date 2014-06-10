@@ -678,9 +678,10 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
     printk("xpmem fwd cmd\n");
 
     /* If the command is coming from the local domain, it is routed to the NS,
-     * regardless of whether it's a request or a completion
+     * regardless of whether it's a request or a completion. So, we set the
+     * dst_dom field
      *
-     * The src, however, is only send for requests
+     * The src, however, is only set for requests
      */
     if (link == state->local_link) {
         cmd->dst_dom = XPMEM_NS_DOMID;

@@ -475,6 +475,9 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
     /* Process commands destined for this domain */
     switch (cmd->type) {
         case XPMEM_GET:
+
+            printk("GET REMOTE\n");
+
             ret = xpmem_get_domain(&(cmd->get));
 
             if (ret != 0) {
