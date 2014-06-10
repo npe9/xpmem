@@ -176,12 +176,20 @@ xpmem_work_fn(struct work_struct * work)
         cmd->attach.pfns = pfn_list;
     }
 
+    printk("Palacios: attach complete. %llu pfns. list:\n", cmd->attach.num_pfns);
+    {
+        int i = 0;
+
+        for (i = 0; i < cmd->attach.num_pfns; i++) {
+            printk("%d: %llu\n", i, cmd->attach.pfns[i]);
+        }
+    }
+
     /* Clear device interrupt flag */
     xpmem_irq_clear_hcall(state->bar_state.xpmem_irq_clear_hcall_id);
 
     /* Deliver the command */
     xpmem_cmd_deliver(state->part, state->link, cmd);
-
 
     /* Free up */
     kfree(cmd);
