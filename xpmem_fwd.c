@@ -662,6 +662,70 @@ xpmem_fwd_process_domid(struct xpmem_fwd_state * state,
     }
 }
 
+static void
+xpmem_set_failure(struct xpmem_cmd_ex * cmd)
+{
+    switch (cmd->type) {
+        case XPMEM_MAKE:
+            cmd->make.segid = -1;
+            break;
+
+        case XPMEM_REMOVE:
+            break;
+
+        case XPMEM_GET:
+            cmd->get.apid = -1;
+            break;
+
+        case XPMEM_RELEASE:
+            break;
+
+        case XPMEM_ATTACH:
+            cmd->attach.pfns = NULL;
+            cmd->attach.num_pfns = 0;
+            break;
+
+        case XPMEM_DETACH:
+            break;
+
+        default:
+            break;
+    }
+}
+
+static void
+xpmem_set_complete(struct xpmem_cmd_ex * cmd)
+{
+    switch (cmd->type) {
+        case XPMEM_MAKE:
+            cmd->type = XPMEM_MAKE_COMPLETE;
+            break;
+
+        case XPMEM_REMOVE:
+            cmd->type = XPMEM_REMOVE_COMPLETE;
+            break;
+
+        case XPMEM_GET:
+            cmd->type = XPMEM_GET_COMPLETE;
+            break;
+
+        case XPMEM_RELEASE:
+            cmd->type = XPMEM_RELEASE_COMPLETE;
+            break;
+
+        case XPMEM_ATTACH:
+            cmd->type = XPMEM_ATTACH_COMPLETE;
+            break;
+
+        case XPMEM_DETACH:
+            cmd->type = XPMEM_DETACH_COMPLETE;
+            break;
+
+        default:
+            break;
+    }
+}
+
 
 /* Process a regular XPMEM command. If we get here we are connected to the name
  * server already and have a domid
@@ -674,9 +738,22 @@ xpmem_fwd_process_cmd(struct xpmem_fwd_state * state,
     /* There's no reason not to reuse the input command struct for responses */
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
-    
+
     printk("xpmem fwd cmd\n");
 
+    /* If we don't have a domid, we have to fail */
+    if (state->domid <= 0) {
+        printk(KERN_ERR "This domain has no XPMEM domid. Are you running the nameserver anywhere?\n");
+
+        xpmem_set_complete(out_cmd);
+        xpmem_set_failure(out_cmd);
+        
+        if (xpmem_send_cmd_link(state, out_link, out_cmd)) {
+            printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", out_link);
+        }
+        return;
+    }
+    
     /* If the command is coming from the local domain, it is routed to the NS,
      * regardless of whether it's a request or a completion. So, we set the
      * dst_dom field
@@ -839,11 +916,6 @@ xpmem_cmd_deliver(struct xpmem_partition * part,
             break;
 
         default:
-            if (state->domid <= 0) {
-                printk(KERN_ERR "This domain has no XPMEM domid. Are you running the nameserver anywhere?\n");
-                return -1;
-            }
-
             xpmem_fwd_process_cmd(state, link, cmd);
             break;
     }   
