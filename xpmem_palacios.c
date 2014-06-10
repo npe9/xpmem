@@ -176,9 +176,10 @@ xpmem_work_fn(struct work_struct * work)
         cmd->attach.pfns = pfn_list;
     }
 
-    printk("Palacios: attach complete. %llu pfns. list:\n", cmd->attach.num_pfns);
     {
         int i = 0;
+
+        printk("Palacios: attach complete. %llu pfns. list:\n", cmd->attach.num_pfns);
 
         for (i = 0; i < cmd->attach.num_pfns; i++) {
             printk("%d: %llu\n", i, cmd->attach.pfns[i]);
