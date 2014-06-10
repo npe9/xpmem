@@ -246,19 +246,6 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         return -1;
     }
 
-    if (cmd->type == XPMEM_ATTACH_COMPLETE) {
-        uint64_t i = 0;
-
-        printk("guest PFN list:\n");
-
-        for (i = 0; i < cmd->attach.num_pfns; i++) {
-            printk("%llu: %llu\n", i, cmd->attach.pfns[i]);
-        }
-
-
-        mdelay(5000);
-    }
-
     spin_lock_irqsave(&(state->lock), flags);
     {
         xpmem_hcall(state->bar_state.xpmem_hcall_id, cmd);
