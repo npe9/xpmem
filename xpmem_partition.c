@@ -273,7 +273,9 @@ xpmem_send_cmd_link(struct xpmem_partition_state * state,
         return -1;
     }
 
-    printk("XPMEM: sending cmd %s on link %lli\n", cmd_to_string(cmd->type), link);
+    printk("XPMEM: sending cmd %s on link %lli (src_dom = %lli, dst_dom = %lli)\n", 
+        cmd_to_string(cmd->type), link,
+        cmd->src_dom, cmd->dst_dom);
 
     return conn->in_cmd_fn(cmd, conn->priv_data);
 }
