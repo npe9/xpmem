@@ -454,7 +454,7 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
         xpmem_set_failure(out_cmd);
         xpmem_set_complete(out_cmd);
-        
+
         if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
             printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", out_link);
         }
@@ -479,7 +479,7 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_ATTACH:
         case XPMEM_DETACH: {
             if (link == part_state->local_link) {
-                cmd->src_dom = part_state->domid;
+                out_cmd->src_dom = part_state->domid;
             }
         }
         case XPMEM_MAKE_COMPLETE:
@@ -489,11 +489,11 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_ATTACH_COMPLETE:
         case XPMEM_DETACH_COMPLETE: {
 
-            out_link = xpmem_search_domid(part_state, cmd->dst_dom);
+            out_link = xpmem_search_domid(part_state, out_cmd->dst_dom);
 
             if (out_link == 0) {
                 printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
-                    " This should be impossible\n", cmd->dst_dom);
+                    " This should be impossible\n", out_cmd->dst_dom);
                 return;
             }
 

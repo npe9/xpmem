@@ -495,14 +495,10 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         }
     }
 
-    printk("XPMEM: sending cmd %s to link %lli\n",
-        cmd_to_string(out_cmd->type), out_link);
-
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
         printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", link);
     }
-
 }
 
 
