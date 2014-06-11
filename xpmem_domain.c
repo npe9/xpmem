@@ -596,6 +596,10 @@ int
 xpmem_domain_deinit(struct xpmem_partition_state * part)
 {
     struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
+
+    if (!state) {
+        return 0;
+    }
     
     /* Remove domain connection */
     xpmem_remove_connection(state->part, state->link);
