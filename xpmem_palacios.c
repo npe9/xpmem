@@ -365,13 +365,13 @@ xpmem_probe_driver(struct pci_dev             * dev,
     /* Signal device initialization by clearing irq status */
     xpmem_irq_clear_hcall(palacios_state->bar_state.xpmem_irq_clear_hcall_id);
 
-    printk("Palacios XPMEM PCI device enabled\n");
+    printk("XPMEM Palacios PCI device enabled\n");
     return 0;
 
 err_unmap:
     pci_iounmap(dev, palacios_state->xpmem_bar);
 err:
-    printk("Palacios XPMEM device initialization failed\n");
+    printk("XPMEM: Palacios PCI device initialization failed\n");
     return ret;
 }
 
@@ -386,6 +386,8 @@ xpmem_remove_driver(struct pci_dev * dev)
 
     /* Free the irq */
     free_irq(state->irq, state);
+
+    printk("XPMEM Palacios PCI device disabled\n");
 
     state->initialized = 0;
 }
@@ -440,8 +442,6 @@ xpmem_palacios_deinit(struct xpmem_partition_state * part)
     pci_unregister_driver(&xpmem_driver);
 
     part->palacios_priv = NULL;
-
-    printk("XPMEM palacios deinited\n");
 
     return 0;
 }

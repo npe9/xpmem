@@ -36,8 +36,8 @@
 #include <xpmem_syms.h>
 
 /* TODO: set this based on some configure option */
-#define XPMEM_NS
-//#define XPMEM_FWD
+//#define XPMEM_NS
+#define XPMEM_FWD
 
 
 struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
@@ -457,8 +457,6 @@ out_1:
 void __exit
 xpmem_exit(void)
 {
-    printk("Deiniting XPMEM\n");
-
     xpmem_partition_deinit(&(xpmem_my_part->part_state));
 
 	kfree(xpmem_my_part->tg_hashtable);

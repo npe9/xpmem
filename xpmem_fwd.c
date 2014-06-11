@@ -565,6 +565,8 @@ xpmem_ping_timer_fn(unsigned long data)
         fwd_state->ping_timer.expires = jiffies + (PING_PERIOD * HZ);
         add_timer(&(fwd_state->ping_timer));
 
+        printk("Timer sending ping!\n");
+
         /* Send another PING */
         xpmem_ping_ns(part_state, 0);
     }
