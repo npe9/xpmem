@@ -32,10 +32,10 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
+#include <xpmem_partition.h>
 #include <xpmem_syms.h>
 
 /* TODO: set this based on some configure option */
-#define XPMEM_EXTENDED
 //#define XPMEM_NS
 #define XPMEM_FWD
 
@@ -427,20 +427,11 @@ xpmem_init(void)
 	//debug_printk_entry->uid = current->cred->uid;
 	//debug_printk_entry->gid = current->cred->gid;
     
-#ifdef XPMEM_EXTENDED
-  #ifdef XPMEM_NS
-    xpmem_ns_init(xpmem_my_part);
-  #else
-    xpmem_fwd_init(xpmem_my_part);
-  #endif /* XPMEM_NS */
-
-    xpmem_domain_init(xpmem_my_part);
-    xpmem_palacios_init(xpmem_my_part);
-
-    extend_enabled = 1;
+#ifdef XPMEM_NS
+    xpmem_partition_init(&(xpmem_my_part->part_state), 1);
 #else
-    extend_enabled = 0;
-#endif /* XPMEM_EXTENDED */
+    xpmem_partition_init(&(xpmem_my_part->part_state), 0);
+#endif
 
     xpmem_linux_symbol_init();
 
@@ -468,16 +459,7 @@ xpmem_exit(void)
 {
     printk("Deiniting XPMEM\n");
 
-#ifdef XPMEM_EXTENDED
-    xpmem_domain_deinit(xpmem_my_part);
-    xpmem_palacios_deinit(xpmem_my_part);
-
-  #ifdef XPMEM_NS
-    xpmem_ns_deinit(xpmem_my_part);
-  #else
-    xpmem_fwd_deinit(xpmem_my_part);
-  #endif /* XPMEM_NS */
-#endif /* XPMEM_EXTENDED */
+    xpmem_partition_deinit(&(xpmem_my_part->part_state));
 
 	kfree(xpmem_my_part->tg_hashtable);
 	kfree(xpmem_my_part);

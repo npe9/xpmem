@@ -19,7 +19,7 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
-#include <xpmem_ns.h>
+#include <xpmem_iface.h>
 
 #define XPMEM_VENDOR_ID     0xfff0
 #define XPMEM_SUBVENDOR_ID  0xfff0
@@ -48,17 +48,17 @@ struct xpmem_bar_state {
 
 
 struct xpmem_palacios_state {
-    int                       initialized; /* device initialization */
-    spinlock_t                lock;        /* state lock */
-    unsigned int              irq;         /* irq number */
-    xpmem_link_t              link;        /* XPMEM connection link */
-    struct xpmem_partition  * part;        /* pointer to XPMEM partition */
+    int                            initialized; /* device initialization */
+    spinlock_t                     lock;        /* state lock */
+    unsigned int                   irq;         /* irq number */
+    xpmem_link_t                   link;        /* XPMEM connection link */
+    struct xpmem_partition_state * part;        /* pointer to XPMEM partition */
 
-    void __iomem            * xpmem_bar;   /* Bar memory */
-    struct xpmem_bar_state    bar_state;   /* Bar state */
+    void __iomem                 * xpmem_bar;   /* Bar memory */
+    struct xpmem_bar_state         bar_state;   /* Bar state */
 
-    struct workqueue_struct * workq;       /* Workq for handling interrupts */
-    struct work_struct        worker;      /* Worker struct */
+    struct workqueue_struct      * workq;       /* Workq for handling interrupts */
+    struct work_struct             worker;      /* Worker struct */
 };
 
 
@@ -386,6 +386,8 @@ xpmem_remove_driver(struct pci_dev * dev)
 
     /* Free the irq */
     free_irq(state->irq, state);
+
+    state->initialized = 0;
 }
 
 
@@ -401,7 +403,7 @@ xpmem_driver =
 
 
 int
-xpmem_palacios_init(struct xpmem_partition * part) {
+xpmem_palacios_init(struct xpmem_partition_state * part) {
     struct xpmem_palacios_state * state  = NULL;
     int                           ret    = 0;
     int                           dev_no = 0;
@@ -409,16 +411,12 @@ xpmem_palacios_init(struct xpmem_partition * part) {
     /* Index into global list */
     dev_no = atomic_read(&dev_off);
 
-    /* Get the state */
+    /* Clear the state */
     state = &(palacios_devs[dev_no]);
-
     memset(state, 0, sizeof(struct xpmem_palacios_state));
 
-    /* Save partition pointer */
-    state->part = part;
-
-    /* Save pointer to this state */
-    part->palacios_state = state;
+    state->part         = part;
+    part->palacios_priv = state;
 
     /* Register PCI driver */
     ret = pci_register_driver(&xpmem_driver);
@@ -431,11 +429,11 @@ xpmem_palacios_init(struct xpmem_partition * part) {
 }
 
 int
-xpmem_palacios_deinit(struct xpmem_partition * part)
+xpmem_palacios_deinit(struct xpmem_partition_state * part)
 {
     pci_unregister_driver(&xpmem_driver);
 
-    part->palacios_state->initialized = 0;
+    part->palacios_priv = NULL;
 
     printk("XPMEM palacios deinited\n");
 

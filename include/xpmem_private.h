@@ -19,6 +19,9 @@
 #include <linux/hugetlb.h>
 #include <asm/signal.h>
 
+#include <xpmem_extended.h>
+#include <xpmem_partition.h>
+
 
 #ifdef CONFIG_MMU_NOTIFIER
 #include <linux/mmu_notifier.h>
@@ -240,20 +243,16 @@ struct xpmem_attachment {
 };
 
 
+
 struct xpmem_partition {
 	struct xpmem_hashlist *tg_hashtable;	/* locks + tg hash lists */
 
 	/* procfs debugging */
-	atomic_t n_pinned; 	/* # of pages pinned xpmem */
+	atomic_t n_pinned; 	    /* # of pages pinned xpmem */
 	atomic_t n_unpinned; 	/* # of pages unpinned by xpmem */
 
-    /* extended xpmem states */
-    struct xpmem_palacios_state * palacios_state;
-    struct xpmem_domain_state   * domain_state;
-
-    /* mutually exclusive */
-    struct xpmem_ns_state       * ns_state;
-    struct xpmem_fwd_state      * fwd_state;
+    /* per-partition state */
+    struct xpmem_partition_state part_state;
 };
 
 /*
@@ -396,21 +395,7 @@ extern int xpmem_mmu_notifier_init(struct xpmem_thread_group *);
 extern void xpmem_mmu_notifier_unlink(struct xpmem_thread_group *);
 
 
-/* found in xpmem_domain.c */
-extern int xpmem_domain_init(struct xpmem_partition *);
-extern int xpmem_domain_deinit(struct xpmem_partition *);
 
-/* found in xpmem_palacios.c */
-extern int xpmem_palacios_init(struct xpmem_partition *);
-extern int xpmem_palacios_deinit(struct xpmem_partition *);
-
-/* found in xpmem_ns.c */
-extern int xpmem_ns_init(struct xpmem_partition *);
-extern int xpmem_ns_deinit(struct xpmem_partition *);
-
-/* found in xpmem_fwd.c */
-extern int xpmem_fwd_init(struct xpmem_partition *);
-extern int xpmem_fwd_deinit(struct xpmem_partition *);
 
 
 /*

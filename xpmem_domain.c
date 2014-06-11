@@ -18,19 +18,17 @@
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
 #include <xpmem_hashtable.h>
-#include <xpmem_ns.h>
-
-u32 extend_enabled = 0;
+#include <xpmem_iface.h>
 
 struct xpmem_domain_state {
-    int                      initialized;  /* domain state initialization */
-    xpmem_link_t             link;         /* XPMEM connection link */
-    struct xpmem_partition * part;         /* pointer to XPMEM partition */
+    int                            initialized;  /* domain state initialization */
+    xpmem_link_t                   link;         /* XPMEM connection link */
+    struct xpmem_partition_state * part;         /* pointer to XPMEM partition */
 
-    int                      cmd_complete; /* command completion signal */
-    wait_queue_head_t        dom_waitq;    /* wait for results from fwd/name service */
-    struct mutex             mutex;        /* serialize access to fwd/name service */
-    struct xpmem_cmd_ex    * cmd;          /* shared command struct */
+    int                            cmd_complete; /* command completion signal */
+    wait_queue_head_t              dom_waitq;    /* wait for results from fwd/name service */
+    struct mutex                   mutex;        /* serialize access to fwd/name service */
+    struct xpmem_cmd_ex          * cmd;          /* shared command struct */
 };
 
 
@@ -43,13 +41,13 @@ struct xpmem_remote_attach_struct {
 };
 
 static u32 
-xpmem_hash_fn(uintptr_t key)
+domain_hash_fn(uintptr_t key)
 {
     return hash_long(key);
 }
 
 static int
-xpmem_eq_fn(uintptr_t key1, 
+domain_eq_fn(uintptr_t key1, 
             uintptr_t key2)            
 {
     return (key1 == key2);
@@ -390,7 +388,7 @@ xpmem_map_pfn_range(u64 * pfns,
     }   
 
     if (!attach_htable) {
-        attach_htable = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
+        attach_htable = create_htable(0, domain_hash_fn, domain_eq_fn);
         if (!attach_htable) {
             vm_munmap(attach_addr, size);
             return -ENOMEM;
@@ -564,7 +562,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
 
 
 int
-xpmem_domain_init(struct xpmem_partition * part)
+xpmem_domain_init(struct xpmem_partition_state * part)
 {
     struct xpmem_domain_state * state = kzalloc(sizeof(struct xpmem_domain_state), GFP_KERNEL);
     if (!state) {
@@ -589,18 +587,21 @@ xpmem_domain_init(struct xpmem_partition * part)
     state->cmd_complete = 0;
     state->initialized  = 1;
     state->part         = part;
-    part->domain_state  = state;
+    part->domain_priv   = state;
 
     return 0;
 }
 
 int
-xpmem_domain_deinit(struct xpmem_partition * part)
+xpmem_domain_deinit(struct xpmem_partition_state * part)
 {
-    struct xpmem_domain_state * state = part->domain_state;
+    struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
+    
+    /* Remove domain connection */
+    xpmem_remove_connection(state->part, state->link);
 
     kfree(state);
-    part->domain_state = NULL;
+    part->domain_priv = NULL;
 
     printk("XPMEM domain deinited\n");
 
@@ -613,10 +614,10 @@ xpmem_domain_deinit(struct xpmem_partition * part)
  * service layer. Wait for a response before proceeding
  */
 int
-xpmem_make_remote(struct xpmem_partition * part,
-                  xpmem_segid_t          * segid)
+xpmem_make_remote(struct xpmem_partition_state * part,
+                  xpmem_segid_t                * segid)
 {
-    struct xpmem_domain_state * state = part->domain_state;
+    struct xpmem_domain_state * state = (struct xpmem_domain_state *)(struct xpmem_domain_state *)part->domain_priv;
     struct xpmem_cmd_ex         cmd;
 
     if (!state->initialized) {
@@ -657,10 +658,10 @@ xpmem_make_remote(struct xpmem_partition * part,
 }
 
 int
-xpmem_remove_remote(struct xpmem_partition * part,
-                    xpmem_segid_t            segid)
+xpmem_remove_remote(struct xpmem_partition_state * part,
+                    xpmem_segid_t                  segid)
 {
-    struct xpmem_domain_state * state = part->domain_state;
+    struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
     struct xpmem_cmd_ex         cmd;
 
     if (!state->initialized) {
@@ -698,14 +699,14 @@ xpmem_remove_remote(struct xpmem_partition * part,
 }
 
 int
-xpmem_get_remote(struct xpmem_partition * part,
-                 xpmem_segid_t            segid,
-                 int                      flags,
-                 int                      permit_type,
-                 u64                      permit_value,
-                 xpmem_apid_t           * apid)
+xpmem_get_remote(struct xpmem_partition_state * part,
+                 xpmem_segid_t                  segid,
+                 int                            flags,
+                 int                            permit_type,
+                 u64                            permit_value,
+                 xpmem_apid_t                 * apid)
 {
-    struct xpmem_domain_state * state = part->domain_state;
+    struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
     struct xpmem_cmd_ex         cmd;
 
     if (!state->initialized) {
@@ -749,10 +750,10 @@ xpmem_get_remote(struct xpmem_partition * part,
 }
 
 int
-xpmem_release_remote(struct xpmem_partition * part,
-                     xpmem_apid_t             apid)
+xpmem_release_remote(struct xpmem_partition_state * part,
+                     xpmem_apid_t                   apid)
 {
-    struct xpmem_domain_state * state = part->domain_state;
+    struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
     struct xpmem_cmd_ex         cmd;
 
     if (!state->initialized) {
@@ -790,13 +791,13 @@ xpmem_release_remote(struct xpmem_partition * part,
 }
 
 int
-xpmem_attach_remote(struct xpmem_partition * part,
-                    xpmem_apid_t             apid,
-                    off_t                    offset,
-                    size_t                   size,
-                    u64                    * vaddr)
+xpmem_attach_remote(struct xpmem_partition_state * part,
+                    xpmem_apid_t                   apid,
+                    off_t                          offset,
+                    size_t                         size,
+                    u64                          * vaddr)
 {
-    struct xpmem_domain_state * state   = part->domain_state;
+    struct xpmem_domain_state * state   = (struct xpmem_domain_state *)part->domain_priv;
     struct xpmem_cmd_ex         cmd;
 
     if (!state->initialized) {
@@ -846,10 +847,10 @@ xpmem_attach_remote(struct xpmem_partition * part,
 }
 
 int
-xpmem_detach_remote(struct xpmem_partition * part,
-                    u64                      vaddr)
+xpmem_detach_remote(struct xpmem_partition_state * part,
+                    u64                            vaddr)
 {
-    struct xpmem_domain_state * state = part->domain_state;
+    struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
     struct xpmem_cmd_ex         cmd;
 
     if (!state->initialized) {

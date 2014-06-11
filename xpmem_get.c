@@ -114,17 +114,14 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 
 	seg_tg = xpmem_tg_ref_by_segid(segid);
 	if (IS_ERR(seg_tg)) {
-        if (extend_enabled) {
-            return xpmem_get_remote(
-                    xpmem_my_part, 
-                    segid, 
-                    flags, 
-                    permit_type, 
-                    (u64)permit_value, 
-                    apid_p
-            );
-        }
-		return PTR_ERR(seg_tg);
+        return xpmem_get_remote(
+                &(xpmem_my_part->part_state), 
+                segid, 
+                flags, 
+                permit_type, 
+                (u64)permit_value, 
+                apid_p
+        );
     }
 
 	seg = xpmem_seg_ref_by_segid(seg_tg, segid);
@@ -315,10 +312,7 @@ xpmem_release(xpmem_apid_t apid)
 
 	ap_tg = xpmem_tg_ref_by_apid(apid);
 	if (IS_ERR(ap_tg)) {
-        if (extend_enabled) {
-            return xpmem_release_remote(xpmem_my_part, apid);
-        }
-		return PTR_ERR(ap_tg);
+        return xpmem_release_remote(&(xpmem_my_part->part_state), apid);
     }
 
 	if (current->tgid != ap_tg->tgid) {

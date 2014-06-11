@@ -13,9 +13,11 @@ xpmem-y := 	xpmem_main.o \
 		xpmem_misc.o \
 		xpmem_mmu_notifier.o \
 		xpmem_domain.o \
+		xpmem_partition.o \
 		xpmem_palacios.o \
 		xpmem_hashtable.o \
 		xpmem_syms.o \
+		xpmem_ns.o \
 		xpmem_fwd.o
 
 xpmem-objs := $(xpmem-y)
