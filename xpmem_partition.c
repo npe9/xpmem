@@ -1,7 +1,7 @@
 /*
  * XPMEM extensions for multiple domain support
  *
- * xpmem_partition.c: Common functionality for name and forwarding partitions
+ * xpmem_partition.c: Common functionality for the name and forwarding services
  *
  * Author: Brian Kocoloski <briankoco@cs.pitt.edu>
  */
@@ -272,60 +272,12 @@ xpmem_send_cmd_link(struct xpmem_partition_state * state,
         return -1;
     }
 
+    printk("XPMEM: sending cmd %s on link %lli\n", cmd_to_string(cmd->type), link);
+
     return conn->in_cmd_fn(cmd, conn->priv_data);
 }
 
 
-
-int
-xpmem_partition_init(struct xpmem_partition_state * state, int is_ns)
-{
-    /* Create hashtables */
-    state->domid_map = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
-    if (!state->domid_map) {
-        kfree(state);
-        return -1; 
-    }   
-
-    state->link_map = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
-    if (!state->link_map) {
-        free_htable(state->domid_map, 0, 0); 
-        kfree(state);
-        return -1; 
-    }   
-
-    /* Create everything else */
-    spin_lock_init(&(state->lock));
-    atomic_set(&(state->uniq_link), 0); 
-
-    state->local_link   = -1; 
-    state->domid        = -1; 
-
-    /* TODO: init palacios */
-    /* TODO: init local domain */
-    /* TODO: init fwd OR ns */
-
-    state->initialized  = 1;
-    return 0;
-
-}
-
-
-int
-xpmem_partition_deinit(struct xpmem_partition_state * state)
-{
-    /* Free hashtables */
-    free_htable(state->domid_map, 0, 0);
-    free_htable(state->link_map, 1, 0);
-
-    /* TODO: deinit palacios */
-    /* TODO: deinit local domain */
-    /* TODO: init fwd OR ns */
-
-    state->initialized = 0;
-
-    return 0;
-}
 
 
 struct xpmem_partition_state *
@@ -434,3 +386,134 @@ xpmem_cmd_deliver(struct xpmem_partition_state * part_state,
 }
 
 EXPORT_SYMBOL(xpmem_cmd_deliver);
+
+
+
+
+extern int xpmem_palacios_init(struct xpmem_partition_state *);
+extern int xpmem_palacios_deinit(struct xpmem_partition_state *);
+
+extern int xpmem_domain_init(struct xpmem_partition_state *);
+extern int xpmem_domain_deinit(struct xpmem_partition_state *);
+
+extern int xpmem_ns_init(struct xpmem_partition_state *);
+extern int xpmem_ns_deinit(struct xpmem_partition_state *);
+
+extern int xpmem_fwd_init(struct xpmem_partition_state *);
+extern int xpmem_fwd_deinit(struct xpmem_partition_state *);
+
+
+#include <linux/delay.h>
+
+int
+xpmem_partition_init(struct xpmem_partition_state * state, int is_ns)
+{
+    int status = 0;
+
+    memset(state, 0, sizeof(struct xpmem_partition_state));
+
+    /* Create partition state */
+    spin_lock_init(&(state->lock));
+    atomic_set(&(state->uniq_link), 0); 
+
+    state->local_link    = -1; 
+    state->domid         = -1; 
+    state->is_nameserver = is_ns;
+    state->initialized   = 1;
+
+    /* Create hashtables */
+    state->domid_map = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
+    if (!state->domid_map) {
+        goto err_htable;
+    }   
+
+    state->link_map = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
+    if (!state->link_map) {
+        goto err_htable_2;
+    }   
+
+
+    /* Create ns/fwd state */
+    if (is_ns) {
+        status = xpmem_ns_init(state);
+        if (status != 0) {
+            printk(KERN_ERR "XPMEM: Could not initialize name service\n");
+            goto err_ns;
+        }
+    } else {
+        status = xpmem_fwd_init(state);
+        if (status != 0) {
+            printk(KERN_ERR "XPMEM: Could not initialize forwarding service\n");
+            goto err_fwd;
+        }
+    }
+
+
+    /* Bring up palacios device driver / host OS interface */
+    status = xpmem_palacios_init(state);
+    if (status != 0) {
+        printk(KERN_ERR "XPMEM: Could not initialize Palacios XPMEM state\n");
+        goto err_palacios;
+    }
+
+    /* Register a local domain */
+    status = xpmem_domain_init(state);
+    if (status != 0) {
+        printk(KERN_ERR "XPMEM: Could not initialize local domain XPMEM state\n");
+        goto err_domain;
+    }
+
+    return 0;
+
+err_domain:
+    xpmem_palacios_deinit(state);
+
+err_palacios:
+    if (is_ns) {
+        xpmem_ns_deinit(state);
+    } else {
+        xpmem_fwd_deinit(state);
+    }
+
+err_ns:
+err_fwd:
+    free_htable(state->link_map, 1, 0);
+    state->link_map = NULL;
+
+err_htable_2:
+    free_htable(state->domid_map, 0, 0);
+    state->domid_map = NULL;
+
+err_htable:
+    state->initialized = 0;
+    return -1;
+}
+
+
+int
+xpmem_partition_deinit(struct xpmem_partition_state * state)
+{
+
+    xpmem_palacios_deinit(state);
+    xpmem_domain_deinit(state);
+
+    if (state->is_nameserver) {
+        xpmem_ns_deinit(state);
+    } else {
+        xpmem_fwd_deinit(state);
+    }
+    
+    /* Free hashtables */
+    if (state->domid_map) {
+        free_htable(state->domid_map, 0, 0);
+        state->domid_map = NULL;
+    }
+
+    if (state->link_map) {
+        free_htable(state->link_map, 1, 0);
+        state->link_map = NULL;
+    }
+
+    state->initialized = 0;
+    return 0;
+}

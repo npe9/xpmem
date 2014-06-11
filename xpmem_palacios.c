@@ -431,6 +431,12 @@ xpmem_palacios_init(struct xpmem_partition_state * part) {
 int
 xpmem_palacios_deinit(struct xpmem_partition_state * part)
 {
+    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)part->palacios_priv;
+
+    if (!state) {
+        return 0;
+    }
+
     pci_unregister_driver(&xpmem_driver);
 
     part->palacios_priv = NULL;

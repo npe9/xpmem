@@ -572,8 +572,12 @@ xpmem_ping_timer_fn(unsigned long data)
 
 
 int
-xpmem_fwd_init(struct xpmem_fwd_state * fwd_state)
+xpmem_fwd_init(struct xpmem_partition_state * part_state)
 {
+    struct xpmem_fwd_state * fwd_state = kmalloc(sizeof(struct xpmem_fwd_state), GFP_KERNEL);
+    if (!fwd_state) {
+        return -1;
+    }
 
     spin_lock_init(&(fwd_state->lock));
     INIT_LIST_HEAD(&(fwd_state->domid_req_list));
@@ -584,17 +588,25 @@ xpmem_fwd_init(struct xpmem_fwd_state * fwd_state)
     /* Set up the timer */
     init_timer(&(fwd_state->ping_timer));
     fwd_state->ping_timer.expires = jiffies + HZ;
-    fwd_state->ping_timer.data = (unsigned long)fwd_state;
+    fwd_state->ping_timer.data = (unsigned long)part_state;
     fwd_state->ping_timer.function = xpmem_ping_timer_fn;
     
     /* Start the timer */
     add_timer(&(fwd_state->ping_timer));
+
+    part_state->fwd_state = fwd_state;
     return 0;
 }
 
 int
-xpmem_fwd_deinit(struct xpmem_fwd_state * fwd_state)
+xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
 {
+    struct xpmem_fwd_state * fwd_state = part_state->fwd_state;
+
+    if (!fwd_state) {
+        return 0;
+    }
+
     /* Stop timer */
     del_timer_sync(&(fwd_state->ping_timer));
 
@@ -608,6 +620,9 @@ xpmem_fwd_deinit(struct xpmem_fwd_state * fwd_state)
             kfree(iter);
         }
     }
+
+    kfree(fwd_state);
+    part_state->fwd_state = NULL;
 
     return 0;
 }

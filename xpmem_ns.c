@@ -533,8 +533,13 @@ xpmem_ns_deliver_cmd(struct xpmem_partition_state * part_state,
 
 
 int
-xpmem_ns_init(struct xpmem_ns_state * ns_state)
+xpmem_ns_init(struct xpmem_partition_state * part_state)
 {
+    struct xpmem_ns_state * ns_state = kmalloc(sizeof(struct xpmem_ns_state), GFP_KERNEL);
+    if (!ns_state) {
+        return -1;
+    }
+
     /* Create segid map */
     ns_state->segid_map = create_htable(0, xpmem_hash_fn, xpmem_eq_fn);
     if (!ns_state->segid_map) {
@@ -546,14 +551,25 @@ xpmem_ns_init(struct xpmem_ns_state * ns_state)
     atomic_set(&(ns_state->uniq_segid), MIN_UNIQ_SEGID);
     atomic_set(&(ns_state->uniq_domid), MIN_UNIQ_DOMID);
 
+    part_state->ns_state = ns_state;
+
     return 0;
 }
 
 int
-xpmem_ns_deinit(struct xpmem_ns_state * ns_state)
+xpmem_ns_deinit(struct xpmem_partition_state * part_state)
 {
+    struct xpmem_ns_state * ns_state = part_state->ns_state;
+
+    if (!ns_state) {
+        return 0;
+    }
+
     /* Free segid map */
     free_htable(ns_state->segid_map, 0, 0);
+
+    kfree(ns_state);
+    part_state->ns_state = NULL;
 
     return 0;
 }
