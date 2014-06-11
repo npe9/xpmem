@@ -590,6 +590,8 @@ xpmem_domain_init(struct xpmem_partition_state * part)
     state->part         = part;
     part->domain_priv   = state;
 
+    printk("XPMEM local domain initialized\n");
+
     return 0;
 }
 
@@ -608,7 +610,7 @@ xpmem_domain_deinit(struct xpmem_partition_state * part)
     kfree(state);
     part->domain_priv = NULL;
 
-    printk("XPMEM domain deinited\n");
+    printk("XPMEM local domain deinitialized\n");
 
     return 0;
 }

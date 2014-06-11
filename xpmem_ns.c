@@ -553,6 +553,8 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
 
     part_state->ns_state = ns_state;
 
+    printk("XPMEM name service initialized\n");
+
     return 0;
 }
 
@@ -570,6 +572,8 @@ xpmem_ns_deinit(struct xpmem_partition_state * part_state)
 
     kfree(ns_state);
     part_state->ns_state = NULL;
+
+    printk("XPMEM name service deinitialized\n");
 
     return 0;
 }

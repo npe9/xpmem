@@ -595,6 +595,9 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
     add_timer(&(fwd_state->ping_timer));
 
     part_state->fwd_state = fwd_state;
+
+    printk("XPMEM forwarding service initialized\n");
+
     return 0;
 }
 
@@ -623,6 +626,8 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
 
     kfree(fwd_state);
     part_state->fwd_state = NULL;
+
+    printk("XPMEM forwarding service deinitialized\n");
 
     return 0;
 }
