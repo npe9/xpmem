@@ -547,6 +547,9 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
     atomic_set(&(ns_state->uniq_segid), MIN_UNIQ_SEGID);
     atomic_set(&(ns_state->uniq_domid), MIN_UNIQ_DOMID);
 
+    /* Name server partition has a well-known domid */
+    part_state->domid = XPMEM_NS_DOMID;
+
     part_state->ns_state = ns_state;
 
     printk("XPMEM name service initialized\n");
