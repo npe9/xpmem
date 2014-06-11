@@ -269,6 +269,7 @@ xpmem_send_cmd_link(struct xpmem_partition_state * state,
     struct xpmem_link_connection * conn = xpmem_search_link(state, link);
 
     if (conn == NULL) {
+        printk("XPMEM: NULL connection for link %lli\n", link);
         return -1;
     }
 
@@ -317,23 +318,23 @@ xpmem_add_connection(struct xpmem_partition_state * part_state,
                     return -1;
                 }
             }
+        }
 
-            conn = kmalloc(sizeof(struct xpmem_link_connection), GFP_KERNEL);
-            if (!conn) {
-                printk(KERN_ERR "XPMEM: out of memory\n");
-                return -1;
-            }
+        conn = kmalloc(sizeof(struct xpmem_link_connection), GFP_KERNEL);
+        if (!conn) {
+            printk(KERN_ERR "XPMEM: out of memory\n");
+            return -1;
+        }
 
-            conn->conn_type = type;
-            conn->in_cmd_fn = in_cmd_fn;
-            conn->priv_data = priv_data;
+        conn->conn_type = type;
+        conn->in_cmd_fn = in_cmd_fn;
+        conn->priv_data = priv_data;
 
-            /* Update the link map */
-            if (xpmem_add_link(part_state, link, conn) == 0) {
-                printk(KERN_ERR "XPMEM: cannot insert into link hashtable\n");
-                kfree(conn);
-                return -1;
-            }
+        /* Update the link map */
+        if (xpmem_add_link(part_state, link, conn) == 0) {
+            printk(KERN_ERR "XPMEM: cannot insert into link hashtable\n");
+            kfree(conn);
+            return -1;
         }
     }
 
@@ -494,8 +495,8 @@ int
 xpmem_partition_deinit(struct xpmem_partition_state * state)
 {
 
-    xpmem_palacios_deinit(state);
     xpmem_domain_deinit(state);
+    xpmem_palacios_deinit(state);
 
     if (state->is_nameserver) {
         xpmem_ns_deinit(state);
