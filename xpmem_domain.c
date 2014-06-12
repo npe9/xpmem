@@ -922,13 +922,13 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
 
     kfree(state->cmd);
 
-    /* Free virtual address space */
-    xpmem_detach_vaddr(vaddr);
-
     /* If we are running in a Palacios VM, we need to tell the hypervisor */
     if (part->palacios_priv) {
         xpmem_palacios_detach_vaddr(part, vaddr);
     }
+
+    /* Free virtual address space */
+    xpmem_detach_vaddr(vaddr);
 
     return 0;
 }
