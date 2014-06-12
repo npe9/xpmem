@@ -450,8 +450,8 @@ xpmem_palacios_deinit(struct xpmem_partition_state * part)
 
 
 int
-xpmem_palacios_detach_vaddr(struct xpmem_partition_state * part, 
-                            u64                            vaddr)
+xpmem_palacios_detach_paddr(struct xpmem_partition_state * part, 
+                            u64                            paddr)
 {
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)part->palacios_priv;
     unsigned long                 flags = 0;
@@ -462,7 +462,7 @@ xpmem_palacios_detach_vaddr(struct xpmem_partition_state * part,
 
     spin_lock_irqsave(&(state->lock), flags);
     {
-        xpmem_detach_hcall(state->bar_state.xpmem_detach_hcall_id, vaddr);
+        xpmem_detach_hcall(state->bar_state.xpmem_detach_hcall_id, paddr);
     }
     spin_unlock_irqrestore(&(state->lock), flags);
 

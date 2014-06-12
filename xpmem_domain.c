@@ -36,13 +36,14 @@ struct xpmem_hashtable * attach_htable = NULL;
 
 struct xpmem_remote_attach_struct {
     unsigned long vaddr;
+    unsigned long paddr;
     unsigned long size;
     struct list_head node;
 };
 
 
 extern int
-xpmem_palacios_detach_vaddr(struct xpmem_partition_state * part_state,
+xpmem_palacios_detach_paddr(struct xpmem_partition_state * part_state,
                             u64                            vaddr);
 
 static u32 
@@ -407,6 +408,7 @@ xpmem_map_pfn_range(u64 * pfns,
     }
 
     remote->vaddr = attach_addr;
+    remote->paddr = (pfns[0] << PAGE_SHIFT);
     remote->size = size;
 
     head = (struct list_head *)htable_search(attach_htable, current->tgid);
@@ -430,7 +432,8 @@ xpmem_map_pfn_range(u64 * pfns,
 
 
 static void 
-xpmem_detach_vaddr(u64 vaddr)
+xpmem_detach_vaddr(struct xpmem_partition_state * part_state,
+                   u64                            vaddr)
 {
     struct list_head * head = NULL;
 
@@ -446,6 +449,11 @@ xpmem_detach_vaddr(u64 vaddr)
         list_for_each_entry_safe(remote, next, head, node) {
             if (remote->vaddr == vaddr) {
                 vm_munmap(remote->vaddr, remote->size);
+
+                /* If we are running in a Palacios VM, we need to tell the hypervisor */
+                if (part_state->palacios_priv) {
+                    xpmem_palacios_detach_paddr(part_state, remote->paddr);
+                }
 
                 list_del(&(remote->node));
                 kfree(remote);
@@ -922,13 +930,8 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
 
     kfree(state->cmd);
 
-    /* If we are running in a Palacios VM, we need to tell the hypervisor */
-    if (part->palacios_priv) {
-        xpmem_palacios_detach_vaddr(part, vaddr);
-    }
-
     /* Free virtual address space */
-    xpmem_detach_vaddr(vaddr);
+    xpmem_detach_vaddr(part, vaddr);
 
     return 0;
 }
