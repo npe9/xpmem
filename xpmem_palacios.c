@@ -156,8 +156,6 @@ xpmem_work_fn(struct work_struct * work)
         return;
     }
 
-    printk("pfn_size: %llu\n", pfn_size);
-
     if (pfn_size > 0) {
         pfn_buf = kmalloc(pfn_size, GFP_KERNEL);
         if (!pfn_buf) {

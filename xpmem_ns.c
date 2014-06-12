@@ -174,8 +174,6 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
     struct xpmem_cmd_ex   * out_cmd  = cmd;
     xpmem_link_t            out_link = link;
 
-    printk("Process ns domid\n");
-
     switch (cmd->type) {
         case XPMEM_DOMID_REQUEST: {
             int ret = 0;
@@ -238,7 +236,8 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     struct xpmem_cmd_ex   * out_cmd  = cmd;
     xpmem_link_t            out_link = link;
 
-    printk("XPMEM: NS processing command %s\n", cmd_to_string(cmd->type));
+    printk("XPMEM: received cmd %s on link %lli (src_dom = %lli, dst_dom = %lli)\n",
+        cmd_to_string(cmd), link, cmd->src_dom, cmd->dst_dom);
 
     switch (cmd->type) {
         case XPMEM_MAKE: {
@@ -259,11 +258,6 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 out_cmd->make.segid = -1;
                 goto out_make;
             }
-
-            printk("XPMEM: added [segid %lli, domid %lli] to hashtable\n", 
-                cmd->make.segid,
-                cmd->src_dom);
-
 
             out_make: 
             {

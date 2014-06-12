@@ -446,7 +446,8 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
 
-    printk("xpmem fwd cmd\n");
+    printk("XPMEM: received cmd %s on link %lli (src_dom = %lli, dst_dom = %lli)\n",
+        cmd_to_string(cmd), link, cmd->src_dom, cmd->dst_dom);
 
     /* If we don't have a domid, we have to fail */
     if (part_state->domid <= 0) {
