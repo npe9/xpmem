@@ -468,7 +468,7 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
      * The src, however, is only set for requests
      */
     if (link == part_state->local_link) {
-        cmd->dst_dom = XPMEM_NS_DOMID;
+        out_cmd->dst_dom = XPMEM_NS_DOMID;
     }
 
     switch (cmd->type) {
@@ -478,6 +478,10 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_RELEASE:
         case XPMEM_ATTACH:
         case XPMEM_DETACH:
+            if (link == part_state->local_link) {
+                out_cmd->src_dom = part_state->domid;
+            }
+
         case XPMEM_MAKE_COMPLETE:
         case XPMEM_REMOVE_COMPLETE:
         case XPMEM_GET_COMPLETE:

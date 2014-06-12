@@ -249,7 +249,6 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         out_cmd->dst_dom = XPMEM_NS_DOMID;
     }
 
-
     switch (cmd->type) {
         case XPMEM_MAKE: {
             int ret = 0;
@@ -456,6 +455,9 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_DETACH_COMPLETE: {
             /* The destination is now the original source */
             cmd->dst_dom = cmd->src_dom;
+
+            /* The nameserver becomes the source for this command */
+            cmd->src_dom = part_state->domid;
 
             /* Search for the appropriate link */
             out_link = xpmem_search_domid(part_state, cmd->dst_dom);
