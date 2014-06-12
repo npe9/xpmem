@@ -238,16 +238,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     struct xpmem_cmd_ex   * out_cmd  = cmd;
     xpmem_link_t            out_link = link;
 
-
     printk("XPMEM: NS processing command %s\n", cmd_to_string(cmd->type));
-
-    /* If the command is coming from the local domain, it is routed to the NS,
-     * regardless of whether it's a request or completion. So, we set the
-     * dst_dom field
-     */
-    if (link == part_state->local_link) {
-        out_cmd->dst_dom = XPMEM_NS_DOMID;
-    }
 
     switch (cmd->type) {
         case XPMEM_MAKE: {
@@ -269,7 +260,9 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 goto out_make;
             }
 
-            printk("XPMEM: added segid %lli to hashtable\n", cmd->make.segid);
+            printk("XPMEM: added [segid %lli, domid %lli] to hashtable\n", 
+                cmd->make.segid,
+                cmd->src_dom);
 
 
             out_make: 
@@ -479,10 +472,6 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         }
     }
 
-    /* If the link is local, set the source */
-    if (link == part_state->local_link) {
-        out_cmd->src_dom = part_state->domid;
-    }
 
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
