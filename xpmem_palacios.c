@@ -33,6 +33,7 @@
 struct xpmem_bar_state {
     /* Hypercall ids */
     u32 xpmem_hcall_id;
+    u32 xpmem_detach_hcall_id;
     u32 xpmem_irq_clear_hcall_id;
     u32 xpmem_read_cmd_hcall_id;
 
@@ -79,6 +80,19 @@ xpmem_hcall(u32                   hcall_id,
         : "a"(hcall_id), "b"(cmd)
     );
 }
+
+static void
+xpmem_detach_hcall(u32 hcall_id,
+                   u64 vaddr)
+{
+    unsigned long long ret = 0;
+    __asm__ volatile(
+        VMCALL
+        : "=a"(ret)
+        : "a"(hcall_id), "b"(vaddr)
+    );
+}
+
 
 static void
 xpmem_irq_clear_hcall(u32 hcall_id)
@@ -182,17 +196,6 @@ xpmem_work_fn(struct work_struct * work)
 
         memcpy(cmd->attach.pfns, pfn_buf, pfn_size);
         kfree(pfn_buf);
-
-        {
-            int i = 0;
-
-            printk("Palacios: attach complete. %llu pfns. list:\n", cmd->attach.num_pfns);
-
-            for (i = 0; i < cmd->attach.num_pfns; i++) {
-                printk("%d: %llu\n", i, cmd->attach.pfns[i]);
-            }
-
-        }
     }
 
     /* Clear device interrupt flag */
@@ -316,6 +319,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
              sizeof(palacios_state->bar_state));
 
     if ( (palacios_state->bar_state.xpmem_hcall_id           == 0) ||
+         (palacios_state->bar_state.xpmem_detach_hcall_id    == 0) ||
          (palacios_state->bar_state.xpmem_irq_clear_hcall_id == 0) ||
          (palacios_state->bar_state.xpmem_read_cmd_hcall_id  == 0))
     {
@@ -445,5 +449,25 @@ xpmem_palacios_deinit(struct xpmem_partition_state * part)
 }
 
 
+int
+xpmem_palacios_detach_vaddr(struct xpmem_partition_state * part, 
+                            u64                            vaddr)
+{
+    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)part->palacios_priv;
+    unsigned long                 flags = 0;
+
+    if (!state) {
+        return -1;
+    }
+
+    spin_lock_irqsave(&(state->lock), flags);
+    {
+        xpmem_detach_hcall(state->bar_state.xpmem_detach_hcall_id, vaddr);
+    }
+    spin_unlock_irqrestore(&(state->lock), flags);
+
+    return 0;
+
+}
 
 MODULE_DEVICE_TABLE(pci, xpmem_ids);
