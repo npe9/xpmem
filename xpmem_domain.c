@@ -42,7 +42,8 @@ struct xpmem_remote_attach_struct {
 
 
 extern int
-xpmem_palacios_detach_vaddr(u64 vaddr);
+xpmem_palacios_detach_vaddr(struct xpmem_partition_state * part_state,
+                            u64                            vaddr);
 
 static u32 
 domain_hash_fn(uintptr_t key)
@@ -926,7 +927,7 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
 
     /* If we are running in a Palacios VM, we need to tell the hypervisor */
     if (part->palacios_priv) {
-        xpmem_palacios_detach_vaddr(vaddr);
+        xpmem_palacios_detach_vaddr(part, vaddr);
     }
 
     return 0;
