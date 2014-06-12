@@ -244,29 +244,11 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     /* If the command is coming from the local domain, it is routed to the NS,
      * regardless of whether it's a request or completion. So, we set the
      * dst_dom field
-     *
-     * The src, however, it only set for requests
      */
     if (link == part_state->local_link) {
-        cmd->dst_dom = XPMEM_NS_DOMID;
+        out_cmd->dst_dom = XPMEM_NS_DOMID;
     }
 
-    /* Set the src dom if needed */
-    switch (cmd->type) {
-        case XPMEM_MAKE:
-        case XPMEM_REMOVE:
-        case XPMEM_GET:
-        case XPMEM_RELEASE:
-        case XPMEM_ATTACH:
-        case XPMEM_DETACH:
-            if (link == part_state->local_link) {
-                cmd->src_dom = part_state->domid;
-            }
-            break;
-
-        default:
-            break;
-    }
 
     switch (cmd->type) {
         case XPMEM_MAKE: {
@@ -493,6 +475,11 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 cmd_to_string(cmd->type));
             return;
         }
+    }
+
+    /* If the link is local, set the source */
+    if (link == part_state->local_link) {
+        out_cmd->src_dom = part_state->domid;
     }
 
     /* Write the response */

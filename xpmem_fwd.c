@@ -477,11 +477,7 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_GET:
         case XPMEM_RELEASE:
         case XPMEM_ATTACH:
-        case XPMEM_DETACH: {
-            if (link == part_state->local_link) {
-                out_cmd->src_dom = part_state->domid;
-            }
-        }
+        case XPMEM_DETACH:
         case XPMEM_MAKE_COMPLETE:
         case XPMEM_REMOVE_COMPLETE:
         case XPMEM_GET_COMPLETE:
@@ -505,6 +501,11 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 cmd_to_string(cmd->type));
             return;
         }
+    }
+
+    /* If the link is local, set the source */
+    if (link == part_state->local_link) {
+        out_cmd->src_dom = part_state->domid;
     }
 
     /* Write the response */
