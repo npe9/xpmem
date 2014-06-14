@@ -485,8 +485,6 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
     switch (cmd->type) {
         case XPMEM_GET:
 
-            printk("GET REMOTE\n");
-
             ret = xpmem_get_domain(&(cmd->get));
 
             if (ret != 0) {
@@ -535,9 +533,6 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
 
             break;
 
-
-            break;
-
         case XPMEM_MAKE_COMPLETE:
         case XPMEM_REMOVE_COMPLETE:
         case XPMEM_GET_COMPLETE:
@@ -556,6 +551,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
                 state->cmd->attach.pfns = kmalloc(sizeof(u64) * cmd->attach.num_pfns, GFP_KERNEL);
                 if (!state->cmd->attach.pfns) {
                     printk(KERN_ERR "XPMEM: out of memory\n");
+                    kfree(state->cmd);
                     break;
                 }
 

@@ -21,9 +21,9 @@ struct xpmem_cmd_ex;
 
 
 struct xpmem_link_connection {
-    xpmem_connection_t conn_type;
-    void             * priv_data;
-    int (*in_cmd_fn)(struct xpmem_cmd_ex  * cmd, void * priv_data);
+    xpmem_connection_t   conn_type;
+    void               * priv_data;
+    int (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data);
 };
 
 
@@ -89,12 +89,6 @@ typedef enum {
     XPMEM_DOMID_RESPONSE,
 
 } xpmem_op_t;
-
-typedef enum {
-    LOCAL,
-    VM, 
-    ENCLAVE,
-} xpmem_endpoint_t;
 
 
 struct xpmem_cmd_ex {

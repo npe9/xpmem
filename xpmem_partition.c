@@ -187,16 +187,16 @@ xpmem_search_or_remove_domid(struct xpmem_partition_state * state,
 
 xpmem_link_t
 xpmem_search_domid(struct xpmem_partition_state * state,
-                  xpmem_link_t                    link)
+                  xpmem_domid_t                   domid)
 {
-    return xpmem_search_or_remove_domid(state, link, 0);
+    return xpmem_search_or_remove_domid(state, domid, 0);
 }
 
 xpmem_link_t
 xpmem_remove_domid(struct xpmem_partition_state * state,
-                  xpmem_link_t                    link)
+                   xpmem_domid_t                  domid)
 {
-    return xpmem_search_or_remove_domid(state, link, 1);
+    return xpmem_search_or_remove_domid(state, domid, 1);
 }
 
 
@@ -405,8 +405,6 @@ extern int xpmem_ns_deinit(struct xpmem_partition_state *);
 extern int xpmem_fwd_init(struct xpmem_partition_state *);
 extern int xpmem_fwd_deinit(struct xpmem_partition_state *);
 
-
-#include <linux/delay.h>
 
 int
 xpmem_partition_init(struct xpmem_partition_state * state, int is_ns)

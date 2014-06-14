@@ -11,7 +11,6 @@
 #include <linux/module.h>
 #include <linux/list.h>
 #include <linux/kthread.h>
-#include <linux/timer.h>
 #include <linux/delay.h>
 
 #include <asm/uaccess.h>
@@ -39,8 +38,8 @@ struct xpmem_fwd_state {
      */
     struct list_head               domid_req_list;
 
-    /* timer set off at state creation that pings the nameserver */
-    struct timer_list              ping_timer;
+    /* kernel thread sending XPMEM pings */
+    struct task_struct           * ping_thread;   
 };
 
 
@@ -449,7 +448,7 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     printk("XPMEM: received cmd %s on link %lli (src_dom = %lli, dst_dom = %lli)\n",
         cmd_to_string(cmd->type), link, cmd->src_dom, cmd->dst_dom);
 
-    /* If we don't have a domid, we have to fail */
+    /* If we don't have a domid, we need to fail */
     if (part_state->domid <= 0) {
         printk(KERN_ERR "This domain has no XPMEM domid. Are you running the nameserver anywhere?\n");
 
@@ -528,35 +527,50 @@ xpmem_fwd_deliver_cmd(struct xpmem_partition_state * part_state,
 
 
 /*
- * Timer function for pinging the name server
+ * Kernel thread for pinging the name server
  *
  * The current policy is to periodically (every PING_PERIOD seconds) ping the
  * nameserver, trying to find a link from which we can access it.
  * 
  * Once we have a route, we request a domid and die
  */
-static void
-xpmem_ping_timer_fn(unsigned long data)
+static int
+xpmem_ping_fn(void * private)
 {
-    struct xpmem_partition_state * part_state = (struct xpmem_partition_state *)data;
+    struct xpmem_partition_state * part_state = (struct xpmem_partition_state *)private;
     struct xpmem_fwd_state       * fwd_state  = NULL;
 
     if (!part_state || !part_state->initialized) {
-        return;
+        return -1;
     }
 
-    fwd_state = part_state->fwd_state;
+    while (1) {
+        if (!part_state->initialized) {
+            break;
+        }
 
-    if (!xpmem_have_ns_link(fwd_state)) {
-        /* Reset and restart the timer */
-        fwd_state->ping_timer.expires = jiffies + (PING_PERIOD * HZ);
-        add_timer(&(fwd_state->ping_timer));
+        fwd_state = part_state->fwd_state;
 
-        printk("Timer sending ping!\n");
+        if (!fwd_state) {
+            break;
+        }
 
-        /* Send another PING */
-        xpmem_ping_ns(part_state, 0);
+        if (kthread_should_stop()) {
+            break;
+        }
+
+        if (!xpmem_have_ns_link(fwd_state)) {
+            /* Send another PING */
+            xpmem_ping_ns(part_state, 0);
+        } else {
+            break;
+        }
+
+        /* Wait for PING_PERIOD seconds */
+        msleep(PING_PERIOD * 1000);
     }
+
+    return 0;
 }
 
 
@@ -574,14 +588,21 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
     fwd_state->domid_requested = 0;
     fwd_state->ns_link         = -1;
 
-    /* Set up the timer */
-    init_timer(&(fwd_state->ping_timer));
-    fwd_state->ping_timer.expires = jiffies + HZ;
-    fwd_state->ping_timer.data = (unsigned long)part_state;
-    fwd_state->ping_timer.function = xpmem_ping_timer_fn;
-    
-    /* Start the timer */
-    add_timer(&(fwd_state->ping_timer));
+    /* Set up the ping thread */
+    fwd_state->ping_thread = kthread_create(
+            xpmem_ping_fn,
+            part_state,
+            "xpmem-ping"
+    );
+
+    if (fwd_state->ping_thread == NULL) {
+        printk(KERN_ERR "XPMEM: cannot create kernel thread\n");
+        kfree(fwd_state);
+        return -1;
+    }
+
+    /* Wake it up */
+    wake_up_process(fwd_state->ping_thread);
 
     part_state->fwd_state = fwd_state;
 
@@ -599,8 +620,8 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
         return 0;
     }
 
-    /* Stop timer */
-    del_timer_sync(&(fwd_state->ping_timer));
+    /* Stop kernel thread */
+    kthread_stop(fwd_state->ping_thread);
 
     /* Delete domid cmd list */
     {

@@ -20,7 +20,7 @@
 #define XPMEM_MAX_LINK_ID 16
 
 /* The well-known name server's domid */
-#define XPMEM_NS_DOMID 1
+#define XPMEM_NS_DOMID    1
 
 
 struct xpmem_partition_state {
@@ -31,7 +31,7 @@ struct xpmem_partition_state {
 
     atomic_t      uniq_link;     /* unique link id generation */
 
-    int           is_nameserver; /* are we running the nameserver */
+    int           is_nameserver; /* are we running the nameserver? */
 
     /* map of XPMEM domids to local link ids */
     struct xpmem_hashtable * domid_map;
@@ -55,7 +55,8 @@ u32
 xpmem_hash_fn(uintptr_t key);
 
 int
-xpmem_eq_fn(uintptr_t key1, uintptr_t key2);
+xpmem_eq_fn(uintptr_t key1, 
+            uintptr_t key2);
 
 
 char *
@@ -72,11 +73,11 @@ xpmem_add_domid(struct xpmem_partition_state * state,
 
 xpmem_link_t
 xpmem_search_domid(struct xpmem_partition_state * state,
-                  xpmem_link_t                    link);
+                  xpmem_domid_t                   domid);
 
 xpmem_link_t
 xpmem_remove_domid(struct xpmem_partition_state * state,
-                  xpmem_link_t                    link);
+                  xpmem_domid_t                   domid);
 
 int
 xpmem_add_link(struct xpmem_partition_state * state,

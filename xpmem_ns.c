@@ -26,8 +26,8 @@
 struct xpmem_ns_state {
     /* lock for ns state */
     spinlock_t                     lock;
-    /* Unique segid generation */
 
+    /* Unique segid generation */
     atomic_t                       uniq_segid;
 
     /* Unique domid generation */

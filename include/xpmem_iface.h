@@ -7,12 +7,13 @@
  *
  */
 
-#ifndef _XPMEM_NS_H
-#define _XPMEM_NS_H
+#ifndef _XPMEM_IFACE_H
+#define _XPMEM_IFACE_H
 
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_partition.h>
+#include <xpmem_extended.h>
 
 
 struct xpmem_partition_state *
@@ -34,4 +35,4 @@ xpmem_cmd_deliver(struct xpmem_partition_state * part,
                   xpmem_link_t                   link,
                   struct xpmem_cmd_ex          * cmd);
 
-#endif
+#endif /* _XPMEM_IFACE_H */
