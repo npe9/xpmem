@@ -27,9 +27,6 @@ struct xpmem_fwd_state {
     /* Lock for fwd state */
     spinlock_t                     lock;
     
-    /* Have we requested a domid */
-    int                            domid_requested;
-
     /* "Upstream" link to the nameserver */
     xpmem_link_t                   ns_link; 
 
@@ -40,6 +37,13 @@ struct xpmem_fwd_state {
 
     /* kernel thread sending XPMEM pings */
     struct task_struct           * ping_thread;   
+
+    /* waitq for kernel thread */
+    wait_queue_head_t              ping_waitq;
+    int                            ping_condition;
+
+    /* timer for waking up ping_thread */
+    struct timer_list              ping_timer;
 };
 
 
@@ -197,36 +201,6 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
 
             /* Broadcast the PONG to all our neighbors, except the source */
             xpmem_pong_ns(part_state, link);
-
-            /* Have we requested a domid */
-            {
-                unsigned long flags = 0;
-                int domid_requested = 0;
-
-                spin_lock_irqsave(&(fwd_state->lock), flags); 
-                {
-                    domid_requested = fwd_state->domid_requested;
-                    if (!domid_requested) {
-                        fwd_state->domid_requested = 1;
-                    }
-                }
-                spin_unlock_irqrestore(&(fwd_state->lock), flags);
-
-
-                if (!domid_requested) {
-                    struct xpmem_cmd_ex domid_req;
-                    memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
-
-                    domid_req.type = XPMEM_DOMID_REQUEST;
-
-                    printk("Sending DOMID request\n");
-
-                    if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &domid_req)) {
-                        printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", fwd_state->ns_link);
-                    }
-                }
-            }
-
 
             break;
         }
@@ -529,10 +503,8 @@ xpmem_fwd_deliver_cmd(struct xpmem_partition_state * part_state,
 /*
  * Kernel thread for pinging the name server
  *
- * The current policy is to periodically (every PING_PERIOD seconds) ping the
- * nameserver, trying to find a link from which we can access it.
- * 
- * Once we have a route, we request a domid and die
+ * The current policy is to ping periodically (every PING_PERIOD seconds) until
+ * the name server is found
  */
 static int
 xpmem_ping_fn(void * private)
@@ -540,37 +512,75 @@ xpmem_ping_fn(void * private)
     struct xpmem_partition_state * part_state = (struct xpmem_partition_state *)private;
     struct xpmem_fwd_state       * fwd_state  = NULL;
 
-    if (!part_state || !part_state->initialized) {
+    if (!part_state->initialized) {
         return -1;
     }
 
+    fwd_state = part_state->fwd_state;
+
     while (1) {
-        if (!part_state->initialized) {
-            break;
-        }
 
-        fwd_state = part_state->fwd_state;
-
-        if (!fwd_state) {
-            break;
-        }
+        /* Wait on waitq  */
+        wait_event_interruptible(fwd_state->ping_waitq, (fwd_state->ping_condition == 1));
 
         if (kthread_should_stop()) {
             break;
         }
 
-        if (!xpmem_have_ns_link(fwd_state)) {
-            /* Send another PING */
-            xpmem_ping_ns(part_state, 0);
-        } else {
+        /* Reset condition */
+        fwd_state->ping_condition = 0;
+        mb();
+
+        /* If we have a link, we request a domid and die */
+        if (xpmem_have_ns_link(fwd_state)) {
+            struct xpmem_cmd_ex domid_req;
+            memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
+
+            domid_req.type = XPMEM_DOMID_REQUEST;
+
+            printk("Sending DOMID request\n");
+
+            if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &domid_req)) {
+                printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", fwd_state->ns_link);
+            }
+
             break;
         }
 
-        /* Wait for PING_PERIOD seconds */
-        msleep(PING_PERIOD * 1000);
+        /* Send a PING */
+        xpmem_ping_ns(part_state, 0);
+
+        /* Restart timer */
+        mod_timer(&(fwd_state->ping_timer), jiffies + (HZ * PING_PERIOD));
     }
 
     return 0;
+}
+
+/* 
+ * Ping timer
+ */
+static void
+xpmem_ping_timer_fn(unsigned long data)
+{
+    struct xpmem_partition_state * part_state = (struct xpmem_partition_state *)data;
+    struct xpmem_fwd_state       * fwd_state  = NULL;
+
+    if (!part_state || !part_state->initialized) {
+        return;
+    }
+
+    fwd_state = part_state->fwd_state;
+
+    if (!fwd_state) {
+        return;
+    }
+
+    /* Wakeup waitq */
+    fwd_state->ping_condition = 1;
+    mb();
+
+    wake_up_interruptible(&(fwd_state->ping_waitq));
 }
 
 
@@ -585,8 +595,14 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
     spin_lock_init(&(fwd_state->lock));
     INIT_LIST_HEAD(&(fwd_state->domid_req_list));
 
-    fwd_state->domid_requested = 0;
     fwd_state->ns_link         = -1;
+
+    /* Ping thread waitqueue */
+    init_waitqueue_head(&(fwd_state->ping_waitq));
+
+    /* Waitqueue condition */
+    fwd_state->ping_condition = 0;
+    mb();
 
     /* Set up the ping thread */
     fwd_state->ping_thread = kthread_create(
@@ -601,8 +617,19 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
         return -1;
     }
 
-    /* Wake it up */
+    /* Start it */
     wake_up_process(fwd_state->ping_thread);
+
+    /* Create timer */
+    init_timer(&(fwd_state->ping_timer));
+
+    /* Set it up */
+    fwd_state->ping_timer.expires  = jiffies + HZ;
+    fwd_state->ping_timer.function = xpmem_ping_timer_fn;
+    fwd_state->ping_timer.data     = (unsigned long)part_state;
+
+    /* Start the timer */
+    add_timer(&(fwd_state->ping_timer));
 
     part_state->fwd_state = fwd_state;
 
@@ -619,6 +646,9 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
     if (!fwd_state) {
         return 0;
     }
+
+    /* Kill timer */
+    del_timer_sync(&(fwd_state->ping_timer));
 
     /* Stop kernel thread */
     kthread_stop(fwd_state->ping_thread);
