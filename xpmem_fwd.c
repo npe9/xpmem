@@ -549,8 +549,6 @@ xpmem_ping_fn(void * private)
         mod_timer(&(fwd_state->ping_timer), jiffies + (HZ * PING_PERIOD));
     }
 
-    fwd_state->ping_thread = NULL;
-
     return 0;
 }
 
@@ -650,6 +648,7 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
     /* Stop kernel thread, if it's running */
     if (fwd_state->ping_thread != NULL) {
         kthread_stop(fwd_state->ping_thread);
+        fwd_state->ping_thread = NULL;
     }
 
     /* Delete domid cmd list */
