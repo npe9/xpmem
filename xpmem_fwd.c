@@ -40,6 +40,7 @@ struct xpmem_fwd_state {
 
     /* kernel thread sending XPMEM pings */
     struct task_struct           * ping_thread;   
+    int                            ping_should_exit;
 
     /* waitq for kernel thread */
     wait_queue_head_t              ping_waitq;
@@ -527,19 +528,18 @@ xpmem_ping_fn(void * private)
     struct xpmem_partition_state * part_state = (struct xpmem_partition_state *)private;
     struct xpmem_fwd_state       * fwd_state  = NULL;
 
-    if (!part_state->initialized) {
-        return -1;
-    }
-
     fwd_state = part_state->fwd_state;
 
     while (1) {
 
         /* Wait on waitq  */
-        wait_event_interruptible(fwd_state->ping_waitq, (fwd_state->ping_condition == 1));
+        wait_event_interruptible(fwd_state->ping_waitq, 
+            ((fwd_state->ping_condition   == 1) ||
+             (fwd_state->ping_should_exit == 1))
+        );    
 
         /* Exit criteria */
-        if (kthread_should_stop()) {
+        if (fwd_state->ping_should_exit) {
             break;
         }
 
@@ -558,6 +558,11 @@ xpmem_ping_fn(void * private)
         /* Restart timer */
         mod_timer(&(fwd_state->ping_timer), jiffies + (HZ * PING_PERIOD));
     }
+
+    /* Wait on waitq for exit signal */
+    wait_event_interruptible(fwd_state->ping_waitq, 
+         (fwd_state->ping_should_exit == 1)
+    );    
 
     return 0;
 }
@@ -607,7 +612,8 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
     init_waitqueue_head(&(fwd_state->ping_waitq));
 
     /* Waitqueue condition */
-    fwd_state->ping_condition = 0;
+    fwd_state->ping_condition   = 0;
+    fwd_state->ping_should_exit = 0;
     mb();
 
     /* Set up the ping thread */
@@ -657,10 +663,8 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
     del_timer_sync(&(fwd_state->ping_timer));
 
     /* Stop kernel thread, if it's running */
-    if (fwd_state->ping_thread != NULL) {
-        kthread_stop(fwd_state->ping_thread);
-        fwd_state->ping_thread = NULL;
-    }
+    fwd_state->ping_should_exit = 1;
+    wake_up_interruptible(&(fwd_state->ping_waitq));
 
     /* Delete domid cmd list */
     {
