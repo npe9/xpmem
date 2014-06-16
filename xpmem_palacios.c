@@ -50,7 +50,7 @@ struct xpmem_bar_state {
 
 struct xpmem_palacios_state {
     int                            initialized; /* device initialization */
-    spinlock_t                     lock;        /* state lock */
+    struct mutex                   mutex;       /* state mutex */
     unsigned int                   irq;         /* irq number */
     xpmem_link_t                   link;        /* XPMEM connection link */
     struct xpmem_partition_state * part;        /* pointer to XPMEM partition */
@@ -241,17 +241,18 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
              void                * priv_data)
 {
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)priv_data;
-    unsigned long                 flags = 0;
 
     if (!state->initialized) {
         return -1;
     }
 
-    spin_lock_irqsave(&(state->lock), flags);
+    while (mutex_lock_interruptible(&(state->mutex)));
+
     {
         xpmem_hcall(state->bar_state.xpmem_hcall_id, cmd);
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
+
+    mutex_unlock(&(state->mutex));
 
     return 0;
 }
@@ -357,7 +358,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
     }
 
 
-    spin_lock_init(&(palacios_state->lock));
+    mutex_init(&(palacios_state->mutex));
     palacios_state->workq = create_singlethread_workqueue("xpmem-work");
     INIT_WORK(&(palacios_state->worker), xpmem_work_fn);
 
@@ -454,17 +455,18 @@ xpmem_palacios_detach_paddr(struct xpmem_partition_state * part,
                             u64                            paddr)
 {
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)part->palacios_priv;
-    unsigned long                 flags = 0;
 
     if (!state) {
         return -1;
     }
 
-    spin_lock_irqsave(&(state->lock), flags);
+    while (mutex_lock_interruptible(&(state->mutex)));
+
     {
         xpmem_detach_hcall(state->bar_state.xpmem_detach_hcall_id, paddr);
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
+
+    mutex_unlock(&(state->mutex));
 
     return 0;
 
