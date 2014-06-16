@@ -157,10 +157,7 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
     switch (cmd->type) {
         case XPMEM_PING_NS: {
             /* Do we know the way to the nameserver that is not through the link
-             * pinging us? 
-             *
-             * If we do, respond with a PONG. If not, broadcast the PING to all
-             * our neighbors, except the link pinging us
+             * pinging us? If we do, respond with a PONG.
              */
             if (xpmem_have_ns_link(fwd_state)) {
                 /* Send PONG back to the source */
@@ -169,9 +166,6 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
                 if (xpmem_send_cmd_link(part_state, link, cmd)) {
                     printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", link);
                 }
-            } else {
-                /* Broadcast the PING to everyone but the source */
-                xpmem_ping_ns(part_state, link);
             }
 
             break;
