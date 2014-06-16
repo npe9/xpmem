@@ -668,6 +668,7 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
 
     wake_up_interruptible(&(fwd_state->ping_waitq));
 
+
     /* Delete domid cmd list */
     {
         struct xpmem_domid_req_iter * iter = NULL;
