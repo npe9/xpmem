@@ -30,6 +30,9 @@ struct xpmem_fwd_state {
     /* "Upstream" link to the nameserver */
     xpmem_link_t                   ns_link; 
 
+    /* Have we requested a domid */
+    int                            domid_requested;
+
     /* list of outstanding domid requests for this domain. Requests that cannot
      * be immediately serviced are put on this list
      */
@@ -174,6 +177,7 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_PONG_NS: {
             unsigned long flags = 0;
             int           ret   = 0;
+            int           req   = 0;
 
             /* We received a PONG. So, the nameserver can be found through this
              * link
@@ -183,6 +187,11 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
             spin_lock_irqsave(&(fwd_state->lock), flags);
             {
                 fwd_state->ns_link = link;
+
+                req = fwd_state->domid_requested;
+                if (req == 0) {
+                    fwd_state->domid_requested = 1;
+                }
             }
             spin_unlock_irqrestore(&(fwd_state->lock), flags);
 
@@ -195,6 +204,18 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
 
             /* Broadcast the PONG to all our neighbors, except the source */
             xpmem_pong_ns(part_state, link);
+
+            /* Have we requested a domid? */
+            if (req == 0) {
+                struct xpmem_cmd_ex domid_req;
+                memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
+
+                domid_req.type = XPMEM_DOMID_REQUEST;
+
+                if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &domid_req)) {
+                    printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", fwd_state->ns_link);
+                }
+            }
 
             break;
         }
@@ -526,19 +547,8 @@ xpmem_ping_fn(void * private)
         fwd_state->ping_condition = 0;
         mb();
 
-        /* If we have a link, we request a domid and die */
+        /* If we have a link, we die */
         if (xpmem_have_ns_link(fwd_state)) {
-            struct xpmem_cmd_ex domid_req;
-            memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
-
-            domid_req.type = XPMEM_DOMID_REQUEST;
-
-            printk("Sending DOMID request\n");
-
-            if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &domid_req)) {
-                printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", fwd_state->ns_link);
-            }
-
             break;
         }
 
@@ -591,6 +601,7 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
     INIT_LIST_HEAD(&(fwd_state->domid_req_list));
 
     fwd_state->ns_link         = -1;
+    fwd_state->domid_requested = 0;
 
     /* Ping thread waitqueue */
     init_waitqueue_head(&(fwd_state->ping_waitq));
