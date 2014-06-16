@@ -517,6 +517,7 @@ xpmem_ping_fn(void * private)
         /* Wait on waitq  */
         wait_event_interruptible(fwd_state->ping_waitq, (fwd_state->ping_condition == 1));
 
+        /* Exit criteria */
         if (kthread_should_stop()) {
             break;
         }
@@ -547,6 +548,8 @@ xpmem_ping_fn(void * private)
         /* Restart timer */
         mod_timer(&(fwd_state->ping_timer), jiffies + (HZ * PING_PERIOD));
     }
+
+    fwd_state->ping_thread = NULL;
 
     return 0;
 }
@@ -644,8 +647,10 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
     /* Kill timer */
     del_timer_sync(&(fwd_state->ping_timer));
 
-    /* Stop kernel thread */
-    kthread_stop(fwd_state->ping_thread);
+    /* Stop kernel thread, if it's running */
+    if (fwd_state->ping_thread != NULL) {
+        kthread_stop(fwd_state->ping_thread);
+    }
 
     /* Delete domid cmd list */
     {
