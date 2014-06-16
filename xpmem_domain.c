@@ -451,9 +451,7 @@ xpmem_detach_vaddr(struct xpmem_partition_state * part_state,
                 vm_munmap(remote->vaddr, remote->size);
 
                 /* If we are running in a Palacios VM, we need to tell the hypervisor */
-                if (part_state->palacios_priv) {
-                    xpmem_palacios_detach_paddr(part_state, remote->paddr);
-                }
+                xpmem_palacios_detach_paddr(part_state, remote->paddr);
 
                 list_del(&(remote->node));
                 kfree(remote);
