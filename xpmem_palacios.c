@@ -460,6 +460,11 @@ xpmem_palacios_detach_paddr(struct xpmem_partition_state * part,
         return -1;
     }
 
+    /* If we're not in a VM */
+    if (state->initialized == 0) {
+        return 0;
+    }
+
     while (mutex_lock_interruptible(&(state->mutex)));
 
     {
