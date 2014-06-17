@@ -156,8 +156,6 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
 {
     struct xpmem_fwd_state * fwd_state = part_state->fwd_state;
 
-    printk("xpmem fwd ping\n");
-
     switch (cmd->type) {
         case XPMEM_PING_NS: {
             /* Do we know the way to the nameserver that is not through the link
@@ -242,8 +240,6 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
     /* There's no reason not to reuse the input command struct for responses */
     struct xpmem_cmd_ex    * out_cmd  = cmd;
     xpmem_link_t             out_link = link;
-
-    printk("xpmem fwd domid\n");
 
     switch (cmd->type) {
         case XPMEM_DOMID_REQUEST: {
