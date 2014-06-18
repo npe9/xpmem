@@ -598,6 +598,9 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
         return -1;
     }
 
+    /* Save partition state pointer */
+    part_state->fwd_state = fwd_state;
+
     spin_lock_init(&(fwd_state->lock));
     INIT_LIST_HEAD(&(fwd_state->domid_req_list));
 
@@ -638,8 +641,6 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
 
     /* Start the timer */
     add_timer(&(fwd_state->ping_timer));
-
-    part_state->fwd_state = fwd_state;
 
     printk("XPMEM forwarding service initialized\n");
 
