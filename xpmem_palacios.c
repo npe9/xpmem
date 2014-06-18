@@ -344,6 +344,10 @@ xpmem_probe_driver(struct pci_dev             * dev,
         palacios_state->irq = dev->irq;
     }
 
+    mutex_init(&(palacios_state->mutex));
+    palacios_state->workq = create_singlethread_workqueue("xpmem-work");
+    INIT_WORK(&(palacios_state->worker), xpmem_work_fn);
+
     /* Add connection to name/forwarding service */
     palacios_state->link = xpmem_add_connection(
             palacios_state->part, 
@@ -354,13 +358,8 @@ xpmem_probe_driver(struct pci_dev             * dev,
     if (palacios_state->link <= 0) {
         printk(KERN_ERR "Failed to register Palacios XPMEM interface with"
             " name/forwarding service\n");
-        goto err_unmap;
+        goto err_free_irq;
     }
-
-
-    mutex_init(&(palacios_state->mutex));
-    palacios_state->workq = create_singlethread_workqueue("xpmem-work");
-    INIT_WORK(&(palacios_state->worker), xpmem_work_fn);
 
     palacios_state->initialized = 1;
     atomic_inc(&dev_off);
@@ -371,6 +370,8 @@ xpmem_probe_driver(struct pci_dev             * dev,
     printk("XPMEM Palacios PCI device enabled\n");
     return 0;
 
+err_free_irq:
+    free_irq(palacios_state->irq, palacios_state);
 err_unmap:
     pci_iounmap(dev, palacios_state->xpmem_bar);
 err:
