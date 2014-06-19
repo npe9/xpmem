@@ -406,14 +406,9 @@ xpmem_remove_driver(struct pci_dev * dev)
     state->connected = 0;
 
     /* Wait until all ongoing deliveries finish */
-    {
-        int cmds = 0;
-        while ((cmds = atomic_read(&(state->num_cmds))) == 0) {
-            printk("%d outstanding cmds\n", cmds);
-            mdelay(1000);
-            schedule();
-            mb();
-        }
+    while (atomic_read(&(state->num_cmds)) > 0) {
+        schedule();
+        mb();
     }
 
     /* Free the irq */
