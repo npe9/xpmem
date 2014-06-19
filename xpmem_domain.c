@@ -379,12 +379,6 @@ xpmem_map_pfn_range(u64 * pfns,
     for (i = 0; i < num_pfns; i++) {
         addr = attach_addr + (i * PAGE_SIZE);
 
-        printk("XPMEM: mapping vaddr = %p, pfn = %llu, (paddr = %p)\n",
-            (void *)addr,
-            pfns[i],
-            (void *)(pfns[i] << PAGE_SHIFT)
-        );
-
         status = remap_pfn_range(vma, addr, pfns[i], PAGE_SIZE, vma->vm_page_prot);
         if (status) {
             printk(KERN_ERR "XPMEM: remap_pfn_range failed\n");

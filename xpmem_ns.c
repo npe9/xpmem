@@ -236,9 +236,6 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     struct xpmem_cmd_ex   * out_cmd  = cmd;
     xpmem_link_t            out_link = link;
 
-    printk("XPMEM: received cmd %s on link %lli (src_dom = %lli, dst_dom = %lli)\n",
-        cmd_to_string(cmd->type), link, cmd->src_dom, cmd->dst_dom);
-
     switch (cmd->type) {
         case XPMEM_MAKE: {
             int ret = 0;

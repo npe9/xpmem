@@ -301,13 +301,13 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
     /* Enable PCI device */
     if (pci_enable_device(dev)) {
-        printk("Failed to enable Palacios XPMEM PCI device\n");
+        printk(KERN_ERR "XPMEM: Failed to enable Palacios XPMEM PCI device\n");
         goto err;
     }
 
     /* Check if interrupts are enabled */
     if (dev->irq <= 0) {
-        printk("Palacios XPMEM device is not interrupt-enabled\n");
+        printk(KERN_ERR "XPMEM: Palacios device is not interrupt-enabled\n");
         goto err;
     }
 
@@ -316,7 +316,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
     palacios_state->xpmem_bar = pci_iomap(dev, 0, bar_size); 
 
     if (!palacios_state->xpmem_bar) {
-        printk("Failed to map Palacios XPMEM BAR 0 memory\n");
+        printk(KERN_ERR "XPMEM: Failed to map Palacios device BAR 0 memory\n");
         goto err;
     }
 
@@ -330,7 +330,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
          (palacios_state->bar_state.xpmem_irq_clear_hcall_id == 0) ||
          (palacios_state->bar_state.xpmem_read_cmd_hcall_id  == 0))
     {
-        printk("Palacios XPMEM hypercall(s) not available\n");
+        printk(KERN_ERR "XPMEM: Palacios hypercall(s) not available\n");
         goto err_unmap;
     }
 
@@ -351,7 +351,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
             (void *)palacios_state);
 
     if (palacios_state->link <= 0) {
-        printk(KERN_ERR "Failed to register Palacios XPMEM interface with"
+        printk(KERN_ERR "XPMEM: Failed to register Palacios interface with"
             " name/forwarding service\n");
         goto err_unmap;
     }
@@ -364,7 +364,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
         /* Register IRQ handler */
         if (request_irq(dev->irq, irq_handler, IRQF_SHARED, buf, palacios_state) != 0) {
-            printk("Failed to request IRQ for Palacios XPMEM device (irq = %d)\n", dev->irq);
+            printk(KERN_ERRR "XPMEM: Failed to request IRQ for Palacios device (irq = %d)\n", dev->irq);
             goto err_remove;
         }
 
@@ -374,7 +374,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
     /* Signal device initialization by clearing irq status */
     xpmem_irq_clear_hcall(palacios_state->bar_state.xpmem_irq_clear_hcall_id);
 
-    printk("XPMEM Palacios PCI device enabled\n");
+    printk("XPMEM: Palacios PCI device enabled\n");
     return 0;
 
 err_remove:
@@ -412,7 +412,7 @@ xpmem_remove_driver(struct pci_dev * dev)
     /* Remove the xpmem connection */
     xpmem_remove_connection(state->part, state->link);
 
-    printk("XPMEM Palacios PCI device disabled\n");
+    printk("XPMEM: Palacios PCI device disabled\n");
 }
 
 
@@ -447,7 +447,7 @@ xpmem_palacios_init(struct xpmem_partition_state * part) {
     ret = pci_register_driver(&xpmem_driver);
 
     if (ret != 0) {
-        printk(KERN_ERR "Failed to register Palacios XPMEM driver\n");
+        printk(KERN_ERR "XPMEM: Failed to register Palacios driver\n");
     }
 
     return ret;

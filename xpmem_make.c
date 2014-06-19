@@ -59,7 +59,6 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
 
 	if (permit_type != XPMEM_PERMIT_MODE ||
 	    ((u64)permit_value & ~00777) || size == 0) {
-        printk("EINVAL\n");
 		return -EINVAL;
 	}
 

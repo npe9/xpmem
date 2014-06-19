@@ -269,13 +269,9 @@ xpmem_send_cmd_link(struct xpmem_partition_state * state,
     struct xpmem_link_connection * conn = xpmem_search_link(state, link);
 
     if (conn == NULL) {
-        printk("XPMEM: NULL connection for link %lli\n", link);
+        printk(KERN_ERR "XPMEM: NULL connection for link %lli\n", link);
         return -1;
     }
-
-    printk("XPMEM: sending cmd %s on link %lli (src_dom = %lli, dst_dom = %lli)\n", 
-        cmd_to_string(cmd->type), link,
-        cmd->src_dom, cmd->dst_dom);
 
     return conn->in_cmd_fn(cmd, conn->priv_data);
 }

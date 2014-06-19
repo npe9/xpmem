@@ -36,7 +36,7 @@
 #include <xpmem_syms.h>
 
 /* TODO: set this based on some configure option */
-#define XPMEM_NS
+// #define XPMEM_NS
 
 
 struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
