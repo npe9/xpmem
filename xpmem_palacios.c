@@ -348,21 +348,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
     atomic_inc(&dev_off);
     palacios_state->connected = 1;
 
-    {
-        char buf[16];
-
-        memset(buf, 0, 16);
-        snprintf(buf, 16, "xpmem_%d", dev_no);
-
-        /* Register IRQ handler */
-        if (request_irq(dev->irq, irq_handler, IRQF_SHARED, buf, palacios_state) != 0) {
-            printk("Failed to request IRQ for Palacios XPMEM device (irq = %d)\n", dev->irq);
-            goto err_unmap;
-        }
-
-        palacios_state->irq = dev->irq;
-    }
-
     /* Add connection to name/forwarding service */
     palacios_state->link = xpmem_add_connection(
             palacios_state->part, 
@@ -373,7 +358,22 @@ xpmem_probe_driver(struct pci_dev             * dev,
     if (palacios_state->link <= 0) {
         printk(KERN_ERR "Failed to register Palacios XPMEM interface with"
             " name/forwarding service\n");
-        goto err_free_irq;
+        goto err_unmap;
+    }
+
+    {
+        char buf[16];
+
+        memset(buf, 0, 16);
+        snprintf(buf, 16, "xpmem_%d", dev_no);
+
+        /* Register IRQ handler */
+        if (request_irq(dev->irq, irq_handler, IRQF_SHARED, buf, palacios_state) != 0) {
+            printk("Failed to request IRQ for Palacios XPMEM device (irq = %d)\n", dev->irq);
+            goto err_remove;
+        }
+
+        palacios_state->irq = dev->irq;
     }
 
     /* Signal device initialization by clearing irq status */
@@ -382,8 +382,8 @@ xpmem_probe_driver(struct pci_dev             * dev,
     printk("XPMEM Palacios PCI device enabled\n");
     return 0;
 
-err_free_irq:
-    free_irq(palacios_state->irq, palacios_state);
+err_remove:
+    xpmem_remove_connection(palacios_state->part, palacios_state->link);
 
 err_unmap:
     pci_iounmap(dev, palacios_state->xpmem_bar);
@@ -400,7 +400,7 @@ xpmem_remove_driver(struct pci_dev * dev)
     struct xpmem_palacios_state * state = NULL;
 
     /* Get the index with the driver's private data field */
-    state = (struct xpmem_palacios_state *)pci_get_drvdata(dev);;
+    state = (struct xpmem_palacios_state *)pci_get_drvdata(dev);
 
     /* No longer connected */
     state->connected = 0;
