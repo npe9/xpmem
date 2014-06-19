@@ -53,10 +53,11 @@ struct xpmem_palacios_state {
     struct xpmem_bar_state         bar_state;   /* Bar state */
     struct mutex                   mutex;       /* mutex for BAR hypercall access */
 
-    int                            connected;   /* device connectivity */
     unsigned int                   irq;         /* device irq number */
     struct work_struct             work;        /* work struct */
-    spinlock_t                     lock;        /* lock */
+
+    int                            connected;   /* device connectivity */
+    atomic_t                       num_cmds;    /* number of cmd deliveries being processed */ 
 
     /* XPMEM kernel interface */
     xpmem_link_t                   link;        /* XPMEM connection link */
@@ -217,15 +218,15 @@ xpmem_work_fn(struct work_struct * work)
 
     state = container_of(work, struct xpmem_palacios_state, work);
 
-    /* We take a read lock here to prevent device freeing/disconnection while
-     * the command is being delivered */
-    spin_lock_irqsave(&(state->lock), flags);
-    {
-        if (state->connected) {
-            __xpmem_work_fn(state);
-        }
+    if (state->connected == 0) {
+        return;
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
+
+    atomic_inc(&(state->num_cmds));
+    {
+        __xpmem_work_fn(state);
+    }
+    atomic_dec(&(state->num_cmds));
 }
 
 
@@ -404,18 +405,20 @@ xpmem_remove_driver(struct pci_dev * dev)
     /* Get the index with the driver's private data field */
     state = (struct xpmem_palacios_state *)pci_get_drvdata(dev);;
 
-    spin_lock_irqsave(&(state->lock), flags);
-    {
-        /* No longer connected */
-        state->connected = 0;
+    /* No longer connected */
+    state->connected = 0;
+
+    /* Wait until all ongoing deliveries finish */
+    while (atomic_read(&(state->num_cmds) == 0)) {
+        schedule();
+        mb();
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
 
     /* Free the irq */
     free_irq(state->irq, state);
 
     /* Remove the xpmem connection */
-
+    xpmem_remove_connection(state->part, state->link);
 
     printk("XPMEM Palacios PCI device disabled\n");
 }
