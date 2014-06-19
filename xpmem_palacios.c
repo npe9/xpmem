@@ -217,12 +217,8 @@ xpmem_work_fn(struct work_struct * work)
 
     state = container_of(work, struct xpmem_palacios_state, work);
 
-    atomic_inc(&(state->num_cmds));
-    {
-        if (state->connected) {
-            __xpmem_work_fn(state);
-        }
-    }
+    __xpmem_work_fn(state);
+    
     atomic_dec(&(state->num_cmds));
 }
 
@@ -236,12 +232,11 @@ irq_handler(int    irq,
 {
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)data;
 
-    if (!state->connected) {
-        return IRQ_HANDLED;
+    if (state->connected) {
+        /* Schedule work */
+        atomic_inc(&(state->num_cmds));
+        schedule_work(&(state->work));
     }
-
-    /* Schedule work */
-    schedule_work(&(state->work));
 
     return IRQ_HANDLED;
 }
