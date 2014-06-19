@@ -217,13 +217,11 @@ xpmem_work_fn(struct work_struct * work)
 
     state = container_of(work, struct xpmem_palacios_state, work);
 
-    if (state->connected == 0) {
-        return;
-    }
-
     atomic_inc(&(state->num_cmds));
     {
-        __xpmem_work_fn(state);
+        if (state->connected) {
+            __xpmem_work_fn(state);
+        }
     }
     atomic_dec(&(state->num_cmds));
 }
