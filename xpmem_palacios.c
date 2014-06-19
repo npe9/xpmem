@@ -213,8 +213,7 @@ __xpmem_work_fn(struct xpmem_palacios_state * state)
 void 
 xpmem_work_fn(struct work_struct * work)
 {
-    struct xpmem_palacios_state * state    = NULL;
-    unsigned long                 flags    = 0;
+    struct xpmem_palacios_state * state = NULL;
 
     state = container_of(work, struct xpmem_palacios_state, work);
 
@@ -400,7 +399,6 @@ static void
 xpmem_remove_driver(struct pci_dev * dev)
 {
     struct xpmem_palacios_state * state = NULL;
-    unsigned long                 flags = 0;
 
     /* Get the index with the driver's private data field */
     state = (struct xpmem_palacios_state *)pci_get_drvdata(dev);;
@@ -409,7 +407,7 @@ xpmem_remove_driver(struct pci_dev * dev)
     state->connected = 0;
 
     /* Wait until all ongoing deliveries finish */
-    while (atomic_read(&(state->num_cmds) == 0)) {
+    while (atomic_read(&(state->num_cmds)) == 0) {
         schedule();
         mb();
     }
