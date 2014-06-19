@@ -49,16 +49,19 @@ struct xpmem_bar_state {
 
 
 struct xpmem_palacios_state {
-    int                            initialized; /* device initialization */
-    struct mutex                   mutex;       /* state mutex */
-    unsigned int                   irq;         /* irq number */
-    xpmem_link_t                   link;        /* XPMEM connection link */
-    struct xpmem_partition_state * part;        /* pointer to XPMEM partition */
-
     void __iomem                 * xpmem_bar;   /* Bar memory */
     struct xpmem_bar_state         bar_state;   /* Bar state */
+    struct mutex                   mutex;       /* mutex for BAR hypercall access */
 
-    struct work_struct             work;        /* Work struct */
+    unsigned int                   irq;         /* device irq number */
+    struct work_struct             work;        /* work struct */
+
+    int                            connected;   /* device connectivity */
+    rwlock_t                       rw_lock;     /* protect device access */
+
+    /* XPMEM kernel interface */
+    xpmem_link_t                   link;        /* XPMEM connection link */
+    struct xpmem_partition_state * part;        /* pointer to XPMEM partition */
 };
 
 
@@ -144,71 +147,80 @@ xpmem_work_fn(struct work_struct * work)
     u64                           cmd_size = 0;
     u64                           pfn_size = 0;
     void                        * pfn_buf  = NULL;
+    unsigned long                 flags    = 0;
 
     state = container_of(work, struct xpmem_palacios_state, work);
-    if (!state->initialized) {
+    if (!state->connected) {
         return;
     }
 
-    /* Read BAR header */
-    read_bar(state->xpmem_bar, 
-             (void *)&(state->bar_state), 
-             sizeof(state->bar_state));
+    /* We take a read lock here to prevent device freeing/disconnection while
+     * the command is being delivered */
+    read_lock_irqsave(&(state->rw_lock), flags);
+    {
+        /* Read BAR header */
+        read_bar(state->xpmem_bar, 
+                 (void *)&(state->bar_state), 
+                 sizeof(state->bar_state));
 
-    /* Grab size fields */
-    cmd_size = state->bar_state.xpmem_cmd_size;
-    pfn_size = state->bar_state.xpmem_pfn_size;
+        /* Grab size fields */
+        cmd_size = state->bar_state.xpmem_cmd_size;
+        pfn_size = state->bar_state.xpmem_pfn_size;
 
-    /* Could be a spurious IRQ */
-    if (cmd_size != sizeof(struct xpmem_cmd_ex)) {
-        return;
-    }
-
-    cmd = kmalloc(sizeof(struct xpmem_cmd_ex), GFP_KERNEL);
-    if (!cmd) {
-        return;
-    }
-
-    if (pfn_size > 0) {
-        pfn_buf = kmalloc(pfn_size, GFP_KERNEL);
-        if (!pfn_buf) {
-            kfree(cmd);
-            return;
+        /* Could be a spurious IRQ */
+        if (cmd_size != sizeof(struct xpmem_cmd_ex)) {
+            goto out;
         }
-    }
 
-    /* Read command from BAR */
-    xpmem_read_cmd_hcall(
-        state->bar_state.xpmem_read_cmd_hcall_id, 
-        (u64)(void *)cmd,
-        (u64)pfn_buf
-    );
+        cmd = kmalloc(sizeof(struct xpmem_cmd_ex), GFP_KERNEL);
+        if (!cmd) {
+            goto out;
+        }
 
-    /* Save the pfn list */
-    if (pfn_size > 0) {
-        cmd->attach.pfns = kmalloc(pfn_size, GFP_KERNEL);
-        if (!cmd->attach.pfns) {
+        if (pfn_size > 0) {
+            pfn_buf = kmalloc(pfn_size, GFP_KERNEL);
+            if (!pfn_buf) {
+                kfree(cmd);
+                goto out;
+            }
+        }
+
+        /* Read command from BAR */
+        xpmem_read_cmd_hcall(
+            state->bar_state.xpmem_read_cmd_hcall_id, 
+            (u64)(void *)cmd,
+            (u64)pfn_buf
+        );
+
+        /* Save the pfn list */
+        if (pfn_size > 0) {
+            cmd->attach.pfns = kmalloc(pfn_size, GFP_KERNEL);
+            if (!cmd->attach.pfns) {
+                kfree(pfn_buf);
+                kfree(cmd);
+                goto out;
+            }
+
+            memcpy(cmd->attach.pfns, pfn_buf, pfn_size);
             kfree(pfn_buf);
-            kfree(cmd);
-            return;
         }
 
-        memcpy(cmd->attach.pfns, pfn_buf, pfn_size);
-        kfree(pfn_buf);
+        /* Clear device interrupt flag */
+        xpmem_irq_clear_hcall(state->bar_state.xpmem_irq_clear_hcall_id);
+
+        /* Deliver the command */
+        xpmem_cmd_deliver(state->part, state->link, cmd);
+
+        /* Free up */
+        kfree(cmd);
+
+        if (pfn_size > 0) {
+            kfree(cmd->attach.pfns);
+        }
+
     }
-
-    /* Clear device interrupt flag */
-    xpmem_irq_clear_hcall(state->bar_state.xpmem_irq_clear_hcall_id);
-
-    /* Deliver the command */
-    xpmem_cmd_deliver(state->part, state->link, cmd);
-
-    /* Free up */
-    kfree(cmd);
-
-    if (pfn_size > 0) {
-        kfree(cmd->attach.pfns);
-    }
+out:
+    read_unlock_irqrestore(&(state->rw_lock), flags);
 }
 
 
@@ -221,7 +233,7 @@ irq_handler(int    irq,
 {
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)data;
 
-    if (!state->initialized) {
+    if (!state->connected) {
         return IRQ_HANDLED;
     }
 
@@ -241,7 +253,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
 {
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)priv_data;
 
-    if (!state->initialized) {
+    if (!state->connected) {
         return -1;
     }
 
@@ -327,9 +339,11 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
     /* Initialize the rest of the state */
     mutex_init(&(palacios_state->mutex));
+    rwlock_init(&(palacios_state->rw_lock));
     INIT_WORK(&(palacios_state->work), xpmem_work_fn);
-    palacios_state->initialized = 1;
+
     atomic_inc(&dev_off);
+    palacios_state->connected = 1;
 
     {
         char buf[16];
@@ -380,17 +394,26 @@ err:
 static void 
 xpmem_remove_driver(struct pci_dev * dev)
 {
-    struct xpmem_palacios_state * state  = NULL;
+    struct xpmem_palacios_state * state = NULL;
+    unsigned long                 flags = 0;
 
     /* Get the index with the driver's private data field */
     state = (struct xpmem_palacios_state *)pci_get_drvdata(dev);;
 
+    write_lock_irqsave(&(state->rw_lock), flags);
+    {
+        /* No longer connected */
+        state->connected = 0;
+    }
+    write_unlock_irqrestore(&(state->rw_lock), flags);
+
     /* Free the irq */
     free_irq(state->irq, state);
 
-    printk("XPMEM Palacios PCI device disabled\n");
+    /* Remove the xpmem connection */
 
-    state->initialized = 0;
+
+    printk("XPMEM Palacios PCI device disabled\n");
 }
 
 
@@ -459,7 +482,7 @@ xpmem_palacios_detach_paddr(struct xpmem_partition_state * part,
     }
 
     /* If we're not in a VM */
-    if (state->initialized == 0) {
+    if (state->connected == 0) {
         return 0;
     }
 
