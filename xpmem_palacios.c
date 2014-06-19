@@ -341,6 +341,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
 
     /* Initialize the rest of the state */
+    atomic_set(&(palacios_state->num_cmds), 0);
     mutex_init(&(palacios_state->mutex));
     INIT_WORK(&(palacios_state->work), xpmem_work_fn);
 
