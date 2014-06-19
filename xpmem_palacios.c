@@ -409,6 +409,9 @@ xpmem_remove_driver(struct pci_dev * dev)
     /* Free the irq */
     free_irq(state->irq, state);
 
+    /* Disable the pci device */
+    pci_disable_device(dev);
+
     /* Remove the xpmem connection */
     xpmem_remove_connection(state->part, state->link);
 
