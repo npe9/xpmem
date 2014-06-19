@@ -58,8 +58,7 @@ struct xpmem_palacios_state {
     void __iomem                 * xpmem_bar;   /* Bar memory */
     struct xpmem_bar_state         bar_state;   /* Bar state */
 
-    struct workqueue_struct      * workq;       /* Workq for handling interrupts */
-    struct work_struct             worker;      /* Worker struct */
+    struct work_struct             work;        /* Work struct */
 };
 
 
@@ -146,7 +145,7 @@ xpmem_work_fn(struct work_struct * work)
     u64                           pfn_size = 0;
     void                        * pfn_buf  = NULL;
 
-    state = container_of(work, struct xpmem_palacios_state, worker);
+    state = container_of(work, struct xpmem_palacios_state, work);
     if (!state->initialized) {
         return;
     }
@@ -226,8 +225,8 @@ irq_handler(int    irq,
         return IRQ_HANDLED;
     }
 
-    /* Queue work for worker thread */
-    queue_work(state->workq, &(state->worker));
+    /* Schedule work */
+    schedule_work(&(state->work));
 
     return IRQ_HANDLED;
 }
@@ -273,7 +272,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
     struct xpmem_palacios_state * palacios_state = NULL;
 
     unsigned long bar_size = 0;
-    int           ret      = -1;
     int           dev_no   = 0;
 
     /* Index into global list */
@@ -284,15 +282,15 @@ xpmem_probe_driver(struct pci_dev             * dev,
     pci_set_drvdata(dev, (void *)palacios_state);
 
     if (dev->vendor != XPMEM_VENDOR_ID) {
-        return ret;
+        return -1;
     }
 
     if (dev->device != XPMEM_DEVICE_ID) {
-        return ret;
+        return -1;
     }
 
     /* Enable PCI device */
-    if ((ret = pci_enable_device(dev))) {
+    if (pci_enable_device(dev)) {
         printk("Failed to enable Palacios XPMEM PCI device\n");
         goto err;
     }
@@ -300,7 +298,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
     /* Check if interrupts are enabled */
     if (dev->irq <= 0) {
         printk("Palacios XPMEM device is not interrupt-enabled\n");
-        ret = -1;
         goto err;
     }
 
@@ -310,11 +307,10 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
     if (!palacios_state->xpmem_bar) {
         printk("Failed to map Palacios XPMEM BAR 0 memory\n");
-        ret = -1;
         goto err;
     }
 
-    /* Read Palacios hypercall id from BAR 0 */
+    /* Read Palacios hypercall ids from BAR 0 */
     read_bar(palacios_state->xpmem_bar, 
              (void *)&(palacios_state->bar_state), 
              sizeof(palacios_state->bar_state));
@@ -325,9 +321,15 @@ xpmem_probe_driver(struct pci_dev             * dev,
          (palacios_state->bar_state.xpmem_read_cmd_hcall_id  == 0))
     {
         printk("Palacios XPMEM hypercall(s) not available\n");
-        ret = -1;
         goto err_unmap;
     }
+
+
+    /* Initialize the rest of the state */
+    mutex_init(&(palacios_state->mutex));
+    INIT_WORK(&(palacios_state->work), xpmem_work_fn);
+    palacios_state->initialized = 1;
+    atomic_inc(&dev_off);
 
     {
         char buf[16];
@@ -343,13 +345,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
         palacios_state->irq = dev->irq;
     }
-
-    mutex_init(&(palacios_state->mutex));
-    palacios_state->workq = create_singlethread_workqueue("xpmem-work");
-    INIT_WORK(&(palacios_state->worker), xpmem_work_fn);
-
-    palacios_state->initialized = 1;
-    atomic_inc(&dev_off);
 
     /* Add connection to name/forwarding service */
     palacios_state->link = xpmem_add_connection(
@@ -372,11 +367,13 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
 err_free_irq:
     free_irq(palacios_state->irq, palacios_state);
+
 err_unmap:
     pci_iounmap(dev, palacios_state->xpmem_bar);
+
 err:
     printk("XPMEM: Palacios PCI device initialization failed\n");
-    return ret;
+    return -1;
 }
 
 
