@@ -364,7 +364,7 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
         /* Register IRQ handler */
         if (request_irq(dev->irq, irq_handler, IRQF_SHARED, buf, palacios_state) != 0) {
-            printk(KERN_ERRR "XPMEM: Failed to request IRQ for Palacios device (irq = %d)\n", dev->irq);
+            printk(KERN_ERR "XPMEM: Failed to request IRQ for Palacios device (irq = %d)\n", dev->irq);
             goto err_remove;
         }
 
