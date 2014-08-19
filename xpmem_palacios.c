@@ -28,7 +28,10 @@
 
 /* TODO: what about AMD? */
 #define VMCALL      ".byte 0x0F,0x01,0xC1\r\n"
+#define VMMCALL     ".byte 0x0F,0x01,0xD9\r\n"
 #define MAX_DEVICES     16
+
+static int vmcall = 0;
 
 struct xpmem_bar_state {
     /* Hypercall ids */
@@ -36,6 +39,12 @@ struct xpmem_bar_state {
     u32 xpmem_detach_hcall_id;
     u32 xpmem_irq_clear_hcall_id;
     u32 xpmem_read_cmd_hcall_id;
+
+    /* vmx capable */
+    u8 vmx_capable;
+
+    /* svm capable */
+    u8 svm_capable;
 
     /* interrupt status */
     u8 irq_handled;
@@ -70,17 +79,25 @@ atomic_t dev_off = ATOMIC_INIT(0);
 
 
 
-
 static void
 xpmem_hcall(u32                   hcall_id, 
             struct xpmem_cmd_ex * cmd)
 {
     unsigned long long ret = 0;
-    __asm__ volatile(
-        VMCALL
-        : "=a"(ret)
-        : "a"(hcall_id), "b"(cmd)
-    );
+
+    if (vmcall) {
+        __asm__ volatile(
+            VMCALL
+            : "=a"(ret)
+            : "a"(hcall_id), "b"(cmd)
+        );
+    } else {
+        __asm__ volatile(
+            VMMCALL
+            : "=a"(ret)
+            : "a"(hcall_id), "b"(cmd)
+        );
+    }
 }
 
 static void
@@ -88,11 +105,20 @@ xpmem_detach_hcall(u32 hcall_id,
                    u64 vaddr)
 {
     unsigned long long ret = 0;
-    __asm__ volatile(
-        VMCALL
-        : "=a"(ret)
-        : "a"(hcall_id), "b"(vaddr)
-    );
+
+    if (vmcall) {
+        __asm__ volatile(
+            VMCALL
+            : "=a"(ret)
+            : "a"(hcall_id), "b"(vaddr)
+        );
+    } else {
+        __asm__ volatile(
+            VMMCALL
+            : "=a"(ret)
+            : "a"(hcall_id), "b"(vaddr)
+        );
+    }
 }
 
 
@@ -100,11 +126,20 @@ static void
 xpmem_irq_clear_hcall(u32 hcall_id)
 {
     unsigned long long ret = 0;
-    __asm__ volatile(
-        VMCALL
-        : "=a"(ret)
-        : "a"(hcall_id)
-    );
+
+    if (vmcall) {
+        __asm__ volatile(
+            VMCALL
+            : "=a"(ret)
+            : "a"(hcall_id)
+        );
+    } else {
+        __asm__ volatile(
+            VMMCALL
+            : "=a"(ret)
+            : "a"(hcall_id)
+        );
+    }
 }
 
 static void
@@ -113,11 +148,20 @@ xpmem_read_cmd_hcall(u32 hcall_id,
                      u64 pfn_va)
 {
     unsigned long long ret = 0;
-    __asm__ volatile(
-        VMCALL
-        : "=a"(ret)
-        : "a"(hcall_id), "b"(cmd_va), "c"(pfn_va)
-    );
+
+    if (vmcall) {
+        __asm__ volatile(
+            VMCALL
+            : "=a"(ret)
+            : "a"(hcall_id), "b"(cmd_va), "c"(pfn_va)
+        );
+    } else {
+        __asm__ volatile(
+            VMMCALL
+            : "=a"(ret)
+            : "a"(hcall_id), "b"(cmd_va), "c"(pfn_va)
+        );
+    }
 }
 
 
@@ -258,7 +302,10 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
     while (mutex_lock_interruptible(&(state->mutex)));
 
     {
-        xpmem_hcall(state->bar_state.xpmem_hcall_id, cmd);
+        xpmem_hcall(
+            state->bar_state.xpmem_hcall_id, 
+            cmd
+        );
     }
 
     mutex_unlock(&(state->mutex));
@@ -334,6 +381,18 @@ xpmem_probe_driver(struct pci_dev             * dev,
         goto err_unmap;
     }
 
+    if ( (palacios_state->bar_state.vmx_capable == 0) &&
+         (palacios_state->bar_state.svm_capable == 0))
+    {
+        printk(KERN_ERR "XPMEM: Palacios hypercall(s) not functional\n");
+        goto err_unmap;
+    }
+
+    if (palacios_state->bar_state.vmx_capable > 0) {
+        vmcall = 1;
+    } else {
+        vmcall = 0;
+    }
 
     /* Initialize the rest of the state */
     atomic_set(&(palacios_state->num_cmds), 0);
