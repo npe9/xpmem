@@ -28,7 +28,7 @@ xpmem_ipcperms(struct kern_ipc_perm *ipcp, short flag)
 
 	requested_mode = (flag >> 6) | (flag >> 3) | flag;
 	granted_mode = ipcp->mode;
-	if (current->cred->euid.val == ipcp->cuid.val || current->cred->euid.val == ipcp->uid.val)
+	if (current->cred->euid == ipcp->cuid || current->cred->euid == ipcp->uid)
 		granted_mode >>= 6;
 	else if (in_group_p(ipcp->cgid) || in_group_p(ipcp->gid))
 		granted_mode >>= 3;

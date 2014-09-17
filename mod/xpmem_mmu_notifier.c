@@ -86,7 +86,11 @@ xpmem_invalidate_range(struct mmu_notifier *mn, struct mm_struct *mm,
 	//tlb = &get_cpu_var(mmu_gathers);
 	//tlb_mm = tlb->mm;
 	//tlb_fullmm = tlb->fullmm;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
+    tlb_gather_mmu(&tlb, mm, 1);
+#else
     tlb_gather_mmu(&tlb, mm, start, end);
+#endif
 
 	/*
 	 * We could be in the middle of an unmap_region() -> unmap_vmas() which
