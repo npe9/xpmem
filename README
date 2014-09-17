@@ -1,2 +1,2 @@
-For now, to install XPMEM using the nameserver, type 'make NS=y' in the kernel/
+For now, to install XPMEM using the nameserver, type 'make NS=y' in the mod/
 subdirectory
