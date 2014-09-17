@@ -48,6 +48,8 @@
  *     2.1    CRAY: remove PFNtable cache
  *     2.2    CRAY: add support for MMU notifiers
  *
+ *     3.0    U. Pittsburgh: add support for multi-enclave environments
+ *
  * This int constant has the following format:
  *
  *      +----+------------+----------------+
@@ -57,8 +59,8 @@
  *       major - major revision number (12-bits)
  *       minor - minor revision number (16-bits)
  */
-#define XPMEM_CURRENT_VERSION		0x00022000
-#define XPMEM_CURRENT_VERSION_STRING	"2.2"
+#define XPMEM_CURRENT_VERSION		0x00030000
+#define XPMEM_CURRENT_VERSION_STRING	"3.0"
 
 #define XPMEM_MODULE_NAME "xpmem"
 
