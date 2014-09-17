@@ -28,7 +28,12 @@ xpmem_ipcperms(struct kern_ipc_perm *ipcp, short flag)
 
 	requested_mode = (flag >> 6) | (flag >> 3) | flag;
 	granted_mode = ipcp->mode;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
 	if (current->cred->euid == ipcp->cuid || current->cred->euid == ipcp->uid)
+#else
+    if ((from_kuid(current_user_ns(), current->cred->euid) == from_kuid(current_user_ns(), ipcp->cuid)) || 
+         from_kuid(current_user_ns(), current->cred->euid) == from_kuid(current_user_ns(), ipcp->uid))
+#endif
 		granted_mode >>= 6;
 	else if (in_group_p(ipcp->cgid) || in_group_p(ipcp->gid))
 		granted_mode >>= 3;

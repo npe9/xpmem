@@ -175,8 +175,13 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
 struct xpmem_thread_group {
 	spinlock_t lock;	/* tg lock */
 	pid_t tgid;		/* tg's tgid */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
 	uid_t uid;		/* tg's uid */
 	gid_t gid;		/* tg's gid */
+#else
+	kuid_t uid;		/* tg's uid */
+	kgid_t gid;		/* tg's gid */
+#endif
 	volatile int flags;	/* tg attributes and state */
 	atomic_t uniq_segid;
 	atomic_t uniq_apid;
