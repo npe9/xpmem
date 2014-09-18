@@ -1,23 +1,32 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 
 #include <xpmem.h>
 
 int main(int argc, char ** argv) {
-    xpmem_segid_t   segid = 0;
-    int           * var   = NULL;
+    int * addr;
+    xpmem_segid_t segid;
 
-    if (posix_memalign((void **)&var,  sysconf(_SC_PAGESIZE), sizeof(int)) != 0) {
+    if (posix_memalign((void **)&addr, sysconf(_SC_PAGESIZE), sizeof(int)) != 0) {
         perror("posix_memalign");
         return -1;
     }
 
-    *var = 10;
+    segid = xpmem_make((void *)addr, 4096 * 10, XPMEM_PERMIT_MODE, (void *)0600);
+    printf("segid: %lli\n", segid);
 
-    segid = xpmem_make((void *)var, sysconf(_SC_PAGESIZE), XPMEM_PERMIT_MODE, (void *)0600);
+    {
+        int i = 0;
+        for (i = 0; i < 10; i++) {
+            void * addr2 = ((void *)addr + (4096 * i));
+            *((int *)addr2) = 12340 + i;
+            printf("addr: %p, *addr: %d\n",
+                addr2, *((int *)addr2));
+        }
+    }
 
-    printf("segid = %lli\n", segid);
+    while (1) {}
 
     return 0;
 }
+

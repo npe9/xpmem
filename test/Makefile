@@ -1,6 +1,6 @@
 CC             = gcc
 CFLAGS         = -I$(PWD)/../include
-LDFLAGS        = -L$(PWD)/../lib -lxpmem
+LDFLAGS        = -L$(PWD)/../lib -lxpmem -static
 
 TARGET        = test_xpmem
 SOURCES       = test_xpmem.c
