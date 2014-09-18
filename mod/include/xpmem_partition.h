@@ -10,6 +10,7 @@
 #define _XPMEM_PARTITION_H
 
 #include <xpmem.h>
+#include <xpmem_iface.h>
 #include <xpmem_extended.h>
 
 #include <asm/atomic.h>

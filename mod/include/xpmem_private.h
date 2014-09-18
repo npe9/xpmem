@@ -19,8 +19,9 @@
 #include <linux/hugetlb.h>
 #include <asm/signal.h>
 
-#include <xpmem_extended.h>
+#include <xpmem.h>
 #include <xpmem_partition.h>
+#include <xpmem_extended.h>
 
 
 #ifdef CONFIG_MMU_NOTIFIER

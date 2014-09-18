@@ -8,14 +8,6 @@
 
 #include <xpmem.h>
 
-typedef int64_t xpmem_domid_t;
-typedef int64_t xpmem_link_t;
-
-typedef enum {
-    XPMEM_CONN_LOCAL,
-    XPMEM_CONN_REMOTE,
-} xpmem_connection_t;
-
 
 struct xpmem_cmd_ex;
 

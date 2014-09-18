@@ -16,6 +16,7 @@
 #include <asm/uaccess.h>
 
 #include <xpmem.h>
+#include <xpmem_private.h>
 #include <xpmem_extended.h>
 #include <xpmem_iface.h>
 #include <xpmem_hashtable.h>
