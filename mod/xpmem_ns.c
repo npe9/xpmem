@@ -578,7 +578,7 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
             goto err_malloc; 
         }
 
-        iter->uniq = i;
+        iter->uniq = (i * XPMEM_MAX_UNIQ_APID);
         list_add_tail(&(iter->node), &(ns_state->segid_list));
     }
 
