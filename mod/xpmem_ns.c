@@ -12,6 +12,7 @@
 #include <linux/kthread.h>
 #include <linux/timer.h>
 #include <linux/delay.h>
+#include <linux/list.h>
 
 #include <asm/uaccess.h>
 
@@ -21,15 +22,15 @@
 #include <xpmem_private.h>
 #include <xpmem_hashtable.h>
 
-#define MIN_UNIQ_SEGID    32
-#define MIN_UNIQ_DOMID    32
+#define XPMEM_MIN_UNIQ_SEGID    32
+#define XPMEM_MIN_UNIQ_DOMID    32
 
 struct xpmem_ns_state {
     /* lock for ns state */
     spinlock_t                     lock;
 
-    /* Unique segid generation */
-    atomic_t                       uniq_segid;
+    /* list of free segids */
+    struct list_head               segid_list;
 
     /* Unique domid generation */
     atomic_t                       uniq_domid;
@@ -38,22 +39,65 @@ struct xpmem_ns_state {
     struct xpmem_hashtable       * segid_map;
 };
 
+struct xpmem_segid_iter {
+    unsigned short   uniq;
+    struct list_head node;
+};
+
 
 static int
 alloc_xpmem_segid(struct xpmem_ns_state * ns_state, 
                   xpmem_segid_t         * segid)
 {
-    struct xpmem_id * id   = NULL;
-    int32_t           uniq = 0;
+    struct xpmem_id         * id    = NULL;
+    struct xpmem_segid_iter * iter  = NULL;
 
-    uniq = atomic_inc_return(&(ns_state->uniq_segid));
+    spin_lock(&(ns_state->lock));
+    {
+        if (!list_empty(&(ns_state->segid_list))) {
+            iter = list_first_entry(&(ns_state->segid_list),
+                        struct xpmem_segid_iter,
+                        node);
+            list_del(&(iter->node));
+        } else {
+            iter = NULL;
+        }
+    }
+    spin_unlock(&(ns_state->lock));
 
-    if (uniq > XPMEM_MAX_UNIQ_SEGID) {
+    if (iter == NULL) {
         return -1;
     }
 
     id       = (struct xpmem_id *)segid;
-    id->uniq = (unsigned short)(uniq * XPMEM_MAX_UNIQ_APID);
+    id->uniq = (unsigned short)(iter->uniq);
+
+    kfree(iter);
+
+    return 0;
+}
+
+static int
+free_xpmem_segid(struct xpmem_ns_state * ns_state,
+                 xpmem_segid_t           segid)
+{
+    struct xpmem_id         * id    = NULL;
+    struct xpmem_segid_iter * iter = NULL;
+
+    iter = kmalloc(sizeof(struct xpmem_segid_iter), GFP_KERNEL);
+
+    if (!iter) {
+        return -1;
+    }
+
+    id         = (struct xpmem_id *)&segid;
+    iter->uniq = (unsigned short)id->uniq;
+
+    spin_lock(&(ns_state->lock));
+    {
+        list_add_tail(&(iter->node), &(ns_state->segid_list));        
+    }
+    spin_unlock(&(ns_state->lock));
 
     return 0;
 }
@@ -270,6 +314,11 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
         case XPMEM_REMOVE: {
             xpmem_domid_t domid = 0;
+
+            /* Add segid to unique list */
+            if (free_xpmem_segid(ns_state, cmd->remove.segid)) {
+                printk(KERN_ERR "XPMEM: cannot free segid. This is a problem\n");
+            }
 
             /* Remove segid from map */
             domid = xpmem_remove_segid(ns_state, cmd->remove.segid); 
@@ -501,7 +550,11 @@ xpmem_ns_deliver_cmd(struct xpmem_partition_state * part_state,
 int
 xpmem_ns_init(struct xpmem_partition_state * part_state)
 {
-    struct xpmem_ns_state * ns_state = kmalloc(sizeof(struct xpmem_ns_state), GFP_KERNEL);
+    struct xpmem_ns_state   * ns_state = NULL;
+    struct xpmem_segid_iter * iter     = NULL;
+    int                       i        = 0;
+
+    ns_state = kmalloc(sizeof(struct xpmem_ns_state), GFP_KERNEL);
     if (!ns_state) {
         return -1;
     }
@@ -514,8 +567,20 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
 
     /* Create everything else */
     spin_lock_init(&(ns_state->lock));
-    atomic_set(&(ns_state->uniq_segid), MIN_UNIQ_SEGID);
-    atomic_set(&(ns_state->uniq_domid), MIN_UNIQ_DOMID);
+    atomic_set(&(ns_state->uniq_domid), XPMEM_MIN_UNIQ_DOMID);
+    INIT_LIST_HEAD(&(ns_state->segid_list));
+
+    /* Populate segid list */
+    for (i = XPMEM_MIN_UNIQ_SEGID; i < XPMEM_MAX_UNIQ_SEGID; i++) {
+        iter = kmalloc(sizeof(struct xpmem_segid_iter), GFP_KERNEL);
+
+        if (!iter) {
+            goto err_malloc; 
+        }
+
+        iter->uniq = i;
+        list_add_tail(&(iter->node), &(ns_state->segid_list));
+    }
 
     /* Name server partition has a well-known domid */
     part_state->domid = XPMEM_NS_DOMID;
@@ -525,6 +590,18 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
     printk("XPMEM name service initialized\n");
 
     return 0;
+
+err_malloc:
+    while (!list_empty(&(ns_state->segid_list))) {
+        iter = list_first_entry(&(ns_state->segid_list),
+                    struct xpmem_segid_iter,
+                    node);
+        list_del(&(iter->node));
+        kfree(iter);
+    }
+
+    kfree(ns_state);
+    return -ENOMEM;
 }
 
 int

@@ -627,8 +627,6 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
 	        ret = vm_munmap(vma->vm_start, att->at_size);
 	    }
 	    down_write(&(current->mm->mmap_sem));
-	} else {
-	    printk("XPMEM: cannot invoke vm_munmap on separate process address space\n");
 	}
 
 	DBUG_ON(ret != 0);
