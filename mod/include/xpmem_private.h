@@ -189,7 +189,6 @@ struct xpmem_thread_group {
 	atomic_t uniq_segid;
 	atomic_t uniq_apid;
     int uniq_apid_ex_base;
-	atomic_t uniq_apid_ex;
 	rwlock_t seg_list_lock;
 	struct list_head seg_list;	/* tg's list of segs */
 	struct xpmem_hashlist *ap_hashtable;	/* locks + ap hash lists */
@@ -288,11 +287,25 @@ xpmem_segid_to_tgid(xpmem_segid_t segid)
 	return ((struct xpmem_id *)&segid)->tgid;
 }
 
+static inline unsigned short
+xpmem_segid_to_uniq(xpmem_segid_t segid)
+{
+	DBUG_ON(segid <= 0);
+    return ((struct xpmem_id *)&segid)->uniq;
+}
+
 static inline pid_t
 xpmem_apid_to_tgid(xpmem_apid_t apid)
 {
 	DBUG_ON(apid <= 0);
 	return ((struct xpmem_id *)&apid)->tgid;
+}
+
+static inline unsigned short
+xpmem_apid_to_uniq(xpmem_segid_t apid)
+{
+	DBUG_ON(apid <= 0);
+    return ((struct xpmem_id *)&apid)->uniq;
 }
 
 /*
@@ -339,6 +352,7 @@ extern int xpmem_remove(xpmem_segid_t);
 
 /* found in xpmem_get.c */
 extern int xpmem_check_permit_mode(int, struct xpmem_segment *);
+extern xpmem_apid_t xpmem_make_apid(struct xpmem_thread_group *);
 extern int xpmem_get(xpmem_segid_t, int, int, void *, xpmem_apid_t *);
 extern void xpmem_release_aps_of_tg(struct xpmem_thread_group *);
 extern void xpmem_release_ap(struct xpmem_thread_group *, struct xpmem_access_permit *);

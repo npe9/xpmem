@@ -52,6 +52,9 @@ struct xpmem_partition_state {
 };
 
 
+struct xpmem_link_connection;
+
+
 u32
 xpmem_hash_fn(uintptr_t key);
 

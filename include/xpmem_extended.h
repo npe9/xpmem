@@ -9,18 +9,6 @@
 #include <xpmem.h>
 
 
-struct xpmem_cmd_ex;
-
-
-struct xpmem_link_connection {
-    xpmem_connection_t   conn_type;
-    void               * priv_data;
-    int (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data);
-};
-
-
-
-
 struct xpmem_cmd_make_ex {
     xpmem_segid_t segid;
 };
@@ -76,16 +64,18 @@ typedef enum {
     XPMEM_PING_NS,
     XPMEM_PONG_NS,
 
-    /* Request a domid */
+    /* Request/Release a domid */
     XPMEM_DOMID_REQUEST,
     XPMEM_DOMID_RESPONSE,
+    XPMEM_DOMID_RELEASE,
 
 } xpmem_op_t;
 
 
 struct xpmem_cmd_ex {
-    xpmem_domid_t src_dom;
-    xpmem_domid_t dst_dom;
+    xpmem_domid_t req_dom; /* The domain invoking the original XPMEM operation */
+    xpmem_domid_t src_dom; /* The domain that created the most recent request / response */
+    xpmem_domid_t dst_dom; /* The domain targeted with the command / response */
     xpmem_op_t type;
 
     union {
