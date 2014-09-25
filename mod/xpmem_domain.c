@@ -136,7 +136,7 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
         return -XPMEM_ERRNO_NOPROC;
     }
 
-    apid = xpmem_make_apid_extended(ap_tg);
+    apid = xpmem_make_apid(ap_tg);
     if (apid < 0) {
         xpmem_tg_deref(ap_tg);
         xpmem_seg_deref(seg);
@@ -867,7 +867,6 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
     cmd.type         = XPMEM_DETACH;
     cmd.src_dom      = state->part->domid;
     cmd.dst_dom      = XPMEM_NS_DOMID;
-
     cmd.detach.vaddr = vaddr;
 
     while (mutex_lock_interruptible(&(state->mutex)));
