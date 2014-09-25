@@ -70,7 +70,7 @@ xpmem_open(struct inode *inode, struct file *file)
 	tg->uid = current->cred->uid;
 	tg->gid = current->cred->gid;
 	atomic_set(&tg->uniq_segid, 0);
-	atomic_set(&tg->uniq_apid, 0);
+	//atomic_set(&tg->uniq_apid, 0);
 	atomic_set(&tg->n_pinned, 0);
 	tg->addr_limit = TASK_SIZE;
 	tg->seg_list_lock = __RW_LOCK_UNLOCKED(tg->seg_list_lock);

@@ -71,7 +71,7 @@ xpmem_check_permit_mode(int flags, struct xpmem_segment *seg)
  * Create a new and unique apid.
  */
 xpmem_apid_t
-xpmem_make_apid(struct xpmem_thread_group *ap_tg)
+xpmem_make_apid(struct xpmem_segment *seg, struct xpmem_thread_group *ap_tg)
 {
 	struct xpmem_id apid;
 	xpmem_apid_t *apid_p = (xpmem_apid_t *)&apid;
@@ -79,15 +79,15 @@ xpmem_make_apid(struct xpmem_thread_group *ap_tg)
 
 	DBUG_ON(sizeof(struct xpmem_id) != sizeof(xpmem_apid_t));
 
-	uniq = atomic_inc_return(&ap_tg->uniq_apid);
+	uniq = atomic_inc_return(&seg->uniq_apid);
 	if (uniq > XPMEM_MAX_UNIQ_APID) {
-		atomic_dec(&ap_tg->uniq_apid);
+		atomic_dec(&seg->uniq_apid);
 		return -EBUSY;
 	}
 
 	*apid_p = 0;
 	apid.tgid = ap_tg->tgid;
-	apid.uniq = (unsigned short)uniq + ap_tg->uniq_apid_ex_base;
+	apid.uniq = (unsigned short)uniq + seg->uniq_apid_base;
 
     DBUG_ON(*apid_p <= 0);
 	return *apid_p;
@@ -117,7 +117,20 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 	if (permit_type != XPMEM_PERMIT_MODE || permit_value != NULL)
 		return -EINVAL;
 
-	seg_tg = xpmem_tg_ref_by_segid(segid);
+    // TODO: 
+    // if is_remote() -> then xpmem_get_remote() */
+    /*  return xpmem_get_remote(
+                &(xpmem_my_part->part_state), 
+                segid, 
+                flags, 
+                permit_type, 
+                (u64)permit_value, 
+                apid_p
+        );
+    */
+    // else {
+	    seg_tg = xpmem_tg_ref_by_segid(segid);
+    // }
 	if (IS_ERR(seg_tg)) {
         return xpmem_get_remote(
                 &(xpmem_my_part->part_state), 
@@ -128,6 +141,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
                 apid_p
         );
     }
+    
 
 	seg = xpmem_seg_ref_by_segid(seg_tg, segid);
 	if (IS_ERR(seg)) {
@@ -151,7 +165,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 		return -XPMEM_ERRNO_NOPROC;
 	}
 
-	apid = xpmem_make_apid(ap_tg);
+	apid = xpmem_make_apid(seg, ap_tg);
 	if (apid < 0) {
 		xpmem_tg_deref(ap_tg);
 		xpmem_seg_deref(seg);

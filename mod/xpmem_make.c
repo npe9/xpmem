@@ -20,7 +20,7 @@
  * Create a new and unique segid.
  */
 static xpmem_segid_t
-xpmem_make_segid(struct xpmem_thread_group *seg_tg)
+xpmem_make_segid(struct xpmem_thread_group *seg_tg, unsigned short *base)
 {
 	struct xpmem_id segid;
 	xpmem_segid_t *segid_p = (xpmem_segid_t *)&segid;
@@ -39,7 +39,7 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg)
 	segid.uniq = (unsigned short)uniq;
 
     xpmem_make_remote(&(xpmem_my_part->part_state), segid_p);
-    seg_tg->uniq_apid_ex_base = segid.uniq;
+    *base = segid.uniq;
 
 	DBUG_ON(*segid_p <= 0);
 	return *segid_p;
@@ -55,6 +55,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
 	xpmem_segid_t segid;
 	struct xpmem_thread_group *seg_tg;
 	struct xpmem_segment *seg;
+    unsigned short base;
 
 	if (permit_type != XPMEM_PERMIT_MODE ||
 	    ((u64)permit_value & ~00777) || size == 0) {
@@ -84,7 +85,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
 		return -EINVAL;
 	}
 
-	segid = xpmem_make_segid(seg_tg);
+	segid = xpmem_make_segid(seg_tg, &base);
 	if (segid < 0) {
 		xpmem_tg_deref(seg_tg);
 		return segid;
@@ -108,6 +109,8 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
 	seg->tg = seg_tg;
 	INIT_LIST_HEAD(&seg->ap_list);
 	INIT_LIST_HEAD(&seg->seg_list);
+    atomic_set(&(seg->uniq_apid), 0);
+    seg->uniq_apid_base = base;
 
 	xpmem_seg_not_destroyable(seg);
 

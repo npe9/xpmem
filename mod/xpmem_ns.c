@@ -321,8 +321,6 @@ domain_add_xpmem_apid(struct xpmem_domain * domain,
     struct rb_node              * parent = NULL;
     struct xpmem_apid_rb_node   * tmp    = NULL;
 
-    printk("DOMAIN ADD XPMEM APID\n");
-
     while (*p) {
         parent = *p;
         tmp    = rb_entry(parent, struct xpmem_apid_rb_node, tree_node);
@@ -420,7 +418,11 @@ alloc_xpmem_segid(struct xpmem_ns_state * ns_state,
 
     /* Add to domain */
     if (domain_add_xpmem_segid(domain, *segid) != 0) {
-        printk(KERN_ERR "XPMEM: cannot add segid to domain tree\n");
+        printk(KERN_ERR "XPMEM: cannot add segid %lli (tgid: %d, uniq: %u) to domain %lli tree\n",
+            *segid, 
+            xpmem_segid_to_tgid(*segid),
+            xpmem_segid_to_uniq(*segid),
+            domain->domid);
     }
 
     return 0;
@@ -524,6 +526,7 @@ alloc_xpmem_domain(struct xpmem_ns_state * ns_state,
     domain->segid_tree.rb_node = NULL;
     domain->apid_tree.rb_node = NULL;
     domain->num_segids         = 0;
+    domain->num_apids         = 0;
 
     /* Create proc entries for this domain */
     {
@@ -733,10 +736,10 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
             out_cmd->domid_req.domid = domain->domid;
 
             /* Update domid map */
-            ret = xpmem_add_domid(part_state, out_cmd->domid_req.domid, link);
+            ret = xpmem_add_domid(part_state, domain->domid, link);
 
             if (ret == 0) {
-                printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                printk(KERN_ERR "XPMEM: cannot insert domid %lli into hashtable\n", domain->domid);
                 out_cmd->domid_req.domid = -1;
                 goto out_domid_req;
             }
@@ -770,17 +773,17 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
             }
 
             /* Update domid map */
-            ret = xpmem_remove_domid(part_state, req_domain->domid);
+            ret = xpmem_remove_domid(part_state, cmd->domid_req.domid);
 
             if (ret == 0) {
-                printk(KERN_ERR "XPMEM: cannot free from domid hashtable\n");
+                printk(KERN_ERR "XPMEM: cannot free domid %lli from hashtable\n", cmd->domid_req.domid);
             }
 
             /* No command to send */
             return;
         }
         default: {
-            printk(KERN_ERR "XPMEM: unknown DOMID operation: %s\n",
+            printk(KERN_ERR "XPMEM: unknown domid operation: %s\n",
                 cmd_to_string(cmd->type));
             return;
         }
@@ -816,20 +819,16 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
             /* Allocate a unique segid to this domain */
             if (alloc_xpmem_segid(ns_state, req_domain, &(cmd->make.segid))) {
-                printk(KERN_ERR "XPMEM: cannot allocate segid. This is a problem\n");
+                printk(KERN_ERR "XPMEM: cannot allocate segid\n");
                 out_cmd->make.segid = -1;
                 goto out_make;
             }
-
-            printk("Processing XPMEM make for domid %lli (segid = %lli)\n",
-                req_domain->domid,
-                cmd->make.segid);
 
             /* Add to segid map */
             ret = xpmem_add_segid(ns_state, cmd->make.segid, cmd->src_dom);
 
             if (ret == 0) {
-                printk(KERN_ERR "XPMEM: cannot insert into segid hashtable\n");
+                printk(KERN_ERR "XPMEM: cannot insert segid %lli hashtable\n", cmd->make.segid);
                 out_cmd->make.segid = -1;
                 goto out_make;
             }
@@ -848,17 +847,13 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_REMOVE: {
             xpmem_domid_t domid = 0;
 
-            printk("Processing XPMEM remove for domid %lli (segid = %lli)\n",
-                req_domain->domid,
-                cmd->remove.segid);
-
             /* Add segid to free list */
             if (free_xpmem_segid(ns_state, req_domain, cmd->remove.segid)) {
-                printk(KERN_ERR "XPMEM: cannot free segid. This is a problem\n");
+                printk(KERN_ERR "XPMEM: cannot free segid %lli\n", cmd->remove.segid);
             }
 
-            /* Remove segid from map */            domid = xpmem_remove_segid(ns_state, cmd->remove.segid); 
-
+            /* Remove segid from map */            
+            domid = xpmem_remove_segid(ns_state, cmd->remove.segid); 
 
             if (domid == 0) {
                 printk(KERN_ERR "XPMEM: cannot remove segid %lli from hashtable (tgid: %d, uniq: %d)\n",
@@ -884,8 +879,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             domid = xpmem_search_segid(ns_state, cmd->get.segid);
 
             if (domid == 0) {
-                printk(KERN_ERR "XPMEM: cannot find segid %lli in hashtable\n",
-                    cmd->get.segid);
+                printk(KERN_ERR "XPMEM: cannot find segid %lli in hashtable\n", cmd->get.segid);
                 goto err_get;
             }
 
@@ -893,8 +887,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_search_domid(part_state, domid);
 
             if (out_link == 0) {
-                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
-                    " This should be impossible\n", domid);
+                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", domid);
                 goto err_get;
             }
 
@@ -931,8 +924,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 domid = xpmem_search_segid(ns_state, *((xpmem_segid_t *)&search_id));
 
                 if (domid == 0) {
-                    printk(KERN_ERR "XPMEM: cannot find apid %lli in hashtable\n",
-                        cmd->release.apid);
+                    printk(KERN_ERR "XPMEM: cannot find apid %lli in hashtable\n", cmd->release.apid);
                     goto err_release;
                 }
 
@@ -940,8 +932,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 out_link = xpmem_search_domid(part_state, domid);
 
                 if (out_link == 0) {
-                    printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
-                        " This should be impossible\n", domid);
+                    printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", domid);
                     goto err_release;
                 }
 
@@ -978,8 +969,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 domid = xpmem_search_segid(ns_state, *((xpmem_segid_t *)&search_id));
 
                 if (domid == 0) {
-                    printk(KERN_ERR "XPMEM: cannot find apid %lli in hashtable\n",
-                        cmd->attach.apid);
+                    printk(KERN_ERR "XPMEM: cannot find apid %lli in hashtable\n", cmd->attach.apid);
                     goto err_attach;
                 }
 
@@ -987,8 +977,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 out_link = xpmem_search_domid(part_state, domid);
 
                 if (out_link == 0) {
-                    printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
-                        " This should be impossible\n", domid);
+                    printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", domid);
                     goto err_attach;
                 }
 
@@ -1025,9 +1014,10 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_GET_COMPLETE:  {
             /* Perform apid accounting */
 
-            if (cmd->get.apid <= 0) {
+            if (cmd->get.apid > 0) {
                 if (domain_add_xpmem_apid(req_domain, src_domain, cmd->get.segid, cmd->get.apid) != 0) {
-                    printk(KERN_ERR "XPMEM: cannot add apid to domain tree\n");
+                    printk(KERN_ERR "XPMEM: cannot add apid %lli to domain %lli tree\n",
+                        cmd->get.apid, req_domain->domid);
                 }
             }
 
@@ -1038,7 +1028,8 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             /* Perform apid accounting */
 
             if (domain_remove_xpmem_apid(req_domain, cmd->release.apid) != 0) {
-                printk(KERN_ERR "XPMEM: cannot remove apid from domain tree\n");
+                printk(KERN_ERR "XPMEM: cannot remove apid %lli from domain %lli tree\n",
+                    cmd->release.apid, req_domain->domid);
             }
 
             goto operation_complete;
@@ -1055,8 +1046,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_search_domid(part_state, cmd->dst_dom);
 
             if (out_link == 0) {
-                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
-                    " This should be impossible\n", cmd->dst_dom);
+                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", cmd->dst_dom);
                 return;
             }
 
@@ -1065,8 +1055,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
 
         default: {
-            printk(KERN_ERR "XPMEM: unknown operation: %s\n",
-                cmd_to_string(cmd->type));
+            printk(KERN_ERR "XPMEM: unknown operation: %s\n", cmd_to_string(cmd->type));
             return;
         }
     }
@@ -1080,6 +1069,24 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     }
 }
 
+
+static void
+prepare_domids(struct xpmem_partition_state   * part_state,
+               xpmem_link_t                     link,
+               struct xpmem_cmd_ex            * cmd)
+{
+    /* If the source is local, we need to setup the domids for routing - otherwise */
+    if (link == part_state->local_link) {
+        if (cmd->req_dom == 0) {
+            /* The request is being generated here: set the req domid */
+            cmd->req_dom = part_state->domid;
+        }
+
+        /* Route to the NS - trivially */
+        cmd->src_dom = part_state->domid;
+        cmd->dst_dom = XPMEM_NS_DOMID;
+    }
+}
 
 static int
 prepare_domains(struct xpmem_partition_state  * part_state,
@@ -1150,11 +1157,14 @@ prepare_domains(struct xpmem_partition_state  * part_state,
 
 int
 xpmem_ns_deliver_cmd(struct xpmem_partition_state * part_state,
-                      xpmem_link_t                   link,
-                      struct xpmem_cmd_ex          * cmd)
+                     xpmem_link_t                   link,
+                     struct xpmem_cmd_ex          * cmd)
 {
     struct xpmem_domain * req_domain = NULL;
     struct xpmem_domain * src_domain = NULL;
+
+    /* Prepare the domids for routing, if necessary */
+    prepare_domids(part_state, link, cmd);
     
     /* Sanity check domains */
     if (prepare_domains(part_state, cmd, &req_domain, &src_domain) != 0) {

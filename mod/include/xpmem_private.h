@@ -187,7 +187,7 @@ struct xpmem_thread_group {
 #endif
 	volatile int flags;	/* tg attributes and state */
 	atomic_t uniq_segid;
-	atomic_t uniq_apid;
+	//atomic_t uniq_apid;
     int uniq_apid_ex_base;
 	rwlock_t seg_list_lock;
 	struct list_head seg_list;	/* tg's list of segs */
@@ -211,6 +211,8 @@ struct xpmem_segment {
 	spinlock_t lock;	/* seg lock */
 	struct rw_semaphore sema;	/* seg sema */
 	xpmem_segid_t segid;	/* unique segid */
+    unsigned short uniq_apid_base;
+	atomic_t uniq_apid;
 	u64 vaddr;		/* starting address */
 	size_t size;		/* size of seg */
 	int permit_type;	/* permission scheme */
@@ -352,7 +354,7 @@ extern int xpmem_remove(xpmem_segid_t);
 
 /* found in xpmem_get.c */
 extern int xpmem_check_permit_mode(int, struct xpmem_segment *);
-extern xpmem_apid_t xpmem_make_apid(struct xpmem_thread_group *);
+extern xpmem_apid_t xpmem_make_apid(struct xpmem_segment *, struct xpmem_thread_group *);
 extern int xpmem_get(xpmem_segid_t, int, int, void *, xpmem_apid_t *);
 extern void xpmem_release_aps_of_tg(struct xpmem_thread_group *);
 extern void xpmem_release_ap(struct xpmem_thread_group *, struct xpmem_access_permit *);
