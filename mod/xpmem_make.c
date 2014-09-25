@@ -224,6 +224,5 @@ xpmem_remove(xpmem_segid_t segid)
 	xpmem_seg_deref(seg);
 	xpmem_tg_deref(seg_tg);
 
-    ret = xpmem_remove_remote(&(xpmem_my_part->part_state), segid);
 	return ret;
 }

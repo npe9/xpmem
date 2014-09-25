@@ -36,7 +36,8 @@
 #include <xpmem_syms.h>
 
 
-struct xpmem_partition *xpmem_my_part = NULL;  /* pointer to this partition */
+struct xpmem_partition * xpmem_my_part  = NULL;  /* pointer to this partition */
+struct proc_dir_entry  * xpmem_proc_dir = NULL;
 
 /*
  * User open of the XPMEM driver. Called whenever /dev/xpmem is opened.
@@ -374,8 +375,10 @@ xpmem_init(void)
 		INIT_LIST_HEAD(&xpmem_my_part->tg_hashtable[i].list);
 	}
 
-
 	/* create the /proc interface directory (/proc/xpmem) */
+    xpmem_proc_dir = proc_mkdir(XPMEM_MODULE_NAME, NULL);
+
+
 	/*xpmem_unpin_procfs_dir = proc_mkdir(XPMEM_MODULE_NAME, NULL);
 	if (xpmem_unpin_procfs_dir == NULL) {
 		ret = -EBUSY;
@@ -460,7 +463,8 @@ xpmem_exit(void)
 	misc_deregister(&xpmem_dev_handle);
 	//remove_proc_entry("global_pages", xpmem_unpin_procfs_dir);
 	//remove_proc_entry("debug_printk", xpmem_unpin_procfs_dir);
-	//remove_proc_entry(XPMEM_MODULE_NAME, NULL);
+    
+    remove_proc_entry(XPMEM_MODULE_NAME, NULL);
     
 	printk("SGI XPMEM kernel module v%s unloaded\n",
 	       XPMEM_CURRENT_VERSION_STRING);

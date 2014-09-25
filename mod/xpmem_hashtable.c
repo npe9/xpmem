@@ -1,41 +1,42 @@
 /*
-  Copyright (c) 2002, 2004, Christopher Clark
-  All rights reserved.
-  
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions
-  are met:
-  
-  * Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer.
-  
-  * Redistributions in binary form must reproduce the above copyright
-    notice, this list of conditions and the following disclaimer in the
-    documentation and/or other materials provided with the distribution.
-  
-  * Neither the name of the original author; nor the names of any contributors
-    may be used to endorse or promote products derived from this software
-    without specific prior written permission.
-  
-  
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+   Copyright (c) 2002, 2004, Christopher Clark
+   All rights reserved.
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions
+   are met:
+
+ * Redistributions of source code must retain the above copyright
+ notice, this list of conditions and the following disclaimer.
+
+ * Redistributions in binary form must reproduce the above copyright
+ notice, this list of conditions and the following disclaimer in the
+ documentation and/or other materials provided with the distribution.
+
+ * Neither the name of the original author; nor the names of any contributors
+ may be used to endorse or promote products derived from this software
+ without specific prior written permission.
+
+
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include <linux/string.h>
 #include <linux/errno.h>
 #include <linux/preempt.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/list.h>
 
 
 #include <xpmem_hashtable.h>
@@ -120,11 +121,11 @@ u32 hash_buffer(u8 * msg, u32 length) {
     u32 i = 0;
 
     for (i = 0; i < length; i++) {
-	hash = (hash << 4) + *(msg + i) + i;
-	if ((temp = (hash & 0xF0000000))) {
-	    hash ^= (temp >> 24);
-	}
-	hash &= ~temp;
+        hash = (hash << 4) + *(msg + i) + i;
+        if ((temp = (hash & 0xF0000000))) {
+            hash ^= (temp >> 24);
+        }
+        hash &= ~temp;
     }
     return hash;
 }
@@ -141,7 +142,7 @@ static void * tmp_realloc(void * old_ptr, u32 old_size, u32 new_size) {
     void * new_buf = kmalloc(new_size, GFP_KERNEL);
 
     if (new_buf == NULL) {
-	return NULL;
+        return NULL;
     }
 
     memcpy(new_buf, old_ptr, old_size);
@@ -152,9 +153,9 @@ static void * tmp_realloc(void * old_ptr, u32 old_size, u32 new_size) {
 
 
 /*
-  Credit for primes table: Aaron Krowne
-  http://br.endernet.org/~akrowne/
-  http://planetmath.org/encyclopedia/GoodHashTablePrimes.html
+   Credit for primes table: Aaron Krowne
+http://br.endernet.org/~akrowne/
+http://planetmath.org/encyclopedia/GoodHashTablePrimes.html
 */
 static const u32 primes[] = { 
     53, 97, 193, 389,
@@ -179,36 +180,36 @@ static const u32 load_factors[] = {
 const u32 prime_table_len = sizeof(primes) / sizeof(primes[0]);
 
 struct xpmem_hashtable * create_htable(u32 min_size,
-				 u32 (*hash_fn) (uintptr_t),
-				 int (*eq_fn) (uintptr_t, uintptr_t)) {
+        u32 (*hash_fn) (uintptr_t),
+        int (*eq_fn) (uintptr_t, uintptr_t)) {
     struct xpmem_hashtable * htable = NULL;
     u32 prime_index = 0;
     u32 size = primes[0];
 
     /* Check requested hashtable isn't too large */
     if (min_size > (1u << 30)) {
-	return NULL;
+        return NULL;
     }
 
     /* Enforce size as prime */
     for (prime_index = 0; prime_index < prime_table_len; prime_index++) {
         if (primes[prime_index] > min_size) { 
-	    size = primes[prime_index]; 
-	    break; 
-	}
+            size = primes[prime_index]; 
+            break; 
+        }
     }
 
     htable = (struct xpmem_hashtable *)kmalloc(sizeof(struct xpmem_hashtable), GFP_KERNEL);
 
     if (htable == NULL) {
-	return NULL; /*oom*/
+        return NULL; /*oom*/
     }
 
     htable->table = (struct hash_entry **)kmalloc(sizeof(struct hash_entry*) * size, GFP_KERNEL);
 
     if (htable->table == NULL) { 
-	kfree(htable); 
-	return NULL;  /*oom*/
+        kfree(htable); 
+        return NULL;  /*oom*/
     }
 
     memset(htable->table, 0, size * sizeof(struct hash_entry *));
@@ -235,7 +236,7 @@ static int hashtable_expand(struct xpmem_hashtable * htable) {
 
     /* Check we're not hitting max capacity */
     if (htable->prime_index == (prime_table_len - 1)) {
-	return 0;
+        return 0;
     }
 
     new_size = primes[++(htable->prime_index)];
@@ -249,53 +250,53 @@ static int hashtable_expand(struct xpmem_hashtable * htable) {
 
         for (i = 0; i < htable->table_length; i++) {
 
-	    while ((tmp_entry = htable->table[i]) != NULL) {
-		htable->table[i] = tmp_entry->next;
-	   
-		index = indexFor(new_size, tmp_entry->hash);
-	    
-		tmp_entry->next = new_table[index];
-	    
-		new_table[index] = tmp_entry;
-	    }
+            while ((tmp_entry = htable->table[i]) != NULL) {
+                htable->table[i] = tmp_entry->next;
+
+                index = indexFor(new_size, tmp_entry->hash);
+
+                tmp_entry->next = new_table[index];
+
+                new_table[index] = tmp_entry;
+            }
         }
 
         kfree(htable->table);
 
         htable->table = new_table;
     } else {
-	/* Plan B: realloc instead */
+        /* Plan B: realloc instead */
 
-	//new_table = (struct hash_entry **)realloc(htable->table, new_size * sizeof(struct hash_entry *));
-	new_table = (struct hash_entry **)tmp_realloc(htable->table, primes[htable->prime_index - 1], 
-						      new_size * sizeof(struct hash_entry *));
+        //new_table = (struct hash_entry **)realloc(htable->table, new_size * sizeof(struct hash_entry *));
+        new_table = (struct hash_entry **)tmp_realloc(htable->table, primes[htable->prime_index - 1], 
+                new_size * sizeof(struct hash_entry *));
 
-	if (new_table == NULL) {
-	    (htable->prime_index)--;
-	    return 0;
-	}
+        if (new_table == NULL) {
+            (htable->prime_index)--;
+            return 0;
+        }
 
-	htable->table = new_table;
+        htable->table = new_table;
 
-	memset(new_table[htable->table_length], 0, new_size - htable->table_length);
+        memset(new_table[htable->table_length], 0, new_size - htable->table_length);
 
-	for (i = 0; i < htable->table_length; i++) {
+        for (i = 0; i < htable->table_length; i++) {
 
-	    for (entry_ptr = &(new_table[i]), tmp_entry = *entry_ptr; 
-		 tmp_entry != NULL; 
-		 tmp_entry = *entry_ptr) {
+            for (entry_ptr = &(new_table[i]), tmp_entry = *entry_ptr; 
+                    tmp_entry != NULL; 
+                    tmp_entry = *entry_ptr) {
 
-		index = indexFor(new_size, tmp_entry->hash);
+                index = indexFor(new_size, tmp_entry->hash);
 
-		if (i == index) {
-		    entry_ptr = &(tmp_entry->next);
-		} else {
-		    *entry_ptr = tmp_entry->next;
-		    tmp_entry->next = new_table[index];
-		    new_table[index] = tmp_entry;
-		}
-	    }
-	}
+                if (i == index) {
+                    entry_ptr = &(tmp_entry->next);
+                } else {
+                    *entry_ptr = tmp_entry->next;
+                    tmp_entry->next = new_table[index];
+                    new_table[index] = tmp_entry;
+                }
+            }
+        }
     }
 
     htable->table_length = new_size;
@@ -315,18 +316,18 @@ int htable_insert(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t valu
     struct hash_entry * new_entry = NULL;
 
     if (++(htable->entry_count) > htable->load_limit) {
-	/* Ignore the return value. If expand fails, we should
-	 * still try cramming just this value into the existing table
-	 * -- we may not have memory for a larger table, but one more
-	 * element may be ok. Next time we insert, we'll try expanding again.*/
-	hashtable_expand(htable);
+        /* Ignore the return value. If expand fails, we should
+         * still try cramming just this value into the existing table
+         * -- we may not have memory for a larger table, but one more
+         * element may be ok. Next time we insert, we'll try expanding again.*/
+        hashtable_expand(htable);
     }
 
     new_entry = (struct hash_entry *)kmalloc(sizeof(struct hash_entry), GFP_KERNEL);
 
     if (new_entry == NULL) { 
-	(htable->entry_count)--; 
-	return 0; /*oom*/
+        (htable->entry_count)--; 
+        return 0; /*oom*/
     }
 
     new_entry->hash = do_hash(htable, key);
@@ -359,12 +360,12 @@ int htable_change(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t valu
         /* Check hash value to short circuit heavier comparison */
         if ((hash_value == tmp_entry->hash) && (htable->eq_fn(key, tmp_entry->key))) {
 
-	    if (free_value) {
-		kfree((void *)(tmp_entry->value));
-	    }
+            if (free_value) {
+                kfree((void *)(tmp_entry->value));
+            }
 
-	    tmp_entry->value = value;
-	    return -1;
+            tmp_entry->value = value;
+            return -1;
         }
         tmp_entry = tmp_entry->next;
     }
@@ -388,8 +389,8 @@ int htable_inc(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t value) 
         /* Check hash value to short circuit heavier comparison */
         if ((hash_value == tmp_entry->hash) && (htable->eq_fn(key, tmp_entry->key))) {
 
-	    tmp_entry->value += value;
-	    return -1;
+            tmp_entry->value += value;
+            return -1;
         }
         tmp_entry = tmp_entry->next;
     }
@@ -412,8 +413,8 @@ int htable_dec(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t value) 
         /* Check hash value to short circuit heavier comparison */
         if ((hash_value == tmp_entry->hash) && (htable->eq_fn(key, tmp_entry->key))) {
 
-	    tmp_entry->value -= value;
-	    return -1;
+            tmp_entry->value -= value;
+            return -1;
         }
         tmp_entry = tmp_entry->next;
     }
@@ -426,23 +427,23 @@ uintptr_t htable_search(struct xpmem_hashtable * htable, uintptr_t key) {
     struct hash_entry * cursor = NULL;
     u32 hash_value = 0;
     u32 index = 0;
-  
+
     hash_value = do_hash(htable, key);
-  
+
     index = indexFor(htable->table_length, hash_value);
-  
+
     cursor = htable->table[index];
-  
+
     while (cursor != NULL) {
-	/* Check hash value to short circuit heavier comparison */
-	if ((hash_value == cursor->hash) && 
-	    (htable->eq_fn(key, cursor->key))) {
-	    return cursor->value;
-	}
-    
-	cursor = cursor->next;
+        /* Check hash value to short circuit heavier comparison */
+        if ((hash_value == cursor->hash) && 
+                (htable->eq_fn(key, cursor->key))) {
+            return cursor->value;
+        }
+
+        cursor = cursor->next;
     }
-  
+
     return (uintptr_t)NULL;
 }
 
@@ -451,13 +452,13 @@ uintptr_t htable_search(struct xpmem_hashtable * htable, uintptr_t key) {
 uintptr_t htable_remove(struct xpmem_hashtable * htable, uintptr_t key, int free_key) {
     /* TODO: consider compacting the table when the load factor drops enough,
      *       or provide a 'compact' method. */
-  
+
     struct hash_entry * cursor = NULL;
     struct hash_entry ** entry_ptr = NULL;
     uintptr_t value = 0;
     u32 hash_value = 0;
     u32 index = 0;
-  
+
     hash_value = do_hash(htable, key);
 
     index = indexFor(htable->table_length, hash_value);
@@ -466,24 +467,24 @@ uintptr_t htable_remove(struct xpmem_hashtable * htable, uintptr_t key, int free
     cursor = *entry_ptr;
 
     while (cursor != NULL) {
-	/* Check hash value to short circuit heavier comparison */
-	if ((hash_value == cursor->hash) && 
-	    (htable->eq_fn(key, cursor->key))) {
-     
-	    *entry_ptr = cursor->next;
-	    htable->entry_count--;
-	    value = cursor->value;
-      
-	    if (free_key) {
-		freekey((void *)(cursor->key));
-	    }
-	    kfree(cursor);
-      
-	    return value;
-	}
+        /* Check hash value to short circuit heavier comparison */
+        if ((hash_value == cursor->hash) && 
+                (htable->eq_fn(key, cursor->key))) {
 
-	entry_ptr = &(cursor->next);
-	cursor = cursor->next;
+            *entry_ptr = cursor->next;
+            htable->entry_count--;
+            value = cursor->value;
+
+            if (free_key) {
+                freekey((void *)(cursor->key));
+            }
+            kfree(cursor);
+
+            return value;
+        }
+
+        entry_ptr = &(cursor->next);
+        cursor = cursor->next;
     }
     return (uintptr_t)NULL;
 }
@@ -497,38 +498,38 @@ void free_htable(struct xpmem_hashtable * htable, int free_values, int free_keys
     struct hash_entry ** table = htable->table;
 
     if (free_values) {
-	for (i = 0; i < htable->table_length; i++) {
-	    cursor = table[i];
-      
-	    while (cursor != NULL) { 
-		tmp = cursor; 
-		cursor = cursor->next; 
+        for (i = 0; i < htable->table_length; i++) {
+            cursor = table[i];
 
-		if (free_keys) {
-		    freekey((void *)(tmp->key)); 
-		}
-		kfree((void *)(tmp->value)); 
-		kfree(tmp); 
-	    }
-	}
+            while (cursor != NULL) { 
+                tmp = cursor; 
+                cursor = cursor->next; 
+
+                if (free_keys) {
+                    freekey((void *)(tmp->key)); 
+                }
+                kfree((void *)(tmp->value)); 
+                kfree(tmp); 
+            }
+        }
     } else {
-	for (i = 0; i < htable->table_length; i++) {
-	    cursor = table[i];
+        for (i = 0; i < htable->table_length; i++) {
+            cursor = table[i];
 
-	    while (cursor != NULL) { 
-		struct hash_entry * tmp = NULL;
+            while (cursor != NULL) { 
+                struct hash_entry * tmp = NULL;
 
-		tmp = cursor; 
-		cursor = cursor->next; 
-	
-		if (free_keys) {
-		    freekey((void *)(tmp->key)); 
-		}
-		kfree(tmp); 
-	    }
-	}
+                tmp = cursor; 
+                cursor = cursor->next; 
+
+                if (free_keys) {
+                    freekey((void *)(tmp->key)); 
+                }
+                kfree(tmp); 
+            }
+        }
     }
-  
+
     kfree(htable->table);
     kfree(htable);
 }

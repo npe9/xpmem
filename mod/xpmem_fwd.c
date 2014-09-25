@@ -342,8 +342,14 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
 
             break;
         }
+
+        case XPMEM_DOMID_RELEASE:
+            /* Someone downstream is releasing their domid: simply forward to the
+             * namserver */
+            break;
+
         default: {
-            printk(KERN_ERR "XPMEM: unknown DOMID operation: %s\n",
+            printk(KERN_ERR "XPMEM: unknown domid operation: %s\n",
                 cmd_to_string(cmd->type));
             return;
         }
@@ -664,6 +670,19 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
 
     wake_up_interruptible(&(fwd_state->ping_waitq));
 
+    /* Send a domid release, if we have one */
+    if (part_state->domid > 0) {
+        struct xpmem_cmd_ex dom_cmd;
+
+        memset(&(dom_cmd), 0, sizeof(struct xpmem_cmd_ex));
+
+        dom_cmd.type            = XPMEM_DOMID_RELEASE;
+        dom_cmd.domid_req.domid = part_state->domid;
+
+        if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &dom_cmd)) {
+            printk(KERN_ERR "XPMEM: cannot send DOMID_RELEASE on link %lli\n", fwd_state->ns_link);
+        }
+    }
 
     /* Delete domid cmd list */
     {

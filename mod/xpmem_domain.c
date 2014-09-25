@@ -457,8 +457,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
                 cmd->get.apid = -1;
             }
 
-            cmd->type    = XPMEM_GET_COMPLETE;
-            cmd->dst_dom = XPMEM_NS_DOMID;
+            cmd->type = XPMEM_GET_COMPLETE;
 
             xpmem_cmd_deliver(state->part, state->link, cmd);
 
@@ -467,8 +466,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         case XPMEM_RELEASE:
             ret = xpmem_release_domain(&(cmd->release));
 
-            cmd->type    = XPMEM_RELEASE_COMPLETE;
-            cmd->dst_dom = XPMEM_NS_DOMID;
+            cmd->type = XPMEM_RELEASE_COMPLETE;
 
             xpmem_cmd_deliver(state->part, state->link, cmd);
 
@@ -482,8 +480,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
                 cmd->attach.num_pfns = 0;
             }
 
-            cmd->type    = XPMEM_ATTACH_COMPLETE;
-            cmd->dst_dom = XPMEM_NS_DOMID;
+            cmd->type = XPMEM_ATTACH_COMPLETE;
 
             xpmem_cmd_deliver(state->part, state->link, cmd);
 
@@ -492,8 +489,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         case XPMEM_DETACH:
             ret = xpmem_detach_domain(&(cmd->detach));
 
-            cmd->type    = XPMEM_DETACH_COMPLETE;
-            cmd->dst_dom = XPMEM_NS_DOMID;
+            cmd->type = XPMEM_DETACH_COMPLETE;
 
             xpmem_cmd_deliver(state->part, state->link, cmd);
 
@@ -615,9 +611,6 @@ xpmem_make_remote(struct xpmem_partition_state * part,
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
 
     cmd.type       = XPMEM_MAKE;
-    cmd.src_dom    = state->part->domid;
-    cmd.dst_dom    = XPMEM_NS_DOMID;
-
     cmd.make.segid = *segid;
 
     while (mutex_lock_interruptible(&(state->mutex)));
@@ -662,9 +655,6 @@ xpmem_remove_remote(struct xpmem_partition_state * part,
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
 
     cmd.type         = XPMEM_REMOVE;
-    cmd.src_dom      = state->part->domid;
-    cmd.dst_dom      = XPMEM_NS_DOMID;
-
     cmd.remove.segid = segid;
 
     while (mutex_lock_interruptible(&(state->mutex)));
@@ -710,9 +700,6 @@ xpmem_get_remote(struct xpmem_partition_state * part,
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
 
     cmd.type             = XPMEM_GET;
-    cmd.src_dom          = state->part->domid;
-    cmd.dst_dom          = XPMEM_NS_DOMID;
-
     cmd.get.segid        = segid;
     cmd.get.flags        = flags;
     cmd.get.permit_type  = permit_type;
@@ -760,9 +747,6 @@ xpmem_release_remote(struct xpmem_partition_state * part,
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
 
     cmd.type         = XPMEM_RELEASE;
-    cmd.src_dom      = state->part->domid;
-    cmd.dst_dom      = XPMEM_NS_DOMID;
-
     cmd.release.apid = apid;
 
     while (mutex_lock_interruptible(&(state->mutex)));
@@ -807,9 +791,6 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
 
     cmd.type        = XPMEM_ATTACH;
-    cmd.src_dom     = state->part->domid;
-    cmd.dst_dom     = XPMEM_NS_DOMID;
-
     cmd.attach.apid = apid;
     cmd.attach.off  = offset;
     cmd.attach.size = size;
@@ -865,8 +846,6 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
 
     cmd.type         = XPMEM_DETACH;
-    cmd.src_dom      = state->part->domid;
-    cmd.dst_dom      = XPMEM_NS_DOMID;
     cmd.detach.vaddr = vaddr;
 
     while (mutex_lock_interruptible(&(state->mutex)));
