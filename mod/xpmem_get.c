@@ -70,7 +70,7 @@ xpmem_check_permit_mode(int flags, struct xpmem_segment *seg)
 /*
  * Create a new and unique apid.
  */
-static xpmem_apid_t
+xpmem_apid_t
 xpmem_make_apid(struct xpmem_thread_group *ap_tg)
 {
 	struct xpmem_id apid;
@@ -80,14 +80,14 @@ xpmem_make_apid(struct xpmem_thread_group *ap_tg)
 	DBUG_ON(sizeof(struct xpmem_id) != sizeof(xpmem_apid_t));
 
 	uniq = atomic_inc_return(&ap_tg->uniq_apid);
-	if (uniq > XPMEM_MAX_UNIQ_ID) {
+	if (uniq > XPMEM_MAX_UNIQ_APID) {
 		atomic_dec(&ap_tg->uniq_apid);
 		return -EBUSY;
 	}
 
 	*apid_p = 0;
 	apid.tgid = ap_tg->tgid;
-	apid.uniq = (unsigned short)uniq;
+	apid.uniq = (unsigned short)uniq + ap_tg->uniq_apid_ex_base;
 
     DBUG_ON(*apid_p <= 0);
 	return *apid_p;

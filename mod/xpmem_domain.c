@@ -80,32 +80,6 @@ xpmem_validate_remote_access(struct xpmem_access_permit * ap,
     return 0;
 }
 
-static xpmem_apid_t
-xpmem_make_apid_extended(struct xpmem_thread_group * ap_tg)
-{
-    struct xpmem_id apid;
-    xpmem_apid_t *apid_p = (xpmem_apid_t *)&apid;
-    int uniq;
-
-    DBUG_ON(sizeof(struct xpmem_id) != sizeof(xpmem_apid_t));
-
-    uniq = atomic_inc_return(&ap_tg->uniq_apid_ex);
-
-    if (atomic_read(&ap_tg->uniq_apid_ex) > XPMEM_MAX_UNIQ_APID) {
-        printk(KERN_ERR "XPMEM: Out of extended APID space: cannot serve GETs\n");
-        atomic_dec(&ap_tg->uniq_apid_ex);
-        return -EBUSY;
-    }
-
-    *apid_p = 0;
-    apid.tgid = ap_tg->tgid;
-    apid.uniq = (unsigned short)uniq + ap_tg->uniq_apid_ex_base;
-
-    DBUG_ON(*apid_p <= 0); 
-    return *apid_p;
-}
-
-
 
 static int 
 xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)

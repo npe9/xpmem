@@ -39,7 +39,6 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg)
 	segid.uniq = (unsigned short)uniq;
 
     xpmem_make_remote(&(xpmem_my_part->part_state), segid_p);
-    atomic_set(&seg_tg->uniq_apid_ex, 0);
     seg_tg->uniq_apid_ex_base = segid.uniq;
 
 	DBUG_ON(*segid_p <= 0);

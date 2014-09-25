@@ -75,6 +75,13 @@
  *
  */
 
+struct xpmem_link_connection {
+    xpmem_connection_t   conn_type;
+    void               * priv_data;
+    int (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data);
+};
+
+
 u32
 xpmem_hash_fn(uintptr_t key) 
 {
