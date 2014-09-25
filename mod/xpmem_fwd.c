@@ -68,7 +68,11 @@ xpmem_ping_ns(struct xpmem_partition_state * part_state,
     struct xpmem_cmd_ex      ping_cmd;
 
     memset(&(ping_cmd), 0, sizeof(struct xpmem_cmd_ex));
-    ping_cmd.type = XPMEM_PING_NS;
+
+    ping_cmd.type    = XPMEM_PING_NS;
+    ping_cmd.req_dom = -1;
+    ping_cmd.src_dom = -1;
+    ping_cmd.dst_dom = XPMEM_NS_DOMID;
 
     {
         int i = 0;
@@ -104,7 +108,11 @@ xpmem_pong_ns(struct xpmem_partition_state * part_state,
     struct xpmem_cmd_ex pong_cmd;
 
     memset(&(pong_cmd), 0, sizeof(struct xpmem_cmd_ex));
-    pong_cmd.type = XPMEM_PONG_NS;
+
+    pong_cmd.type    = XPMEM_PONG_NS;
+    pong_cmd.req_dom = -1;
+    pong_cmd.src_dom = -1;
+    pong_cmd.dst_dom = -1;
 
     {
         int i = 0;
@@ -199,7 +207,7 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
             ret = xpmem_add_domid(part_state, XPMEM_NS_DOMID, link);
 
             if (ret == 0) {
-                printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                printk(KERN_ERR "XPMEM: cannot insert domid %lli into hashtable\n", (xpmem_domid_t)XPMEM_NS_DOMID);
             }
 
             /* Broadcast the PONG to all our neighbors, except the source */
@@ -210,7 +218,10 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
                 struct xpmem_cmd_ex domid_req;
                 memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
 
-                domid_req.type = XPMEM_DOMID_REQUEST;
+                domid_req.type    = XPMEM_DOMID_REQUEST;
+                domid_req.req_dom = -1;
+                domid_req.src_dom = -1;
+                domid_req.dst_dom = XPMEM_NS_DOMID;
 
                 if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &domid_req)) {
                     printk(KERN_ERR "XPMEM: cannot send command on link %lli\n", fwd_state->ns_link);
@@ -304,7 +315,7 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
                 ret = xpmem_add_domid(part_state, part_state->domid, part_state->local_link);
 
                 if (ret == 0) {
-                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                    printk(KERN_ERR "XPMEM: cannot insert domid %lli into hashtable\n", part_state->domid);
                 }
 
                 return;
@@ -313,8 +324,7 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
                 unsigned long                 flags = 0;
 
                 if (list_empty(&(fwd_state->domid_req_list))) {
-                    printk(KERN_ERR "XPMEM: we currently do not support the buffering of"
-                        " XPMEM domids\n");
+                    printk(KERN_ERR "XPMEM: we currently do not support the buffering of XPMEM domids\n");
                     return;
                 }
 
@@ -335,7 +345,7 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
                 ret = xpmem_add_domid(part_state, cmd->domid_req.domid, out_link);
 
                 if (ret == 0) {
-                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                    printk(KERN_ERR "XPMEM: cannot insert domid %lli into hashtable\n", cmd->domid_req.domid);
                     out_cmd->domid_req.domid = -1;
                 }
             }
@@ -438,7 +448,6 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
 
-
     /* If we don't have a domid, we need to fail */
     if (part_state->domid <= 0) {
         printk(KERN_ERR "This domain has no XPMEM domid. Are you running the nameserver anywhere?\n");
@@ -469,8 +478,7 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_search_domid(part_state, out_cmd->dst_dom);
 
             if (out_link == 0) {
-                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable."
-                    " This should be impossible\n", out_cmd->dst_dom);
+                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", out_cmd->dst_dom);
                 return;
             }
 
@@ -478,8 +486,7 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         }
 
         default: {
-            printk(KERN_ERR "XPMEM: unknown operation: %s\n",
-                cmd_to_string(cmd->type));
+            printk(KERN_ERR "XPMEM: unknown operation: %s\n", cmd_to_string(cmd->type));
             return;
         }
     }
