@@ -491,11 +491,36 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 }
 
 
+
+static void 
+prepare_domids(struct xpmem_partition_state * part_state,
+               xpmem_link_t                   link,
+               struct xpmem_cmd_ex          * cmd)
+{
+    /* If the source is local, we need to setup the domids for routing - otherwise we just
+     * forward to what's already been set
+     */
+    if (link == part_state->local_link) {
+        if (cmd->req_dom == 0) {
+            /* The request is being generated here: set the req domid */
+            cmd->req_dom = part_state->domid;
+        } 
+
+        /* Route to the NS */
+        cmd->src_dom = part_state->domid;
+        cmd->dst_dom = XPMEM_NS_DOMID;
+    }
+}
+
 int
 xpmem_fwd_deliver_cmd(struct xpmem_partition_state * part_state,
                       xpmem_link_t                   link,
                       struct xpmem_cmd_ex          * cmd)
 {
+
+    /* Prepare the domids for routing, if necessary */
+    prepare_domids(part_state, link, cmd);
+
     switch (cmd->type) {
         case XPMEM_PING_NS:
         case XPMEM_PONG_NS:
