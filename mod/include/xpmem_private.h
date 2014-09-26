@@ -60,8 +60,8 @@
  *       major - major revision number (12-bits)
  *       minor - minor revision number (16-bits)
  */
-#define XPMEM_CURRENT_VERSION		0x00030000
-#define XPMEM_CURRENT_VERSION_STRING	"3.0"
+#define XPMEM_CURRENT_VERSION       0x00030000
+#define XPMEM_CURRENT_VERSION_STRING    "3.0"
 
 #define XPMEM_MODULE_NAME "xpmem"
 
@@ -73,50 +73,50 @@
 
 extern uint32_t xpmem_debug_on;
 
-#define XPMEM_DEBUG(format, a...)					\
-	if (xpmem_debug_on)						\
-		printk("[%d]%s: "format"\n", current->tgid, __func__, ##a);
+#define XPMEM_DEBUG(format, a...)                   \
+    if (xpmem_debug_on)                     \
+        printk("[%d]%s: "format"\n", current->tgid, __func__, ##a);
 
 #define delayed_work work_struct
 
 static inline pte_t *
 xpmem_hugetlb_pte(struct mm_struct *mm, u64 vaddr, u64 *offset)
 {
-	struct vm_area_struct *vma;
-	u64 address;
-	pte_t *pte;
+    struct vm_area_struct *vma;
+    u64 address;
+    pte_t *pte;
 
-	vma = find_vma(mm, vaddr);
-	if (!vma)
-		return NULL;
-	
-	if (is_vm_hugetlb_page(vma)) {
-		struct hstate *hs = hstate_vma(vma);
+    vma = find_vma(mm, vaddr);
+    if (!vma)
+        return NULL;
+    
+    if (is_vm_hugetlb_page(vma)) {
+        struct hstate *hs = hstate_vma(vma);
 
-		address = vaddr & huge_page_mask(hs);
-		if (offset) {
-			*offset = (vaddr & (huge_page_size(hs) - 1)) & PAGE_MASK;
-			XPMEM_DEBUG("vaddr = %llx, offset = %llx", vaddr, *offset);
-		}
-		
+        address = vaddr & huge_page_mask(hs);
+        if (offset) {
+            *offset = (vaddr & (huge_page_size(hs) - 1)) & PAGE_MASK;
+            XPMEM_DEBUG("vaddr = %llx, offset = %llx", vaddr, *offset);
+        }
+        
 #ifdef CONFIG_CRAY_MRT
-		pte = huge_pte_offset(mm, address, huge_page_size(hs));
+        pte = huge_pte_offset(mm, address, huge_page_size(hs));
 #else
-		pte = huge_pte_offset(mm, address);
+        pte = huge_pte_offset(mm, address);
 #endif
-		XPMEM_DEBUG("pte = %lx", pte_val(*pte));
+        XPMEM_DEBUG("pte = %lx", pte_val(*pte));
 
-		if (!pte || pte_none(*pte))
-			return NULL;
-		
-		return (pte_t *)pte;
-	}
+        if (!pte || pte_none(*pte))
+            return NULL;
+        
+        return (pte_t *)pte;
+    }
 
-	/*
-	 * We should never enter this area since xpmem_hugetlb_pte() is only
-	 * called if {pgd,pud,pmd}_large() is true
-	 */
-	BUG();
+    /*
+     * We should never enter this area since xpmem_hugetlb_pte() is only
+     * called if {pgd,pud,pmd}_large() is true
+     */
+    BUG();
 }
 
 /*
@@ -126,49 +126,49 @@ xpmem_hugetlb_pte(struct mm_struct *mm, u64 vaddr, u64 *offset)
 static inline pte_t *
 xpmem_vaddr_to_pte_offset(struct mm_struct *mm, u64 vaddr, u64 *offset)
 {
-	pgd_t *pgd;
-	pud_t *pud;
-	pmd_t *pmd;
-	pte_t *pte;
+    pgd_t *pgd;
+    pud_t *pud;
+    pmd_t *pmd;
+    pte_t *pte;
 
-	if (offset)
-		*offset = 0;
+    if (offset)
+        *offset = 0;
 
-	pgd = pgd_offset(mm, vaddr);
-	if (!pgd_present(*pgd))
-		return NULL;
-	else if (pgd_large(*pgd)) {
-		XPMEM_DEBUG("pgd = %p", pgd);
-		return xpmem_hugetlb_pte(mm, vaddr, offset);
-	}
+    pgd = pgd_offset(mm, vaddr);
+    if (!pgd_present(*pgd))
+        return NULL;
+    else if (pgd_large(*pgd)) {
+        XPMEM_DEBUG("pgd = %p", pgd);
+        return xpmem_hugetlb_pte(mm, vaddr, offset);
+    }
 
-	pud = pud_offset(pgd, vaddr);
-	if (!pud_present(*pud))
-		return NULL;
-	else if (pud_large(*pud)) {
-		XPMEM_DEBUG("pud = %p", pud);
-		return xpmem_hugetlb_pte(mm, vaddr, offset);
-	}
+    pud = pud_offset(pgd, vaddr);
+    if (!pud_present(*pud))
+        return NULL;
+    else if (pud_large(*pud)) {
+        XPMEM_DEBUG("pud = %p", pud);
+        return xpmem_hugetlb_pte(mm, vaddr, offset);
+    }
 
-	pmd = pmd_offset(pud, vaddr);
-	if (!pmd_present(*pmd))
-		return NULL;
-	else if (pmd_large(*pmd)) {
-		XPMEM_DEBUG("pmd = %p", pmd);
-		return xpmem_hugetlb_pte(mm, vaddr, offset);
-	}
+    pmd = pmd_offset(pud, vaddr);
+    if (!pmd_present(*pmd))
+        return NULL;
+    else if (pmd_large(*pmd)) {
+        XPMEM_DEBUG("pmd = %p", pmd);
+        return xpmem_hugetlb_pte(mm, vaddr, offset);
+    }
 
-	pte = pte_offset_map(pmd, vaddr);
-	if (!pte_present(*pte))
-		return NULL;
+    pte = pte_offset_map(pmd, vaddr);
+    if (!pte_present(*pte))
+        return NULL;
 
-	return pte;
+    return pte;
 }
 
 static inline pte_t *
 xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
 {
-	return xpmem_vaddr_to_pte_offset(mm, vaddr, NULL);
+    return xpmem_vaddr_to_pte_offset(mm, vaddr, NULL);
 }
 
 /*
@@ -176,76 +176,76 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
  */
 
 struct xpmem_thread_group {
-	pid_t                           tgid;		            /* tg's tgid */
+    pid_t                           tgid;                   /* tg's tgid */
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
-	uid_t                           uid;		            /* tg's uid */
-	gid_t                           gid;		            /* tg's gid */
+    uid_t                           uid;                    /* tg's uid */
+    gid_t                           gid;                    /* tg's gid */
 #else
-	kuid_t                          uid;		            /* tg's uid */
-	kgid_t                          gid;		            /* tg's gid */
+    kuid_t                          uid;                    /* tg's uid */
+    kgid_t                          gid;                    /* tg's gid */
 #endif
 
     /* List of segments */
-	struct list_head                seg_list;	            /* tg's list of segs */
-	rwlock_t                        seg_list_lock;
+    struct list_head                seg_list;               /* tg's list of segs */
+    rwlock_t                        seg_list_lock;
 
     /* Hashtable of access permits */
-	struct xpmem_hashlist         * ap_hashtable;	        /* locks + ap hash lists */
+    struct xpmem_hashlist         * ap_hashtable;           /* locks + ap hash lists */
 
     /* PFN recall on tg teardown */
-	struct mutex                    recall_PFNs_mutex;	    /* lock for serializing recall of PFNs */
-	wait_queue_head_t               block_recall_PFNs_wq;	/* wait to block recall of PFNs */
-	wait_queue_head_t               allow_recall_PFNs_wq;	/* wait to allow recall of PFNs */
-	atomic_t                        n_recall_PFNs;	        /* #of recall of PFNs in progress */
+    struct mutex                    recall_PFNs_mutex;      /* lock for serializing recall of PFNs */
+    wait_queue_head_t               block_recall_PFNs_wq;   /* wait to block recall of PFNs */
+    wait_queue_head_t               allow_recall_PFNs_wq;   /* wait to allow recall of PFNs */
+    atomic_t                        n_recall_PFNs;          /* #of recall of PFNs in progress */
 
     /* MMU notifier */
-	struct mmu_notifier             mmu_not;	            /* tg's mmu notifier struct */
-	int                             mmu_initialized;	    /* registered for mmu callbacks? */
-	int                             mmu_unregister_called;  /* unregistered? */
+    struct mmu_notifier             mmu_not;                /* tg's mmu notifier struct */
+    int                             mmu_initialized;        /* registered for mmu callbacks? */
+    int                             mmu_unregister_called;  /* unregistered? */
 
     /* Other misc */
-	struct task_struct            * group_leader;	        /* thread group leader */
-	struct mm_struct              * mm;	                    /* tg's mm */
-	u64                             addr_limit;		        /* highest possible user addr */
-	volatile int                    flags;	                /* tg attributes and state */
+    struct task_struct            * group_leader;           /* thread group leader */
+    struct mm_struct              * mm;                     /* tg's mm */
+    u64                             addr_limit;             /* highest possible user addr */
+    volatile int                    flags;                  /* tg attributes and state */
 
-	atomic_t                        refcnt;	                /* references to tg */
-	atomic_t                        n_pinned;	            /* #of pages pinned by this tg */
-	atomic_t                        uniq_segid;             /* uniq segid generation for this thread group */
-	atomic_t                        uniq_apid;              /* uniq apid generation for this thread group */
+    atomic_t                        refcnt;                 /* references to tg */
+    atomic_t                        n_pinned;               /* #of pages pinned by this tg */
+    atomic_t                        uniq_segid;             /* uniq segid generation for this thread group */
+    atomic_t                        uniq_apid;              /* uniq apid generation for this thread group */
 
     /* Synchronization */
-	spinlock_t                      lock;	                /* tg lock */
+    spinlock_t                      lock;                   /* tg lock */
 
     /* List embeddings */
-	struct list_head                tg_hashnode;	        /* embedded in partition hash list */
+    struct list_head                tg_hashnode;            /* embedded in partition hash list */
 };
 
 struct xpmem_segment {
 
     /* List of access permits */
-	struct list_head                ap_list;	            /* local access permits of seg */
+    struct list_head                ap_list;                /* local access permits of seg */
 
     /* This segment's exported region */
-	xpmem_segid_t                   segid;	                /* unique segid */
-	u64                             vaddr;		            /* starting address */
-	size_t                          size;		            /* size of seg */
-	int                             permit_type;	        /* permission scheme */
-	void                          * permit_value;	        /* permission data */
+    xpmem_segid_t                   segid;                  /* unique segid */
+    u64                             vaddr;                  /* starting address */
+    size_t                          size;                   /* size of seg */
+    int                             permit_type;            /* permission scheme */
+    void                          * permit_value;           /* permission data */
 
     /* Other misc */
-	volatile int                    flags;	                /* seg attributes and state */
-	atomic_t                        refcnt;	                /* references to seg */
-	struct xpmem_thread_group     * tg;	                    /* creator's tg */
+    volatile int                    flags;                  /* seg attributes and state */
+    atomic_t                        refcnt;                 /* references to seg */
+    struct xpmem_thread_group     * tg;                     /* creator's tg */
 
     /* Synchronization */
-	wait_queue_head_t               destroyed_wq;	        /* wait for seg to be destroyed */
-	struct rw_semaphore             sema;	                /* seg sema */
-	spinlock_t                      lock;	                /* seg lock */
+    wait_queue_head_t               destroyed_wq;           /* wait for seg to be destroyed */
+    struct rw_semaphore             sema;                   /* seg sema */
+    spinlock_t                      lock;                   /* seg lock */
 
     /* List embeddings */
-	struct list_head                seg_node;	            /* tg's list of segs */
+    struct list_head                seg_node;               /* tg's list of segs */
 };
 
 /* Segments created in different domains that local thread groups have access to */
@@ -256,58 +256,58 @@ struct xpmem_remote_segment {
 struct xpmem_access_permit {
 
     /* List of attachments */
-	struct list_head                att_list;	            /* atts of this access permit's seg */
+    struct list_head                att_list;               /* atts of this access permit's seg */
 
     /* This access permit's attached region */
-	xpmem_apid_t                    apid;	                /* unique apid */
-	struct xpmem_segment          * seg;	                /* seg permitted to be accessed */
-	struct xpmem_remote_segment   * remote_seg;	            /* remote seg permitted to be accessed */
-	int                             mode;		            /* read/write mode */
+    xpmem_apid_t                    apid;                   /* unique apid */
+    struct xpmem_segment          * seg;                    /* seg permitted to be accessed */
+    struct xpmem_remote_segment   * remote_seg;             /* remote seg permitted to be accessed */
+    int                             mode;                   /* read/write mode */
 
     /* Other misc */
-	volatile int                    flags;	                /* access permit attributes and state */
-	atomic_t                        refcnt;	                /* references to access permit */
-	struct xpmem_thread_group     * tg;	                    /* access permit's tg */
+    volatile int                    flags;                  /* access permit attributes and state */
+    atomic_t                        refcnt;                 /* references to access permit */
+    struct xpmem_thread_group     * tg;                     /* access permit's tg */
 
     /* Synchronization */
-	spinlock_t                      lock;	                /* access permit lock */
+    spinlock_t                      lock;                   /* access permit lock */
 
     /* List embeddings */
-	struct list_head                ap_node;	            /* access permits linked to seg */
-	struct list_head                ap_hashnode;	        /* access permits linked to tg hash list */
+    struct list_head                ap_node;                /* access permits linked to seg */
+    struct list_head                ap_hashnode;            /* access permits linked to tg hash list */
 };
 
 struct xpmem_attachment {
 
     /* The source attached region */
-	u64                             vaddr;		            /* starting address of seg attached */
-	struct xpmem_access_permit    * ap;                     /* associated access permit */
+    u64                             vaddr;                  /* starting address of seg attached */
+    struct xpmem_access_permit    * ap;                     /* associated access permit */
 
     /* The local thread's attached region */
-	struct mm_struct              * mm;	                    /* mm struct attached to */
-	struct vm_area_struct         * at_vma;	                /* vma where seg is attachment */
-	u64                             at_vaddr;		        /* address where seg is attached */
-	size_t                          at_size;		        /* size of seg attachment */
+    struct mm_struct              * mm;                     /* mm struct attached to */
+    struct vm_area_struct         * at_vma;                 /* vma where seg is attachment */
+    u64                             at_vaddr;               /* address where seg is attached */
+    size_t                          at_size;                /* size of seg attachment */
 
     /* Other misc */
-	volatile int                    flags;	                /* att attributes and state */
-	atomic_t                        refcnt;	                /* references to att */
+    volatile int                    flags;                  /* att attributes and state */
+    atomic_t                        refcnt;                 /* references to att */
 
     /* Synchronization */
-	struct mutex                    mutex;	                /* att lock for serialization */
+    struct mutex                    mutex;                  /* att lock for serialization */
 
     /* List embeddings */
-	struct list_head                att_node;	            /* atts linked to access permit */
+    struct list_head                att_node;               /* atts linked to access permit */
 };
 
 
 
 struct xpmem_partition {
-	struct xpmem_hashlist         * tg_hashtable;	        /* locks + tg hash lists */
+    struct xpmem_hashlist         * tg_hashtable;           /* locks + tg hash lists */
 
-	/* procfs debugging */
-	atomic_t                        n_pinned; 	            /* # of pages pinned xpmem */
-	atomic_t                        n_unpinned; 	        /* # of pages unpinned by xpmem */
+    /* procfs debugging */
+    atomic_t                        n_pinned;               /* # of pages pinned xpmem */
+    atomic_t                        n_unpinned;             /* # of pages unpinned by xpmem */
 
     /* per-partition state */
     struct xpmem_partition_state    part_state;             /* extended per-partition state */
@@ -323,8 +323,8 @@ struct xpmem_partition {
  * An ID is never less than or equal to zero.
  */
 struct xpmem_id {
-	pid_t tgid;		        /* thread group that owns ID */
-	unsigned short uniq;  /* this value makes the ID unique */
+    pid_t tgid;             /* thread group that owns ID */
+    unsigned short uniq;  /* this value makes the ID unique */
 };
 
 #define XPMEM_MAX_UNIQ_ID       ((1 << (sizeof(short) * 8)) - 1)
@@ -334,28 +334,28 @@ struct xpmem_id {
 static inline pid_t
 xpmem_segid_to_tgid(xpmem_segid_t segid)
 {
-	DBUG_ON(segid <= 0);
-	return ((struct xpmem_id *)&segid)->tgid;
+    DBUG_ON(segid <= 0);
+    return ((struct xpmem_id *)&segid)->tgid;
 }
 
 static inline unsigned short
 xpmem_segid_to_uniq(xpmem_segid_t segid)
 {
-	DBUG_ON(segid <= 0);
+    DBUG_ON(segid <= 0);
     return ((struct xpmem_id *)&segid)->uniq;
 }
 
 static inline pid_t
 xpmem_apid_to_tgid(xpmem_apid_t apid)
 {
-	DBUG_ON(apid <= 0);
-	return ((struct xpmem_id *)&apid)->tgid;
+    DBUG_ON(apid <= 0);
+    return ((struct xpmem_id *)&apid)->tgid;
 }
 
 static inline unsigned short
 xpmem_apid_to_uniq(xpmem_segid_t apid)
 {
-	DBUG_ON(apid <= 0);
+    DBUG_ON(apid <= 0);
     return ((struct xpmem_id *)&apid)->uniq;
 }
 
@@ -364,37 +364,37 @@ xpmem_apid_to_uniq(xpmem_segid_t apid)
  * are defined in xpmem.h, so we reserved space here via XPMEM_DONT_USE_X
  * to prevent overlap.
  */
-#define XPMEM_FLAG_DESTROYING		0x00040	/* being destroyed */
-#define XPMEM_FLAG_DESTROYED		0x00080	/* 'being destroyed' finished */
+#define XPMEM_FLAG_DESTROYING       0x00040 /* being destroyed */
+#define XPMEM_FLAG_DESTROYED        0x00080 /* 'being destroyed' finished */
 
-#define XPMEM_FLAG_VALIDPTEs		0x00200	/* valid PTEs exist */
-#define XPMEM_FLAG_RECALLINGPFNS	0x00400	/* recalling PFNs */
+#define XPMEM_FLAG_VALIDPTEs        0x00200 /* valid PTEs exist */
+#define XPMEM_FLAG_RECALLINGPFNS    0x00400 /* recalling PFNs */
 
-#define	XPMEM_DONT_USE_1		0x10000
-#define	XPMEM_DONT_USE_2		0x20000
-#define	XPMEM_DONT_USE_3		0x40000	/* reserved for xpmem.h */
-#define	XPMEM_DONT_USE_4		0x80000	/* reserved for xpmem.h */
+#define XPMEM_DONT_USE_1        0x10000
+#define XPMEM_DONT_USE_2        0x20000
+#define XPMEM_DONT_USE_3        0x40000 /* reserved for xpmem.h */
+#define XPMEM_DONT_USE_4        0x80000 /* reserved for xpmem.h */
 
 static inline u64
 xpmem_vaddr_to_PFN(struct mm_struct *mm, u64 vaddr)
 {
-	pte_t *pte;
-	u64 pfn, offset;
+    pte_t *pte;
+    u64 pfn, offset;
 
-	pte = xpmem_vaddr_to_pte_offset(mm, vaddr, &offset);
-	if (pte == NULL)
-		return 0;
-	DBUG_ON(!pte_present(*pte));
+    pte = xpmem_vaddr_to_pte_offset(mm, vaddr, &offset);
+    if (pte == NULL)
+        return 0;
+    DBUG_ON(!pte_present(*pte));
 
-	pfn = pte_pfn(*pte) + (offset >> PAGE_SHIFT);
+    pfn = pte_pfn(*pte) + (offset >> PAGE_SHIFT);
 
-	return pfn;
+    return pfn;
 }
 
-#define XPMEM_NODE_UNINITIALIZED	-1
-#define XPMEM_CPUS_UNINITIALIZED	-1
-#define XPMEM_NODE_OFFLINE		-2
-#define XPMEM_CPUS_OFFLINE		-2
+#define XPMEM_NODE_UNINITIALIZED    -1
+#define XPMEM_CPUS_UNINITIALIZED    -1
+#define XPMEM_NODE_OFFLINE      -2
+#define XPMEM_CPUS_OFFLINE      -2
 
 /* found in xpmem_make.c */
 extern int xpmem_make(u64, size_t, int, void *, xpmem_segid_t *);
@@ -412,28 +412,28 @@ extern int xpmem_release(xpmem_apid_t);
 /* found in xpmem_attach.c */
 extern struct vm_operations_struct xpmem_vm_ops;
 extern int xpmem_attach(struct file *, xpmem_apid_t, off_t, size_t, u64, int,
-			int, u64 *);
+            int, u64 *);
 extern void xpmem_clear_PTEs_range(struct xpmem_segment *, u64, u64, int);
 extern void xpmem_clear_PTEs(struct xpmem_segment *);
 extern int xpmem_detach(u64);
 extern void xpmem_detach_att(struct xpmem_access_permit *,
-			     struct xpmem_attachment *);
+                 struct xpmem_attachment *);
 extern int xpmem_mmap(struct file *, struct vm_area_struct *);
 
 /* found in xpmem_pfn.c */
 extern int xpmem_ensure_valid_PFNs(struct xpmem_segment *, u64, size_t, int);
 extern int xpmem_block_recall_PFNs(struct xpmem_thread_group *, int);
 extern void xpmem_unpin_pages(struct xpmem_segment *, struct mm_struct *, u64,
-				size_t);
+                size_t);
 extern void xpmem_unblock_recall_PFNs(struct xpmem_thread_group *);
 extern int xpmem_fork_begin(void);
 extern int xpmem_fork_end(void);
-#define XPMEM_TGID_STRING_LEN	11
+#define XPMEM_TGID_STRING_LEN   11
 extern spinlock_t xpmem_unpin_procfs_lock;
 extern struct proc_dir_entry *xpmem_unpin_procfs_dir;
 extern struct file_operations xpmem_unpin_procfs_fops;
 //extern int xpmem_unpin_procfs_write(struct file *, const char *,
-//						unsigned long, void *);
+//                      unsigned long, void *);
 //extern int xpmem_unpin_procfs_read(char *, char **, off_t, int, int *, void *);
 
 /* found in xpmem_main.c */
@@ -445,23 +445,23 @@ extern struct xpmem_thread_group *xpmem_tg_ref_by_segid(xpmem_segid_t);
 extern struct xpmem_thread_group *xpmem_tg_ref_by_apid(xpmem_apid_t);
 extern void xpmem_tg_deref(struct xpmem_thread_group *);
 extern struct xpmem_segment *xpmem_seg_ref_by_segid(struct xpmem_thread_group *,
-						    xpmem_segid_t);
+                            xpmem_segid_t);
 extern void xpmem_seg_deref(struct xpmem_segment *);
 extern struct xpmem_access_permit *xpmem_ap_ref_by_apid(struct
-							  xpmem_thread_group *,
-							  xpmem_apid_t);
+                              xpmem_thread_group *,
+                              xpmem_apid_t);
 extern void xpmem_ap_deref(struct xpmem_access_permit *);
 extern void xpmem_att_deref(struct xpmem_attachment *);
 extern int xpmem_seg_down_read(struct xpmem_thread_group *,
-			       struct xpmem_segment *, int, int);
+                   struct xpmem_segment *, int, int);
 extern int xpmem_validate_access(struct xpmem_access_permit *, off_t, size_t,
-				 int, u64 *);
+                 int, u64 *);
 extern void xpmem_block_nonfatal_signals(sigset_t *);
 extern void xpmem_unblock_nonfatal_signals(sigset_t *);
 //extern int xpmem_debug_printk_procfs_write(struct file *, const char *,
-//						unsigned long, void *);
+//                      unsigned long, void *);
 //extern int xpmem_debug_printk_procfs_read(char *, char **, off_t, int, int *,
-//						void *);
+//                      void *);
 extern struct file_operations xpmem_debug_printk_procfs_fops;
 /* found in xpmem_mmu_notifier.c */
 extern int xpmem_mmu_notifier_init(struct xpmem_thread_group *);
@@ -479,49 +479,49 @@ extern void xpmem_mmu_notifier_unlink(struct xpmem_thread_group *);
 static inline void
 xpmem_tg_not_destroyable(struct xpmem_thread_group *tg)
 {
-	atomic_set(&tg->refcnt, 1);
+    atomic_set(&tg->refcnt, 1);
 }
 
 static inline void
 xpmem_tg_destroyable(struct xpmem_thread_group *tg)
 {
-	xpmem_tg_deref(tg);
+    xpmem_tg_deref(tg);
 }
 
 static inline void
 xpmem_seg_not_destroyable(struct xpmem_segment *seg)
 {
-	atomic_set(&seg->refcnt, 1);
+    atomic_set(&seg->refcnt, 1);
 }
 
 static inline void
 xpmem_seg_destroyable(struct xpmem_segment *seg)
 {
-	xpmem_seg_deref(seg);
+    xpmem_seg_deref(seg);
 }
 
 static inline void
 xpmem_ap_not_destroyable(struct xpmem_access_permit *ap)
 {
-	atomic_set(&ap->refcnt, 1);
+    atomic_set(&ap->refcnt, 1);
 }
 
 static inline void
 xpmem_ap_destroyable(struct xpmem_access_permit *ap)
 {
-	xpmem_ap_deref(ap);
+    xpmem_ap_deref(ap);
 }
 
 static inline void
 xpmem_att_not_destroyable(struct xpmem_attachment *att)
 {
-	atomic_set(&att->refcnt, 1);
+    atomic_set(&att->refcnt, 1);
 }
 
 static inline void
 xpmem_att_destroyable(struct xpmem_attachment *att)
 {
-	xpmem_att_deref(att);
+    xpmem_att_deref(att);
 }
 
 /*
@@ -530,29 +530,29 @@ xpmem_att_destroyable(struct xpmem_attachment *att)
 static inline void
 xpmem_tg_ref(struct xpmem_thread_group *tg)
 {
-	DBUG_ON(atomic_read(&tg->refcnt) <= 0);
-	atomic_inc(&tg->refcnt);
+    DBUG_ON(atomic_read(&tg->refcnt) <= 0);
+    atomic_inc(&tg->refcnt);
 }
 
 static inline void
 xpmem_seg_ref(struct xpmem_segment *seg)
 {
-	DBUG_ON(atomic_read(&seg->refcnt) <= 0);
-	atomic_inc(&seg->refcnt);
+    DBUG_ON(atomic_read(&seg->refcnt) <= 0);
+    atomic_inc(&seg->refcnt);
 }
 
 static inline void
 xpmem_ap_ref(struct xpmem_access_permit *ap)
 {
-	DBUG_ON(atomic_read(&ap->refcnt) <= 0);
-	atomic_inc(&ap->refcnt);
+    DBUG_ON(atomic_read(&ap->refcnt) <= 0);
+    atomic_inc(&ap->refcnt);
 }
 
 static inline void
 xpmem_att_ref(struct xpmem_attachment *att)
 {
-	DBUG_ON(atomic_read(&att->refcnt) <= 0);
-	atomic_inc(&att->refcnt);
+    DBUG_ON(atomic_read(&att->refcnt) <= 0);
+    atomic_inc(&att->refcnt);
 }
 
 /*
@@ -562,39 +562,39 @@ xpmem_att_ref(struct xpmem_attachment *att)
 static inline int
 xpmem_is_vm_ops_set(struct vm_area_struct *vma)
 {
-	return (vma->vm_ops == &xpmem_vm_ops);
+    return (vma->vm_ops == &xpmem_vm_ops);
 }
 
 /* xpmem_seg_down_read() can be found in xpmem_misc.c */
 
 static inline void
 xpmem_seg_up_read(struct xpmem_thread_group *seg_tg,
-		  struct xpmem_segment *seg, int unblock_recall_PFNs)
+          struct xpmem_segment *seg, int unblock_recall_PFNs)
 {
-	up_read(&seg->sema);
-	if (unblock_recall_PFNs)
-		xpmem_unblock_recall_PFNs(seg_tg);
+    up_read(&seg->sema);
+    if (unblock_recall_PFNs)
+        xpmem_unblock_recall_PFNs(seg_tg);
 }
 
 static inline void
 xpmem_seg_down_write(struct xpmem_segment *seg)
 {
-	down_write(&seg->sema);
+    down_write(&seg->sema);
 }
 
 static inline void
 xpmem_seg_up_write(struct xpmem_segment *seg)
 {
-	up_write(&seg->sema);
-	wake_up(&seg->destroyed_wq);
+    up_write(&seg->sema);
+    wake_up(&seg->destroyed_wq);
 }
 
 static inline void
 xpmem_wait_for_seg_destroyed(struct xpmem_segment *seg)
 {
-	wait_event(seg->destroyed_wq, ((seg->flags & XPMEM_FLAG_DESTROYED) ||
-				       !(seg->flags & (XPMEM_FLAG_DESTROYING |
-						       XPMEM_FLAG_RECALLINGPFNS))));
+    wait_event(seg->destroyed_wq, ((seg->flags & XPMEM_FLAG_DESTROYED) ||
+                       !(seg->flags & (XPMEM_FLAG_DESTROYING |
+                               XPMEM_FLAG_RECALLINGPFNS))));
 }
 
 /*
@@ -607,30 +607,30 @@ xpmem_wait_for_seg_destroyed(struct xpmem_segment *seg)
  *
  * XPMEM has the following two hash tables:
  *
- * table		bucket					key
- * part->tg_hashtable	list of struct xpmem_thread_group	tgid
- * tg->ap_hashtable	list of struct xpmem_access_permit	apid.uniq
+ * table        bucket                  key
+ * part->tg_hashtable   list of struct xpmem_thread_group   tgid
+ * tg->ap_hashtable list of struct xpmem_access_permit  apid.uniq
  */
 
 struct xpmem_hashlist {
-	rwlock_t lock;		/* lock for hash list */
-	struct list_head list;	/* hash list */
+    rwlock_t lock;      /* lock for hash list */
+    struct list_head list;  /* hash list */
 } ____cacheline_aligned;
 
-#define XPMEM_TG_HASHTABLE_SIZE	8
-#define XPMEM_AP_HASHTABLE_SIZE	8
+#define XPMEM_TG_HASHTABLE_SIZE 8
+#define XPMEM_AP_HASHTABLE_SIZE 8
 
 static inline int
 xpmem_tg_hashtable_index(pid_t tgid)
 {
-	return ((unsigned int)tgid % XPMEM_TG_HASHTABLE_SIZE);
+    return ((unsigned int)tgid % XPMEM_TG_HASHTABLE_SIZE);
 }
 
 static inline int
 xpmem_ap_hashtable_index(xpmem_apid_t apid)
 {
-	DBUG_ON(apid <= 0);
-	return (((struct xpmem_id *)&apid)->uniq % XPMEM_AP_HASHTABLE_SIZE);
+    DBUG_ON(apid <= 0);
+    return (((struct xpmem_id *)&apid)->uniq % XPMEM_AP_HASHTABLE_SIZE);
 }
 
 #endif /* _XPMEM_PRIVATE_H */
