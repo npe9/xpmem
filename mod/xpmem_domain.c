@@ -160,7 +160,7 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
     ap->mode = flags;
     INIT_LIST_HEAD(&ap->att_list);
     INIT_LIST_HEAD(&ap->ap_node);
-    INIT_LIST_HEAD(&ap->ap_hashlist);
+    INIT_LIST_HEAD(&ap->ap_hashnode);
 
     xpmem_ap_not_destroyable(ap);
 
@@ -172,7 +172,7 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
     /* add ap to its hash list */
     index = xpmem_ap_hashtable_index(ap->apid);
     write_lock(&ap_tg->ap_hashtable[index].lock);
-    list_add_tail(&ap->ap_hashlist, &ap_tg->ap_hashtable[index].list);
+    list_add_tail(&ap->ap_hashnode, &ap_tg->ap_hashtable[index].list);
     write_unlock(&ap_tg->ap_hashtable[index].lock);
 
     xpmem_tg_deref(ap_tg);

@@ -75,7 +75,7 @@ xpmem_open(struct inode *inode, struct file *file)
 	tg->addr_limit = TASK_SIZE;
 	tg->seg_list_lock = __RW_LOCK_UNLOCKED(tg->seg_list_lock);
 	INIT_LIST_HEAD(&tg->seg_list);
-	INIT_LIST_HEAD(&tg->tg_hashlist);
+	INIT_LIST_HEAD(&tg->tg_hashnode);
 	atomic_set(&tg->n_recall_PFNs, 0);
 	mutex_init(&tg->recall_PFNs_mutex);
 	init_waitqueue_head(&tg->block_recall_PFNs_wq);
@@ -126,7 +126,7 @@ xpmem_open(struct inode *inode, struct file *file)
 	/* add tg to its hash list */
 	index = xpmem_tg_hashtable_index(tg->tgid);
 	write_lock(&xpmem_my_part->tg_hashtable[index].lock);
-	list_add_tail(&tg->tg_hashlist,
+	list_add_tail(&tg->tg_hashnode,
 		      &xpmem_my_part->tg_hashtable[index].list);
 	write_unlock(&xpmem_my_part->tg_hashtable[index].lock);
 
@@ -195,7 +195,7 @@ xpmem_flush(struct file *file, fl_owner_t owner)
 	/* Remove tg structure from its hash list */
 	index = xpmem_tg_hashtable_index(tg->tgid);
 	write_lock(&xpmem_my_part->tg_hashtable[index].lock);
-	list_del_init(&tg->tg_hashlist);
+	list_del_init(&tg->tg_hashnode);
 	write_unlock(&xpmem_my_part->tg_hashtable[index].lock);
 
 	xpmem_tg_destroyable(tg);

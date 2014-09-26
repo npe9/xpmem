@@ -176,92 +176,141 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
  */
 
 struct xpmem_thread_group {
-	spinlock_t lock;	/* tg lock */
-	pid_t tgid;		/* tg's tgid */
+	pid_t                           tgid;		            /* tg's tgid */
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
-	uid_t uid;		/* tg's uid */
-	gid_t gid;		/* tg's gid */
+	uid_t                           uid;		            /* tg's uid */
+	gid_t                           gid;		            /* tg's gid */
 #else
-	kuid_t uid;		/* tg's uid */
-	kgid_t gid;		/* tg's gid */
+	kuid_t                          uid;		            /* tg's uid */
+	kgid_t                          gid;		            /* tg's gid */
 #endif
-	volatile int flags;	/* tg attributes and state */
-	atomic_t uniq_segid;
-	//atomic_t uniq_apid;
-    int uniq_apid_ex_base;
-	rwlock_t seg_list_lock;
-	struct list_head seg_list;	/* tg's list of segs */
-	struct xpmem_hashlist *ap_hashtable;	/* locks + ap hash lists */
-	atomic_t refcnt;	/* references to tg */
-	atomic_t n_pinned;	/* #of pages pinned by this tg */
-	u64 addr_limit;		/* highest possible user addr */
-	struct list_head tg_hashlist;	/* tg hash list */
-	struct task_struct *group_leader;	/* thread group leader */
-	struct mm_struct *mm;	/* tg's mm */
-	atomic_t n_recall_PFNs;	/* #of recall of PFNs in progress */
-	struct mutex recall_PFNs_mutex;	/* lock for serializing recall of PFNs */
-	wait_queue_head_t block_recall_PFNs_wq;	/* wait to block recall of PFNs */
-	wait_queue_head_t allow_recall_PFNs_wq;	/* wait to allow recall of PFNs */
-	struct mmu_notifier mmu_not;	/* tg's mmu notifier struct */
-	int mmu_initialized;	/* registered for mmu callbacks? */
-	int mmu_unregister_called;
+
+    /* List of segments */
+	struct list_head                seg_list;	            /* tg's list of segs */
+	rwlock_t                        seg_list_lock;
+
+    /* Hashtable of access permits */
+	struct xpmem_hashlist         * ap_hashtable;	        /* locks + ap hash lists */
+
+    /* PFN recall on tg teardown */
+	struct mutex                    recall_PFNs_mutex;	    /* lock for serializing recall of PFNs */
+	wait_queue_head_t               block_recall_PFNs_wq;	/* wait to block recall of PFNs */
+	wait_queue_head_t               allow_recall_PFNs_wq;	/* wait to allow recall of PFNs */
+	atomic_t                        n_recall_PFNs;	        /* #of recall of PFNs in progress */
+
+    /* MMU notifier */
+	struct mmu_notifier             mmu_not;	            /* tg's mmu notifier struct */
+	int                             mmu_initialized;	    /* registered for mmu callbacks? */
+	int                             mmu_unregister_called;  /* unregistered? */
+
+    /* Other misc */
+	struct task_struct            * group_leader;	        /* thread group leader */
+	struct mm_struct              * mm;	                    /* tg's mm */
+	u64                             addr_limit;		        /* highest possible user addr */
+	volatile int                    flags;	                /* tg attributes and state */
+
+	atomic_t                        refcnt;	                /* references to tg */
+	atomic_t                        n_pinned;	            /* #of pages pinned by this tg */
+	atomic_t                        uniq_segid;             /* uniq segid generation for this thread group */
+	atomic_t                        uniq_apid;              /* uniq apid generation for this thread group */
+
+    /* Synchronization */
+	spinlock_t                      lock;	                /* tg lock */
+
+    /* List embeddings */
+	struct list_head                tg_hashnode;	        /* embedded in partition hash list */
 };
 
 struct xpmem_segment {
-	spinlock_t lock;	/* seg lock */
-	struct rw_semaphore sema;	/* seg sema */
-	xpmem_segid_t segid;	/* unique segid */
-    unsigned short uniq_apid_base;
-	atomic_t uniq_apid;
-	u64 vaddr;		/* starting address */
-	size_t size;		/* size of seg */
-	int permit_type;	/* permission scheme */
-	void *permit_value;	/* permission data */
-	volatile int flags;	/* seg attributes and state */
-	atomic_t refcnt;	/* references to seg */
-	wait_queue_head_t destroyed_wq;	/* wait for seg to be destroyed */
-	struct xpmem_thread_group *tg;	/* creator tg */
-	struct list_head ap_list;	/* local access permits of seg */
-	struct list_head seg_node;	/* tg's list of segs */
+
+    /* List of access permits */
+	struct list_head                ap_list;	            /* local access permits of seg */
+
+    /* This segment's exported region */
+	xpmem_segid_t                   segid;	                /* unique segid */
+	u64                             vaddr;		            /* starting address */
+	size_t                          size;		            /* size of seg */
+	int                             permit_type;	        /* permission scheme */
+	void                          * permit_value;	        /* permission data */
+
+    /* Other misc */
+	volatile int                    flags;	                /* seg attributes and state */
+	atomic_t                        refcnt;	                /* references to seg */
+	struct xpmem_thread_group     * tg;	                    /* creator's tg */
+
+    /* Synchronization */
+	wait_queue_head_t               destroyed_wq;	        /* wait for seg to be destroyed */
+	struct rw_semaphore             sema;	                /* seg sema */
+	spinlock_t                      lock;	                /* seg lock */
+
+    /* List embeddings */
+	struct list_head                seg_node;	            /* tg's list of segs */
 };
 
+/* Segments created in different domains that local thread groups have access to */
+struct xpmem_remote_segment {
+};
+
+
 struct xpmem_access_permit {
-	spinlock_t lock;	/* access permit lock */
-	xpmem_apid_t apid;	/* unique apid */
-	int mode;		/* read/write mode */
-	volatile int flags;	/* access permit attributes and state */
-	atomic_t refcnt;	/* references to access permit */
-	struct xpmem_segment *seg;	/* seg permitted to be accessed */
-	struct xpmem_thread_group *tg;	/* access permit's tg */
-	struct list_head att_list;	/* atts of this access permit's seg */
-	struct list_head ap_node;	/* access permits linked to seg */
-	struct list_head ap_hashlist;	/* access permit hash list */
+
+    /* List of attachments */
+	struct list_head                att_list;	            /* atts of this access permit's seg */
+
+    /* This access permit's attached region */
+	xpmem_apid_t                    apid;	                /* unique apid */
+	struct xpmem_segment          * seg;	                /* seg permitted to be accessed */
+	struct xpmem_remote_segment   * remote_seg;	            /* remote seg permitted to be accessed */
+	int                             mode;		            /* read/write mode */
+
+    /* Other misc */
+	volatile int                    flags;	                /* access permit attributes and state */
+	atomic_t                        refcnt;	                /* references to access permit */
+	struct xpmem_thread_group     * tg;	                    /* access permit's tg */
+
+    /* Synchronization */
+	spinlock_t                      lock;	                /* access permit lock */
+
+    /* List embeddings */
+	struct list_head                ap_node;	            /* access permits linked to seg */
+	struct list_head                ap_hashnode;	        /* access permits linked to tg hash list */
 };
 
 struct xpmem_attachment {
-	struct mutex mutex;	/* att lock for serialization */
-	u64 vaddr;		/* starting address of seg attached */
-	u64 at_vaddr;		/* address where seg is attached */
-	size_t at_size;		/* size of seg attachment */
-	struct vm_area_struct *at_vma;	/* vma where seg is attachment */
-	volatile int flags;	/* att attributes and state */
-	atomic_t refcnt;	/* references to att */
-	struct xpmem_access_permit *ap;/* associated access permit */
-	struct list_head att_node;	/* atts linked to access permit */
-	struct mm_struct *mm;	/* mm struct attached to */
+
+    /* The source attached region */
+	u64                             vaddr;		            /* starting address of seg attached */
+	struct xpmem_access_permit    * ap;                     /* associated access permit */
+
+    /* The local thread's attached region */
+	struct mm_struct              * mm;	                    /* mm struct attached to */
+	struct vm_area_struct         * at_vma;	                /* vma where seg is attachment */
+	u64                             at_vaddr;		        /* address where seg is attached */
+	size_t                          at_size;		        /* size of seg attachment */
+
+    /* Other misc */
+	volatile int                    flags;	                /* att attributes and state */
+	atomic_t                        refcnt;	                /* references to att */
+
+    /* Synchronization */
+	struct mutex                    mutex;	                /* att lock for serialization */
+
+    /* List embeddings */
+	struct list_head                att_node;	            /* atts linked to access permit */
 };
 
 
 
 struct xpmem_partition {
-	struct xpmem_hashlist *tg_hashtable;	/* locks + tg hash lists */
+	struct xpmem_hashlist         * tg_hashtable;	        /* locks + tg hash lists */
 
 	/* procfs debugging */
-	atomic_t n_pinned; 	    /* # of pages pinned xpmem */
-	atomic_t n_unpinned; 	/* # of pages unpinned by xpmem */
+	atomic_t                        n_pinned; 	            /* # of pages pinned xpmem */
+	atomic_t                        n_unpinned; 	        /* # of pages unpinned by xpmem */
 
     /* per-partition state */
-    struct xpmem_partition_state part_state;
+    struct xpmem_partition_state    part_state;             /* extended per-partition state */
 };
 
 /*

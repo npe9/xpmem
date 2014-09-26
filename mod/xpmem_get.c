@@ -79,15 +79,15 @@ xpmem_make_apid(struct xpmem_segment *seg, struct xpmem_thread_group *ap_tg)
 
 	DBUG_ON(sizeof(struct xpmem_id) != sizeof(xpmem_apid_t));
 
-	uniq = atomic_inc_return(&seg->uniq_apid);
+	uniq = atomic_inc_return(&ap_tg->uniq_apid);
 	if (uniq > XPMEM_MAX_UNIQ_APID) {
-		atomic_dec(&seg->uniq_apid);
+		atomic_dec(&ap_tg->uniq_apid);
 		return -EBUSY;
 	}
 
 	*apid_p = 0;
 	apid.tgid = ap_tg->tgid;
-	apid.uniq = (unsigned short)uniq + seg->uniq_apid_base;
+	apid.uniq = (unsigned short)uniq;
 
     DBUG_ON(*apid_p <= 0);
 	return *apid_p;
@@ -189,7 +189,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 	ap->mode = flags;
 	INIT_LIST_HEAD(&ap->att_list);
 	INIT_LIST_HEAD(&ap->ap_node);
-	INIT_LIST_HEAD(&ap->ap_hashlist);
+	INIT_LIST_HEAD(&ap->ap_hashnode);
 
 	xpmem_ap_not_destroyable(ap);
 
@@ -201,7 +201,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 	/* add ap to its hash list */
 	index = xpmem_ap_hashtable_index(ap->apid);
 	write_lock(&ap_tg->ap_hashtable[index].lock);
-	list_add_tail(&ap->ap_hashlist, &ap_tg->ap_hashtable[index].list);
+	list_add_tail(&ap->ap_hashnode, &ap_tg->ap_hashtable[index].list);
 	write_unlock(&ap_tg->ap_hashtable[index].lock);
 
 	xpmem_tg_deref(ap_tg);
@@ -268,7 +268,7 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
 	 */
 	index = xpmem_ap_hashtable_index(ap->apid);
 	write_lock(&ap_tg->ap_hashtable[index].lock);
-	list_del_init(&ap->ap_hashlist);
+	list_del_init(&ap->ap_hashnode);
 	write_unlock(&ap_tg->ap_hashtable[index].lock);
 
 	/* the ap's seg and the seg's tg were ref'd in xpmem_get() */
@@ -304,7 +304,7 @@ xpmem_release_aps_of_tg(struct xpmem_thread_group *ap_tg)
 		while (!list_empty(&hashlist->list)) {
 			ap = list_entry((&hashlist->list)->next,
 					struct xpmem_access_permit,
-					ap_hashlist);
+					ap_hashnode);
 			xpmem_ap_ref(ap);
 			read_unlock(&hashlist->lock);
 

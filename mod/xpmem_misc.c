@@ -36,7 +36,7 @@ xpmem_tg_ref_by_tgid(pid_t tgid)
 	read_lock(&xpmem_my_part->tg_hashtable[index].lock);
 
 	list_for_each_entry(tg, &xpmem_my_part->tg_hashtable[index].list,
-								tg_hashlist) {
+								tg_hashnode) {
 		if (tg->tgid == tgid) {
 			if (tg->flags & XPMEM_FLAG_DESTROYING)
 				continue;  /* could be others with this tgid */
@@ -171,7 +171,7 @@ xpmem_ap_ref_by_apid(struct xpmem_thread_group *ap_tg, xpmem_apid_t apid)
 	read_lock(&ap_tg->ap_hashtable[index].lock);
 
 	list_for_each_entry(ap, &ap_tg->ap_hashtable[index].list,
-			    ap_hashlist) {
+			    ap_hashnode) {
 		if (ap->apid == apid) {
 			if (ap->flags & XPMEM_FLAG_DESTROYING)
 				break;	/* can't be others with this apid */
