@@ -69,7 +69,7 @@ xpmem_close_handler(struct vm_area_struct *vma)
 		xpmem_ap_ref(ap);
 
 		spin_lock(&ap->lock);
-		list_del_init(&att->att_list);
+		list_del_init(&att->att_node);
 		spin_unlock(&ap->lock);
 
 		xpmem_ap_deref(ap);
@@ -408,7 +408,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
 	att->vaddr = seg_vaddr;
 	att->at_size = size;
 	att->ap = ap;
-	INIT_LIST_HEAD(&att->att_list);
+	INIT_LIST_HEAD(&att->att_node);
 	att->mm = current->mm;
 
 	xpmem_att_not_destroyable(att);
@@ -420,7 +420,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
 
 	/* link attach structure to its access permit's att list */
 	spin_lock(&ap->lock);
-	list_add_tail(&att->att_list, &ap->att_list);
+	list_add_tail(&att->att_node, &ap->att_list);
 	if (ap->flags & XPMEM_FLAG_DESTROYING) {
 		spin_unlock(&ap->lock);
 		ret = -ENOENT;
@@ -478,7 +478,7 @@ out_3:
 	if (ret != 0) {
 		att->flags |= XPMEM_FLAG_DESTROYING;
 		spin_lock(&ap->lock);
-		list_del_init(&att->att_list);
+		list_del_init(&att->att_node);
 		spin_unlock(&ap->lock);
 		xpmem_att_destroyable(att);
 	}
@@ -569,7 +569,7 @@ xpmem_detach(u64 at_vaddr)
 	att->flags &= ~XPMEM_FLAG_VALIDPTEs;
 
 	spin_lock(&ap->lock);
-	list_del_init(&att->att_list);
+	list_del_init(&att->att_node);
 	spin_unlock(&ap->lock);
 
 	mutex_unlock(&att->mutex);
@@ -633,7 +633,7 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
 	att->flags &= ~XPMEM_FLAG_VALIDPTEs;
 
 	spin_lock(&ap->lock);
-	list_del_init(&att->att_list);
+	list_del_init(&att->att_node);
 	spin_unlock(&ap->lock);
 
 	mutex_unlock(&att->mutex);
@@ -766,7 +766,7 @@ xpmem_clear_PTEs_of_ap(struct xpmem_access_permit *ap, u64 start, u64 end,
 	struct xpmem_attachment *att;
 
 	spin_lock(&ap->lock);
-	list_for_each_entry(att, &ap->att_list, att_list) {
+	list_for_each_entry(att, &ap->att_list, att_node) {
 		if (!(att->flags & XPMEM_FLAG_VALIDPTEs))
 			continue;
 
@@ -776,11 +776,11 @@ xpmem_clear_PTEs_of_ap(struct xpmem_access_permit *ap, u64 start, u64 end,
 		xpmem_clear_PTEs_of_att(att, start, end, from_mmu);
 
 		spin_lock(&ap->lock);
-		if (list_empty(&att->att_list)) {
+		if (list_empty(&att->att_node)) {
 			/* att was deleted from ap->att_list, start over */
 			xpmem_att_deref(att);
 			att = list_entry(&ap->att_list, struct xpmem_attachment,
-					 att_list);
+					 att_node);
 		} else
 			xpmem_att_deref(att);
 	}
@@ -799,18 +799,18 @@ xpmem_clear_PTEs_range(struct xpmem_segment *seg, u64 start, u64 end,
 	struct xpmem_access_permit *ap;
 
 	spin_lock(&seg->lock);
-	list_for_each_entry(ap, &seg->ap_list, ap_list) {
+	list_for_each_entry(ap, &seg->ap_list, ap_node) {
 		xpmem_ap_ref(ap);  /* don't care if XPMEM_FLAG_DESTROYING */
 		spin_unlock(&seg->lock);
 
 		xpmem_clear_PTEs_of_ap(ap, start, end, from_mmu);
 
 		spin_lock(&seg->lock);
-		if (list_empty(&ap->ap_list)) {
+		if (list_empty(&ap->ap_node)) {
 			/* ap was deleted from seg->ap_list, start over */
 			xpmem_ap_deref(ap);
 			ap = list_entry(&seg->ap_list,
-					 struct xpmem_access_permit, ap_list);
+					 struct xpmem_access_permit, ap_node);
 		} else
 			xpmem_ap_deref(ap);
 	}

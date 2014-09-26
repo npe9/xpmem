@@ -118,7 +118,7 @@ xpmem_seg_ref_by_segid(struct xpmem_thread_group *seg_tg, xpmem_segid_t segid)
 
 	read_lock(&seg_tg->seg_list_lock);
 
-	list_for_each_entry(seg, &seg_tg->seg_list, seg_list) {
+	list_for_each_entry(seg, &seg_tg->seg_list, seg_node) {
 		if (seg->segid == segid) {
 			if (seg->flags & XPMEM_FLAG_DESTROYING)
 				continue; /* could be others with this segid */

@@ -29,7 +29,7 @@ xpmem_invalidate_PTEs_range(struct xpmem_thread_group *seg_tg,
 	u64 seg_start, seg_end;
 
 	read_lock(&seg_tg->seg_list_lock);
-	list_for_each_entry(seg, &seg_tg->seg_list, seg_list) {
+	list_for_each_entry(seg, &seg_tg->seg_list, seg_node) {
 		if (!(seg->flags & XPMEM_FLAG_DESTROYING)) {
 			seg_start = seg->vaddr;
 			seg_end = seg->vaddr + seg->size;

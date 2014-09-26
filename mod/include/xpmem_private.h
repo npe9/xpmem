@@ -222,7 +222,7 @@ struct xpmem_segment {
 	wait_queue_head_t destroyed_wq;	/* wait for seg to be destroyed */
 	struct xpmem_thread_group *tg;	/* creator tg */
 	struct list_head ap_list;	/* local access permits of seg */
-	struct list_head seg_list;	/* tg's list of segs */
+	struct list_head seg_node;	/* tg's list of segs */
 };
 
 struct xpmem_access_permit {
@@ -234,7 +234,7 @@ struct xpmem_access_permit {
 	struct xpmem_segment *seg;	/* seg permitted to be accessed */
 	struct xpmem_thread_group *tg;	/* access permit's tg */
 	struct list_head att_list;	/* atts of this access permit's seg */
-	struct list_head ap_list;	/* access permits linked to seg */
+	struct list_head ap_node;	/* access permits linked to seg */
 	struct list_head ap_hashlist;	/* access permit hash list */
 };
 
@@ -247,7 +247,7 @@ struct xpmem_attachment {
 	volatile int flags;	/* att attributes and state */
 	atomic_t refcnt;	/* references to att */
 	struct xpmem_access_permit *ap;/* associated access permit */
-	struct list_head att_list;	/* atts linked to access permit */
+	struct list_head att_node;	/* atts linked to access permit */
 	struct mm_struct *mm;	/* mm struct attached to */
 };
 

@@ -108,7 +108,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
 	init_waitqueue_head(&seg->destroyed_wq);
 	seg->tg = seg_tg;
 	INIT_LIST_HEAD(&seg->ap_list);
-	INIT_LIST_HEAD(&seg->seg_list);
+	INIT_LIST_HEAD(&seg->seg_node);
     atomic_set(&(seg->uniq_apid), 0);
     seg->uniq_apid_base = base;
 
@@ -116,7 +116,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
 
 	/* add seg to its tg's list of segs */
 	write_lock(&seg_tg->seg_list_lock);
-	list_add_tail(&seg->seg_list, &seg_tg->seg_list);
+	list_add_tail(&seg->seg_node, &seg_tg->seg_list);
 	write_unlock(&seg_tg->seg_list_lock);
 
 	xpmem_tg_deref(seg_tg);
@@ -157,7 +157,7 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
 
 	/* Remove segment structure from its tg's list of segs */
 	write_lock(&seg_tg->seg_list_lock);
-	list_del_init(&seg->seg_list);
+	list_del_init(&seg->seg_node);
 	write_unlock(&seg_tg->seg_list_lock);
 
 	xpmem_seg_up_write(seg);
@@ -180,7 +180,7 @@ xpmem_remove_segs_of_tg(struct xpmem_thread_group *seg_tg)
 
 	while (!list_empty(&seg_tg->seg_list)) {
 		seg = list_entry((&seg_tg->seg_list)->next,
-				 struct xpmem_segment, seg_list);
+				 struct xpmem_segment, seg_node);
 		if (!(seg->flags & XPMEM_FLAG_DESTROYING)) {
 			xpmem_seg_ref(seg);
 			read_unlock(&seg_tg->seg_list_lock);

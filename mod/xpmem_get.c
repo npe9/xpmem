@@ -188,14 +188,14 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 	ap->apid = apid;
 	ap->mode = flags;
 	INIT_LIST_HEAD(&ap->att_list);
-	INIT_LIST_HEAD(&ap->ap_list);
+	INIT_LIST_HEAD(&ap->ap_node);
 	INIT_LIST_HEAD(&ap->ap_hashlist);
 
 	xpmem_ap_not_destroyable(ap);
 
 	/* add ap to its seg's access permit list */
 	spin_lock(&seg->lock);
-	list_add_tail(&ap->ap_list, &seg->ap_list);
+	list_add_tail(&ap->ap_node, &seg->ap_list);
 	spin_unlock(&seg->lock);
 
 	/* add ap to its hash list */
@@ -246,7 +246,7 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
 	/* deal with all attaches first */
 	while (!list_empty(&ap->att_list)) {
 		att = list_entry((&ap->att_list)->next, struct xpmem_attachment,
-				 att_list);
+				 att_node);
 		xpmem_att_ref(att);
 		spin_unlock(&ap->lock);
 		xpmem_detach_att(ap, att);
@@ -277,7 +277,7 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
 
 	/* remove ap from its seg's access permit list */
 	spin_lock(&seg->lock);
-	list_del_init(&ap->ap_list);
+	list_del_init(&ap->ap_node);
 	spin_unlock(&seg->lock);
 
 	xpmem_seg_deref(seg);	/* deref of xpmem_get()'s ref */

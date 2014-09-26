@@ -258,7 +258,7 @@ xpmem_recall_PFNs_of_tg(struct xpmem_thread_group *seg_tg)
 	struct xpmem_segment *seg;
 
 	read_lock(&seg_tg->seg_list_lock);
-	list_for_each_entry(seg, &seg_tg->seg_list, seg_list) {
+	list_for_each_entry(seg, &seg_tg->seg_list, seg_node) {
 		if (!(seg->flags & XPMEM_FLAG_DESTROYING)) {
 			xpmem_seg_ref(seg);
 			read_unlock(&seg_tg->seg_list_lock);
@@ -266,12 +266,12 @@ xpmem_recall_PFNs_of_tg(struct xpmem_thread_group *seg_tg)
 			xpmem_recall_PFNs(seg);
 
 			read_lock(&seg_tg->seg_list_lock);
-			if (list_empty(&seg->seg_list)) {
+			if (list_empty(&seg->seg_node)) {
 				/* seg was deleted from seg_tg->seg_list */
 				xpmem_seg_deref(seg);
 				seg = list_entry(&seg_tg->seg_list,
 						 struct xpmem_segment,
-						 seg_list);
+						 seg_node);
 			} else
 				xpmem_seg_deref(seg);
 		}

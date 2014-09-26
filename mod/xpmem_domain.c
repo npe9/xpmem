@@ -159,14 +159,14 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
     ap->apid = apid;
     ap->mode = flags;
     INIT_LIST_HEAD(&ap->att_list);
-    INIT_LIST_HEAD(&ap->ap_list);
+    INIT_LIST_HEAD(&ap->ap_node);
     INIT_LIST_HEAD(&ap->ap_hashlist);
 
     xpmem_ap_not_destroyable(ap);
 
     /* add ap to its seg's access permit list */
     spin_lock(&seg->lock);
-    list_add_tail(&ap->ap_list, &seg->ap_list);
+    list_add_tail(&ap->ap_node, &seg->ap_list);
     spin_unlock(&seg->lock);
 
     /* add ap to its hash list */
