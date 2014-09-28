@@ -29,26 +29,35 @@ uint32_t xpmem_debug_on = 1;
 struct xpmem_thread_group *
 xpmem_tg_ref_by_tgid(pid_t tgid)
 {
-	int index;
-	struct xpmem_thread_group *tg;
+    int index;
+    struct xpmem_thread_group *tg;
 
-	index = xpmem_tg_hashtable_index(tgid);
-	read_lock(&xpmem_my_part->tg_hashtable[index].lock);
+    index = xpmem_tg_hashtable_index(tgid);
+    read_lock(&xpmem_my_part->tg_hashtable[index].lock);
 
-	list_for_each_entry(tg, &xpmem_my_part->tg_hashtable[index].list,
-								tg_hashnode) {
-		if (tg->tgid == tgid) {
-			if (tg->flags & XPMEM_FLAG_DESTROYING)
-				continue;  /* could be others with this tgid */
+    if (tgid == XPMEM_REMOTE_TG_TGID) {
+        tg = xpmem_my_part->tg_remote;
+        if (!(tg->flags & XPMEM_FLAG_DESTROYING)) {
+            xpmem_tg_ref(tg);
+            read_unlock(&xpmem_my_part->tg_hashtable[index].lock);
+            return tg;
+        }
+    }
 
-			xpmem_tg_ref(tg);
-			read_unlock(&xpmem_my_part->tg_hashtable[index].lock);
-			return tg;
-		}
-	}
+    list_for_each_entry(tg, &xpmem_my_part->tg_hashtable[index].list,
+                                tg_hashnode) {
+        if (tg->tgid == tgid) {
+            if (tg->flags & XPMEM_FLAG_DESTROYING)
+                continue;  /* could be others with this tgid */
 
-	read_unlock(&xpmem_my_part->tg_hashtable[index].lock);
-	return ERR_PTR(-ENOENT);
+            xpmem_tg_ref(tg);
+            read_unlock(&xpmem_my_part->tg_hashtable[index].lock);
+            return tg;
+        }
+    }
+
+    read_unlock(&xpmem_my_part->tg_hashtable[index].lock);
+    return ERR_PTR(-ENOENT);
 }
 
 /*
@@ -58,7 +67,7 @@ xpmem_tg_ref_by_tgid(pid_t tgid)
 struct xpmem_thread_group *
 xpmem_tg_ref_by_segid(xpmem_segid_t segid)
 {
-	return xpmem_tg_ref_by_tgid(xpmem_segid_to_tgid(segid));
+    return xpmem_tg_ref_by_tgid(xpmem_segid_to_tgid(segid));
 }
 
 /*
@@ -68,7 +77,7 @@ xpmem_tg_ref_by_segid(xpmem_segid_t segid)
 struct xpmem_thread_group *
 xpmem_tg_ref_by_apid(xpmem_apid_t apid)
 {
-	return xpmem_tg_ref_by_tgid(xpmem_apid_to_tgid(apid));
+    return xpmem_tg_ref_by_tgid(xpmem_apid_to_tgid(apid));
 }
 
 /*
@@ -79,28 +88,28 @@ xpmem_tg_ref_by_apid(xpmem_apid_t apid)
 void
 xpmem_tg_deref(struct xpmem_thread_group *tg)
 {
-	char tgid_string[XPMEM_TGID_STRING_LEN];
+    char tgid_string[XPMEM_TGID_STRING_LEN];
 
-	DBUG_ON(atomic_read(&tg->refcnt) <= 0);
-	if (atomic_dec_return(&tg->refcnt) != 0)
-		return;
+    DBUG_ON(atomic_read(&tg->refcnt) <= 0);
+    if (atomic_dec_return(&tg->refcnt) != 0)
+        return;
 
-	/*
-	 * Process has been removed from lookup lists and is no
-	 * longer being referenced, so it is safe to remove it.
-	 */
-	DBUG_ON(!(tg->flags & XPMEM_FLAG_DESTROYING));
-	DBUG_ON(!list_empty(&tg->seg_list));
+    /*
+     * Process has been removed from lookup lists and is no
+     * longer being referenced, so it is safe to remove it.
+     */
+    DBUG_ON(!(tg->flags & XPMEM_FLAG_DESTROYING));
+    DBUG_ON(!list_empty(&tg->seg_list));
 
-	snprintf(tgid_string, XPMEM_TGID_STRING_LEN, "%d", tg->tgid);
-	/*
+    snprintf(tgid_string, XPMEM_TGID_STRING_LEN, "%d", tg->tgid);
+    /*
     spin_lock(&xpmem_unpin_procfs_lock);
-	remove_proc_entry(tgid_string, xpmem_unpin_procfs_dir);
-	spin_unlock(&xpmem_unpin_procfs_lock);
+    remove_proc_entry(tgid_string, xpmem_unpin_procfs_dir);
+    spin_unlock(&xpmem_unpin_procfs_lock);
     */
-	kfree(tg->ap_hashtable);
+    kfree(tg->ap_hashtable);
 
-	kfree(tg);
+    kfree(tg);
 }
 
 /*
@@ -114,23 +123,23 @@ xpmem_tg_deref(struct xpmem_thread_group *tg)
 struct xpmem_segment *
 xpmem_seg_ref_by_segid(struct xpmem_thread_group *seg_tg, xpmem_segid_t segid)
 {
-	struct xpmem_segment *seg;
+    struct xpmem_segment *seg;
 
-	read_lock(&seg_tg->seg_list_lock);
+    read_lock(&seg_tg->seg_list_lock);
 
-	list_for_each_entry(seg, &seg_tg->seg_list, seg_node) {
-		if (seg->segid == segid) {
-			if (seg->flags & XPMEM_FLAG_DESTROYING)
-				continue; /* could be others with this segid */
+    list_for_each_entry(seg, &seg_tg->seg_list, seg_node) {
+        if (seg->segid == segid) {
+            if (seg->flags & XPMEM_FLAG_DESTROYING)
+                continue; /* could be others with this segid */
 
-			xpmem_seg_ref(seg);
-			read_unlock(&seg_tg->seg_list_lock);
-			return seg;
-		}
-	}
+            xpmem_seg_ref(seg);
+            read_unlock(&seg_tg->seg_list_lock);
+            return seg;
+        }
+    }
 
-	read_unlock(&seg_tg->seg_list_lock);
-	return ERR_PTR(-ENOENT);
+    read_unlock(&seg_tg->seg_list_lock);
+    return ERR_PTR(-ENOENT);
 }
 
 /*
@@ -140,17 +149,17 @@ xpmem_seg_ref_by_segid(struct xpmem_thread_group *seg_tg, xpmem_segid_t segid)
 void
 xpmem_seg_deref(struct xpmem_segment *seg)
 {
-	DBUG_ON(atomic_read(&seg->refcnt) <= 0);
-	if (atomic_dec_return(&seg->refcnt) != 0)
-		return;
+    DBUG_ON(atomic_read(&seg->refcnt) <= 0);
+    if (atomic_dec_return(&seg->refcnt) != 0)
+        return;
 
-	/*
-	 * Segment has been removed from lookup lists and is no
-	 * longer being referenced so it is safe to free it.
-	 */
-	DBUG_ON(!(seg->flags & XPMEM_FLAG_DESTROYING));
+    /*
+     * Segment has been removed from lookup lists and is no
+     * longer being referenced so it is safe to free it.
+     */
+    DBUG_ON(!(seg->flags & XPMEM_FLAG_DESTROYING));
 
-	kfree(seg);
+    kfree(seg);
 }
 
 /*
@@ -164,26 +173,26 @@ xpmem_seg_deref(struct xpmem_segment *seg)
 struct xpmem_access_permit *
 xpmem_ap_ref_by_apid(struct xpmem_thread_group *ap_tg, xpmem_apid_t apid)
 {
-	int index;
-	struct xpmem_access_permit *ap;
+    int index;
+    struct xpmem_access_permit *ap;
 
-	index = xpmem_ap_hashtable_index(apid);
-	read_lock(&ap_tg->ap_hashtable[index].lock);
+    index = xpmem_ap_hashtable_index(apid);
+    read_lock(&ap_tg->ap_hashtable[index].lock);
 
-	list_for_each_entry(ap, &ap_tg->ap_hashtable[index].list,
-			    ap_hashnode) {
-		if (ap->apid == apid) {
-			if (ap->flags & XPMEM_FLAG_DESTROYING)
-				break;	/* can't be others with this apid */
+    list_for_each_entry(ap, &ap_tg->ap_hashtable[index].list,
+                ap_hashnode) {
+        if (ap->apid == apid) {
+            if (ap->flags & XPMEM_FLAG_DESTROYING)
+                break;  /* can't be others with this apid */
 
-			xpmem_ap_ref(ap);
-			read_unlock(&ap_tg->ap_hashtable[index].lock);
-			return ap;
-		}
-	}
+            xpmem_ap_ref(ap);
+            read_unlock(&ap_tg->ap_hashtable[index].lock);
+            return ap;
+        }
+    }
 
-	read_unlock(&ap_tg->ap_hashtable[index].lock);
-	return ERR_PTR(-ENOENT);
+    read_unlock(&ap_tg->ap_hashtable[index].lock);
+    return ERR_PTR(-ENOENT);
 }
 
 /*
@@ -193,15 +202,15 @@ xpmem_ap_ref_by_apid(struct xpmem_thread_group *ap_tg, xpmem_apid_t apid)
 void
 xpmem_ap_deref(struct xpmem_access_permit *ap)
 {
-	DBUG_ON(atomic_read(&ap->refcnt) <= 0);
-	if (atomic_dec_return(&ap->refcnt) == 0) {
-		/*
-		 * Access has been removed from lookup lists and is no
-		 * longer being referenced so it is safe to remove it.
-		 */
-		DBUG_ON(!(ap->flags & XPMEM_FLAG_DESTROYING));
-		kfree(ap);
-	}
+    DBUG_ON(atomic_read(&ap->refcnt) <= 0);
+    if (atomic_dec_return(&ap->refcnt) == 0) {
+        /*
+         * Access has been removed from lookup lists and is no
+         * longer being referenced so it is safe to remove it.
+         */
+        DBUG_ON(!(ap->flags & XPMEM_FLAG_DESTROYING));
+        kfree(ap);
+    }
 }
 
 /*
@@ -215,15 +224,15 @@ xpmem_ap_deref(struct xpmem_access_permit *ap)
 void
 xpmem_att_deref(struct xpmem_attachment *att)
 {
-	DBUG_ON(atomic_read(&att->refcnt) <= 0);
-	if (atomic_dec_return(&att->refcnt) == 0) {
-		/*
-		 * Attach has been removed from lookup lists and is no
-		 * longer being referenced so it is safe to remove it.
-		 */
-		DBUG_ON(!(att->flags & XPMEM_FLAG_DESTROYING));
-		kfree(att);
-	}
+    DBUG_ON(atomic_read(&att->refcnt) <= 0);
+    if (atomic_dec_return(&att->refcnt) == 0) {
+        /*
+         * Attach has been removed from lookup lists and is no
+         * longer being referenced so it is safe to remove it.
+         */
+        DBUG_ON(!(att->flags & XPMEM_FLAG_DESTROYING));
+        kfree(att);
+    }
 }
 
 /*
@@ -231,33 +240,33 @@ xpmem_att_deref(struct xpmem_attachment *att)
  */
 int
 xpmem_seg_down_read(struct xpmem_thread_group *seg_tg,
-		    struct xpmem_segment *seg, int block_recall_PFNs, int wait)
+            struct xpmem_segment *seg, int block_recall_PFNs, int wait)
 {
-	int ret;
+    int ret;
 
-	if (block_recall_PFNs) {
-		ret = xpmem_block_recall_PFNs(seg_tg, wait);
-		if (ret != 0)
-			return ret;
-	}
+    if (block_recall_PFNs) {
+        ret = xpmem_block_recall_PFNs(seg_tg, wait);
+        if (ret != 0)
+            return ret;
+    }
 
-	if (!down_read_trylock(&seg->sema)) {
-		if (!wait) {
-			if (block_recall_PFNs)
-				xpmem_unblock_recall_PFNs(seg_tg);
-			return -EAGAIN;
-		}
-		down_read(&seg->sema);
-	}
+    if (!down_read_trylock(&seg->sema)) {
+        if (!wait) {
+            if (block_recall_PFNs)
+                xpmem_unblock_recall_PFNs(seg_tg);
+            return -EAGAIN;
+        }
+        down_read(&seg->sema);
+    }
 
-	if ((seg->flags & XPMEM_FLAG_DESTROYING) ||
-	    (seg_tg->flags & XPMEM_FLAG_DESTROYING)) {
-		up_read(&seg->sema);
-		if (block_recall_PFNs)
-			xpmem_unblock_recall_PFNs(seg_tg);
-		return -ENOENT;
-	}
-	return 0;
+    if ((seg->flags & XPMEM_FLAG_DESTROYING) ||
+        (seg_tg->flags & XPMEM_FLAG_DESTROYING)) {
+        up_read(&seg->sema);
+        if (block_recall_PFNs)
+            xpmem_unblock_recall_PFNs(seg_tg);
+        return -ENOENT;
+    }
+    return 0;
 }
 
 /*
@@ -265,18 +274,18 @@ xpmem_seg_down_read(struct xpmem_thread_group *seg_tg,
  */
 int
 xpmem_validate_access(struct xpmem_access_permit *ap, off_t offset,
-		      size_t size, int mode, u64 *vaddr)
+              size_t size, int mode, u64 *vaddr)
 {
-	/* ensure that this thread has permission to access segment */
-	if (current->tgid != ap->tg->tgid ||
-	    (mode == XPMEM_RDWR && ap->mode == XPMEM_RDONLY))
-		return -EACCES;
+    /* ensure that this thread has permission to access segment */
+    if (current->tgid != ap->tg->tgid ||
+        (mode == XPMEM_RDWR && ap->mode == XPMEM_RDONLY))
+        return -EACCES;
 
-	if (offset < 0 || size == 0 || offset + size > ap->seg->size)
-		return -EINVAL;
+    if (offset < 0 || size == 0 || offset + size > ap->seg->size)
+        return -EINVAL;
 
-	*vaddr = ap->seg->vaddr + offset;
-	return 0;
+    *vaddr = ap->seg->vaddr + offset;
+    return 0;
 }
 
 /*
@@ -286,19 +295,19 @@ xpmem_validate_access(struct xpmem_access_permit *ap, off_t offset,
 void
 xpmem_block_nonfatal_signals(sigset_t *oldset)
 {
-	unsigned long flags;
-	sigset_t new_blocked_signals;
+    unsigned long flags;
+    sigset_t new_blocked_signals;
 
-	spin_lock_irqsave(&current->sighand->siglock, flags);
-	*oldset = current->blocked;
-	sigfillset(&new_blocked_signals);
-	sigdelset(&new_blocked_signals, SIGTERM);
-	if (current->sighand->action[SIGKILL - 1].sa.sa_handler == SIG_DFL)
-		sigdelset(&new_blocked_signals, SIGKILL);
+    spin_lock_irqsave(&current->sighand->siglock, flags);
+    *oldset = current->blocked;
+    sigfillset(&new_blocked_signals);
+    sigdelset(&new_blocked_signals, SIGTERM);
+    if (current->sighand->action[SIGKILL - 1].sa.sa_handler == SIG_DFL)
+        sigdelset(&new_blocked_signals, SIGKILL);
 
-	current->blocked = new_blocked_signals;
-	recalc_sigpending();
-	spin_unlock_irqrestore(&current->sighand->siglock, flags);
+    current->blocked = new_blocked_signals;
+    recalc_sigpending();
+    spin_unlock_irqrestore(&current->sighand->siglock, flags);
 }
 
 /*
@@ -307,12 +316,12 @@ xpmem_block_nonfatal_signals(sigset_t *oldset)
 void
 xpmem_unblock_nonfatal_signals(sigset_t *oldset)
 {
-	unsigned long flags;
+    unsigned long flags;
 
-	spin_lock_irqsave(&current->sighand->siglock, flags);
-	current->blocked = *oldset;
-	recalc_sigpending();
-	spin_unlock_irqrestore(&current->sighand->siglock, flags);
+    spin_lock_irqsave(&current->sighand->siglock, flags);
+    current->blocked = *oldset;
+    recalc_sigpending();
+    spin_unlock_irqrestore(&current->sighand->siglock, flags);
 }
 
 /*
@@ -321,26 +330,26 @@ xpmem_unblock_nonfatal_signals(sigset_t *oldset)
 /*
 int
 xpmem_debug_printk_procfs_write(struct file *file, const char *buffer,
-					unsigned long count, void *data)
+                    unsigned long count, void *data)
 {
-	char buf;
-	
-	if(copy_from_user(&buf, buffer, 1))
-		return -EFAULT;
+    char buf;
+    
+    if(copy_from_user(&buf, buffer, 1))
+        return -EFAULT;
 
-	if (buf == '0') 
-		xpmem_debug_on = 0;
-	else if (buf == '1')
-		xpmem_debug_on = 1;
+    if (buf == '0') 
+        xpmem_debug_on = 0;
+    else if (buf == '1')
+        xpmem_debug_on = 1;
 
-	return count;
+    return count;
 }
 
 int
 xpmem_debug_printk_procfs_read(char *page, char **start, off_t off, int count,
-		                        int *eof, void *data)
+                                int *eof, void *data)
 {
-	return snprintf(page, count, "%d\n", xpmem_debug_on);
+    return snprintf(page, count, "%d\n", xpmem_debug_on);
 }
 
 struct file_operations

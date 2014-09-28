@@ -71,8 +71,8 @@ u32 hash_buffer(u8 * msg, u32 length);
 
 
 struct xpmem_hashtable * create_htable(u32 min_size,
-					  u32 (*hashfunction) (uintptr_t key),
-					  int (*key_eq_fn) (uintptr_t key1, uintptr_t key2));
+                      u32 (*hashfunction) (uintptr_t key),
+                      int (*key_eq_fn) (uintptr_t key1, uintptr_t key2));
 
 void free_htable(struct xpmem_hashtable * htable, int free_values, int free_keys);
 

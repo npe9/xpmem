@@ -171,6 +171,12 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
     return xpmem_vaddr_to_pte_offset(mm, vaddr, NULL);
 }
 
+
+
+#define XPMEM_REMOTE_TG_TGID    1 
+#define XPMEM_REMOTE_TG_UID     1 
+#define XPMEM_REMOTE_TG_GID     1 
+
 /*
  * general internal driver structures
  */
@@ -223,7 +229,6 @@ struct xpmem_thread_group {
 };
 
 struct xpmem_segment {
-
     /* List of access permits */
     struct list_head                ap_list;                /* local access permits of seg */
 
@@ -248,26 +253,31 @@ struct xpmem_segment {
     struct list_head                seg_node;               /* tg's list of segs */
 };
 
-/* Segments created in different domains that local thread groups have access to */
-struct xpmem_remote_segment {
-};
 
+typedef enum xpmem_access_mode {
+    LOCAL,
+    REMOTE_SEG,
+    REOMTE_AP
+} xpmem_access_mode_t;
 
 struct xpmem_access_permit {
-
     /* List of attachments */
     struct list_head                att_list;               /* atts of this access permit's seg */
 
     /* This access permit's attached region */
     xpmem_apid_t                    apid;                   /* unique apid */
-    struct xpmem_segment          * seg;                    /* seg permitted to be accessed */
-    struct xpmem_remote_segment   * remote_seg;             /* remote seg permitted to be accessed */
+    xpmem_apid_t                    remote_apid;            /* unique remote apid */
     int                             mode;                   /* read/write mode */
+
+    /* Extended access mode */
+    xpmem_access_mode_t             access_mode;            /* local, remote segment + local access, local segment + remote access */
+
+    struct xpmem_segment          * seg;                    /* seg permitted to be accessed */
+    struct xpmem_thread_group     * tg;                     /* access permit's tg */
 
     /* Other misc */
     volatile int                    flags;                  /* access permit attributes and state */
     atomic_t                        refcnt;                 /* references to access permit */
-    struct xpmem_thread_group     * tg;                     /* access permit's tg */
 
     /* Synchronization */
     spinlock_t                      lock;                   /* access permit lock */
@@ -278,7 +288,6 @@ struct xpmem_access_permit {
 };
 
 struct xpmem_attachment {
-
     /* The source attached region */
     u64                             vaddr;                  /* starting address of seg attached */
     struct xpmem_access_permit    * ap;                     /* associated access permit */
@@ -304,6 +313,7 @@ struct xpmem_attachment {
 
 struct xpmem_partition {
     struct xpmem_hashlist         * tg_hashtable;           /* locks + tg hash lists */
+    struct xpmem_thread_group     * tg_remote;              /* the special remote thread group */
 
     /* procfs debugging */
     atomic_t                        n_pinned;               /* # of pages pinned xpmem */
@@ -397,6 +407,7 @@ xpmem_vaddr_to_PFN(struct mm_struct *mm, u64 vaddr)
 #define XPMEM_CPUS_OFFLINE      -2
 
 /* found in xpmem_make.c */
+extern int xpmem_make_segment(u64, size_t, int, void *, struct xpmem_thread_group *, xpmem_segid_t );
 extern int xpmem_make(u64, size_t, int, void *, xpmem_segid_t *);
 extern void xpmem_remove_segs_of_tg(struct xpmem_thread_group *);
 extern int xpmem_remove(xpmem_segid_t);
