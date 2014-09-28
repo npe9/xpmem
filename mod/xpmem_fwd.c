@@ -536,6 +536,7 @@ xpmem_fwd_deliver_cmd(struct xpmem_partition_state * part_state,
 
         case XPMEM_DOMID_REQUEST:
         case XPMEM_DOMID_RESPONSE:
+        case XPMEM_DOMID_RELEASE:
             xpmem_fwd_process_domid_cmd(part_state, link, cmd);
             break;
 
