@@ -356,6 +356,13 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_DOMID_RELEASE:
             /* Someone downstream is releasing their domid: simply forward to the
              * namserver */
+            out_link = xpmem_search_domid(part_state, out_cmd->dst_dom);
+
+            if (out_link == 0) {
+                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", out_cmd->dst_dom);
+                return;
+            }
+
             break;
 
         default: {
@@ -536,6 +543,7 @@ xpmem_fwd_deliver_cmd(struct xpmem_partition_state * part_state,
 
         case XPMEM_DOMID_REQUEST:
         case XPMEM_DOMID_RESPONSE:
+        case XPMEM_DOMID_RELEASE:
             xpmem_fwd_process_domid_cmd(part_state, link, cmd);
             break;
 
