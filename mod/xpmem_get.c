@@ -334,8 +334,8 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
 
     /* If the segment is for a remote segid, remove it */
     if (ap->remote_apid > 0) {
+        xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
         xpmem_remove_seg(seg_tg, seg);
-        xpmem_release_remote(&(xpmem_my_part->part_state), ap->remote_apid);
     }
 
     xpmem_ap_destroyable(ap);

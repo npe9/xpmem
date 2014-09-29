@@ -41,6 +41,7 @@ struct xpmem_cmd_attach_ex {
 
 struct xpmem_cmd_detach_ex {
     xpmem_segid_t segid; /* needed for routing */
+    xpmem_segid_t apid;
     uint64_t vaddr;
 };
 
@@ -113,15 +114,19 @@ xpmem_get_remote(struct xpmem_partition_state * part,
                  xpmem_apid_t                 * apid);
 
 int xpmem_release_remote(struct xpmem_partition_state * part,
+                         xpmem_segid_t                  segid,
                          xpmem_apid_t                   apid);
 
 int xpmem_attach_remote(struct xpmem_partition_state * part,
+                        xpmem_segid_t                  segid,
                         xpmem_apid_t                   apid, 
                         off_t                          offset, 
                         size_t                         size, 
                         u64                          * vaddr);
 
 int xpmem_detach_remote(struct xpmem_partition_state * part,
+                        xpmem_segid_t                  segid,
+                        xpmem_apid_t                   apid,
                         u64                            vaddr);
 
 

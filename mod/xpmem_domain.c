@@ -742,6 +742,7 @@ xpmem_get_remote(struct xpmem_partition_state * part,
 
 int
 xpmem_release_remote(struct xpmem_partition_state * part,
+                     xpmem_segid_t                  segid,
                      xpmem_apid_t                   apid)
 {
     struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
@@ -753,8 +754,9 @@ xpmem_release_remote(struct xpmem_partition_state * part,
 
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
 
-    cmd.type         = XPMEM_RELEASE;
-    cmd.release.apid = apid;
+    cmd.type          = XPMEM_RELEASE;
+    cmd.release.segid = segid;
+    cmd.release.apid  = apid;
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
@@ -783,6 +785,7 @@ xpmem_release_remote(struct xpmem_partition_state * part,
 
 int
 xpmem_attach_remote(struct xpmem_partition_state * part,
+                    xpmem_segid_t                  segid,
                     xpmem_apid_t                   apid,
                     off_t                          offset,
                     size_t                         size,
@@ -797,10 +800,11 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
 
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
 
-    cmd.type        = XPMEM_ATTACH;
-    cmd.attach.apid = apid;
-    cmd.attach.off  = offset;
-    cmd.attach.size = size;
+    cmd.type         = XPMEM_ATTACH;
+    cmd.attach.segid = segid;
+    cmd.attach.apid  = apid;
+    cmd.attach.off   = offset;
+    cmd.attach.size  = size;
 
     while (mutex_lock_interruptible(&(state->mutex)));
 
@@ -841,6 +845,8 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
 
 int
 xpmem_detach_remote(struct xpmem_partition_state * part,
+                    xpmem_segid_t                  segid,
+                    xpmem_apid_t                   apid,
                     u64                            vaddr)
 {
     struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
@@ -853,6 +859,8 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
 
     cmd.type         = XPMEM_DETACH;
+    cmd.detach.segid = segid;
+    cmd.detach.apid  = apid;
     cmd.detach.vaddr = vaddr;
 
     while (mutex_lock_interruptible(&(state->mutex)));

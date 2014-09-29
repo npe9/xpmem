@@ -359,7 +359,8 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
 
     ap_tg = xpmem_tg_ref_by_apid(apid);
     if (IS_ERR(ap_tg)) {
-        return xpmem_attach_remote(&(xpmem_my_part->part_state), apid, offset, size, at_vaddr_p);
+        return PTR_ERR(ap_tg);
+//        return xpmem_attach_remote(&(xpmem_my_part->part_state), apid, offset, size, at_vaddr_p);
     }
 
     ap = xpmem_ap_ref_by_apid(ap_tg, apid);
@@ -519,7 +520,8 @@ xpmem_detach(u64 at_vaddr)
     att = (struct xpmem_attachment *)vma->vm_private_data;
     if (!xpmem_is_vm_ops_set(vma) || att == NULL) {
         up_write(&current->mm->mmap_sem);
-        return xpmem_detach_remote(&(xpmem_my_part->part_state), at_vaddr);
+        //return xpmem_detach_remote(&(xpmem_my_part->part_state), at_vaddr);
+        return PTR_ERR(att);
     }
     xpmem_att_ref(att);
 
