@@ -23,6 +23,7 @@ struct xpmem_cmd_get_ex {
     uint32_t permit_type;
     uint64_t permit_value;
     xpmem_apid_t apid;
+    uint64_t size;
 };
 
 struct xpmem_cmd_release_ex {
