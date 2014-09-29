@@ -16,7 +16,7 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 
-uint32_t xpmem_debug_on = 1;
+uint32_t xpmem_debug_on = 0;
 
 /*
  * xpmem_tg_ref() - see xpmem_private.h for inline definition
@@ -42,7 +42,6 @@ xpmem_tg_ref_by_tgid(pid_t tgid)
             }
         }
 
-        printk("ENOENT 1\n");
         return ERR_PTR(-ENOENT);
     }   
 

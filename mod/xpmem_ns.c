@@ -61,9 +61,9 @@ struct xpmem_segid_rb_node {
 
 /* RB-tree node for domain apid accounting */
 struct xpmem_apid_rb_node {
-    xpmem_domid_t  src_domid; /* the source domain of the segid */
-    xpmem_segid_t  src_segid; /* the segid we xpmem got */
-    xpmem_apid_t   apid;      /* apid returned to this domain */
+    xpmem_domid_t  src_domid; /* source domain of the segid */
+    xpmem_segid_t  src_segid; /* segid target of the XPMEM_GET */
+    xpmem_apid_t   apid;      /* remote apid returned from the XPMEM_GET */
     struct rb_node tree_node;
 };
 
@@ -862,7 +862,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                     xpmem_segid_to_uniq(cmd->remove.segid));
             }
 
-            {
+            { 
                 out_cmd->type    = XPMEM_REMOVE_COMPLETE;
                 out_cmd->dst_dom = cmd->src_dom;
                 out_cmd->src_dom = part_state->domid;

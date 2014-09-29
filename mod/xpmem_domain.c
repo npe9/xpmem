@@ -108,17 +108,20 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
 
     seg_tg = xpmem_tg_ref_by_segid(segid);
     if (IS_ERR(seg_tg)) {
+        printk("GET DOMAIN: Cannot get seg_tg\n");
         return PTR_ERR(seg_tg);
     }   
 
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);
     if (IS_ERR(seg)) {
+        printk("GET DOMAIN: Cannot get seg\n");
         xpmem_tg_deref(seg_tg);
         return PTR_ERR(seg);
     }
 
     /* assuming XPMEM_PERMIT_MODE, do the appropriate permission check */
     if (xpmem_check_permit_mode(flags, seg) != 0) {
+        printk("GET DOMAIN: invalid permit mode\n");
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
         return -EACCES;
@@ -130,6 +133,7 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
     //ap_tg = xpmem_tg_ref_by_tgid(current->tgid);
     ap_tg = xpmem_tg_ref_by_segid(segid);
     if (IS_ERR(ap_tg)) {
+        printk("GET DOMAIN: Cannot get ap_tg\n");
         DBUG_ON(PTR_ERR(ap_tg) != -ENOENT);
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
@@ -138,6 +142,7 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
 
     apid = xpmem_make_apid(ap_tg);
     if (apid < 0) {
+        printk("GET DOMAIN: Cannot make apid\n");
         xpmem_tg_deref(ap_tg);
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
@@ -192,6 +197,8 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
      */
 
     get_ex->apid = apid;
+
+    printk("Returning apid %lli\n", get_ex->apid);
     return 0;
 }
 
