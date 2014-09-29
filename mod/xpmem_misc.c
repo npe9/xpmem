@@ -32,17 +32,22 @@ xpmem_tg_ref_by_tgid(pid_t tgid)
     int index;
     struct xpmem_thread_group *tg;
 
-    index = xpmem_tg_hashtable_index(tgid);
-    read_lock(&xpmem_my_part->tg_hashtable[index].lock);
-
     if (tgid == XPMEM_REMOTE_TG_TGID) {
         tg = xpmem_my_part->tg_remote;
-        if (!(tg->flags & XPMEM_FLAG_DESTROYING)) {
-            xpmem_tg_ref(tg);
-            read_unlock(&xpmem_my_part->tg_hashtable[index].lock);
-            return tg;
+
+        if (tg != NULL) {
+            if (!(tg->flags & XPMEM_FLAG_DESTROYING)) {
+                xpmem_tg_ref(tg);
+                return tg; 
+            }
         }
-    }
+
+        printk("ENOENT 1\n");
+        return ERR_PTR(-ENOENT);
+    }   
+
+    index = xpmem_tg_hashtable_index(tgid);
+    read_lock(&xpmem_my_part->tg_hashtable[index].lock);
 
     list_for_each_entry(tg, &xpmem_my_part->tg_hashtable[index].list,
                                 tg_hashnode) {
@@ -52,9 +57,9 @@ xpmem_tg_ref_by_tgid(pid_t tgid)
 
             xpmem_tg_ref(tg);
             read_unlock(&xpmem_my_part->tg_hashtable[index].lock);
-            return tg;
+            return tg; 
         }
-    }
+    }   
 
     read_unlock(&xpmem_my_part->tg_hashtable[index].lock);
     return ERR_PTR(-ENOENT);
@@ -89,6 +94,17 @@ void
 xpmem_tg_deref(struct xpmem_thread_group *tg)
 {
     char tgid_string[XPMEM_TGID_STRING_LEN];
+
+    /* Do not allow derefs of the remote thread group, unless we are explicitly 
+     * destorying on module teardown
+     */
+    if (tg->tgid == XPMEM_REMOTE_TG_TGID) {
+        if (!(tg->flags & XPMEM_FLAG_DESTROYING)) {
+            return;
+        }
+    }
+
+    /* Do not allow the derefing of the remote thread group */
 
     DBUG_ON(atomic_read(&tg->refcnt) <= 0);
     if (atomic_dec_return(&tg->refcnt) != 0)
@@ -192,6 +208,7 @@ xpmem_ap_ref_by_apid(struct xpmem_thread_group *ap_tg, xpmem_apid_t apid)
     }
 
     read_unlock(&ap_tg->ap_hashtable[index].lock);
+
     return ERR_PTR(-ENOENT);
 }
 

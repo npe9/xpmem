@@ -370,7 +370,12 @@ xpmem_create_remote_thread_group(void)
         INIT_LIST_HEAD(&tg->ap_hashtable[index].list);
     }
 
+    tg->flags |= XPMEM_FLAG_CREATING_REMOTE;
+
     xpmem_tg_not_destroyable(tg);
+    xpmem_tg_ref(tg);
+
+    tg->flags &= ~XPMEM_FLAG_CREATING_REMOTE;
 
     /* add tg to its hash list */
     index = xpmem_tg_hashtable_index(tg->tgid);
@@ -470,10 +475,11 @@ out_1:
 void __exit
 xpmem_exit(void)
 {
-    xpmem_partition_deinit(&(xpmem_my_part->part_state));
-
     /* Remove the remote_tg, if it was created */
     xpmem_remove_remote_thread_group();
+
+    /* Free partition resources */
+    xpmem_partition_deinit(&(xpmem_my_part->part_state));
 
     kfree(xpmem_my_part->tg_hashtable);
     kfree(xpmem_my_part);

@@ -497,15 +497,14 @@ err_htable:
 int
 xpmem_partition_deinit(struct xpmem_partition_state * state)
 {
-
-    xpmem_domain_deinit(state);
-    xpmem_palacios_deinit(state);
-
     if (state->is_nameserver) {
         xpmem_ns_deinit(state);
     } else {
         xpmem_fwd_deinit(state);
     }
+
+    xpmem_domain_deinit(state);
+    xpmem_palacios_deinit(state);
     
     /* Free hashtables */
     if (state->domid_map) {

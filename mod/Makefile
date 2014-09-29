@@ -1,7 +1,7 @@
 #LINUX_KERN=/usr/src/kernels/$(shell uname -r)
 LINUX_KERN=/lib/modules/`uname -r`/build/
 
-EXTRA_CFLAGS  += -DMODULE=1 -D__KERNEL__=1
+EXTRA_CFLAGS  += -DMODULE=1 -D__KERNEL__=1 -DUSE_DBUG_ON
 
 EXTRA_CFLAGS  += -I$(PWD)/include -I$(PWD)/../include
 

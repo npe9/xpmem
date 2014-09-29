@@ -591,7 +591,7 @@ void
 xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
 {
     struct vm_area_struct *vma;
-    int ret;
+    int ret = 0;
 
     /* must lock mmap_sem before att's sema to prevent deadlock */
     down_write(&att->mm->mmap_sem);

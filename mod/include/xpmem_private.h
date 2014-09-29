@@ -376,6 +376,7 @@ xpmem_apid_to_uniq(xpmem_segid_t apid)
  */
 #define XPMEM_FLAG_DESTROYING       0x00040 /* being destroyed */
 #define XPMEM_FLAG_DESTROYED        0x00080 /* 'being destroyed' finished */
+#define XPMEM_FLAG_CREATING_REMOTE  0x00100 /* being created */
 
 #define XPMEM_FLAG_VALIDPTEs        0x00200 /* valid PTEs exist */
 #define XPMEM_FLAG_RECALLINGPFNS    0x00400 /* recalling PFNs */
@@ -410,11 +411,12 @@ xpmem_vaddr_to_PFN(struct mm_struct *mm, u64 vaddr)
 extern int xpmem_make_segment(u64, size_t, int, void *, struct xpmem_thread_group *, xpmem_segid_t );
 extern int xpmem_make(u64, size_t, int, void *, xpmem_segid_t *);
 extern void xpmem_remove_segs_of_tg(struct xpmem_thread_group *);
+extern int xpmem_remove_seg(struct xpmem_thread_group *, struct xpmem_segment *);
 extern int xpmem_remove(xpmem_segid_t);
 
 /* found in xpmem_get.c */
 extern int xpmem_check_permit_mode(int, struct xpmem_segment *);
-extern xpmem_apid_t xpmem_make_apid(struct xpmem_segment *, struct xpmem_thread_group *);
+extern xpmem_apid_t xpmem_make_apid(struct xpmem_thread_group *);
 extern int xpmem_get(xpmem_segid_t, int, int, void *, xpmem_apid_t *);
 extern void xpmem_release_aps_of_tg(struct xpmem_thread_group *);
 extern void xpmem_release_ap(struct xpmem_thread_group *, struct xpmem_access_permit *);
@@ -541,6 +543,14 @@ xpmem_att_destroyable(struct xpmem_attachment *att)
 static inline void
 xpmem_tg_ref(struct xpmem_thread_group *tg)
 {
+    /* Do not allow refs of the remote thread group, unless this is in the
+     * initialization */
+    if (tg->tgid == XPMEM_REMOTE_TG_TGID) {
+        if (!(tg->flags & XPMEM_FLAG_CREATING_REMOTE)) {
+            return;
+        }
+    }
+
     DBUG_ON(atomic_read(&tg->refcnt) <= 0);
     atomic_inc(&tg->refcnt);
 }

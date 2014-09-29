@@ -136,7 +136,7 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
         return -XPMEM_ERRNO_NOPROC;
     }
 
-    apid = xpmem_make_apid(seg, ap_tg);
+    apid = xpmem_make_apid(ap_tg);
     if (apid < 0) {
         xpmem_tg_deref(ap_tg);
         xpmem_seg_deref(seg);

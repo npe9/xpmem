@@ -146,14 +146,17 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
 /*
  * Remove a segment from the system.
  */
-static int
+int
 xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
 {
     DBUG_ON(atomic_read(&seg->refcnt) <= 0);
 
     /* see if the requesting thread is the segment's owner */
-    if (current->tgid != seg_tg->tgid)
+    if ((current->tgid != seg_tg->tgid) &&
+         (seg_tg->tgid != XPMEM_REMOTE_TG_TGID)) 
+    {
         return -EACCES;
+    }
 
     spin_lock(&seg->lock);
     if (seg->flags & XPMEM_FLAG_DESTROYING) {
@@ -166,7 +169,9 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
     xpmem_seg_down_write(seg);
 
     /* unpin pages and clear PTEs for each attachment to this segment */
-    xpmem_clear_PTEs(seg);
+    if (seg->tg->tgid != XPMEM_REMOTE_TG_TGID) {
+        xpmem_clear_PTEs(seg);
+    }
 
     /* indicate that the segment has been destroyed */
     spin_lock(&seg->lock);
@@ -181,7 +186,7 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
     xpmem_seg_up_write(seg);
     xpmem_seg_destroyable(seg);
 
-    return xpmem_remove_remote(&(xpmem_my_part->part_state), seg->segid);
+    return 0;
 }
 
 /*
@@ -192,7 +197,10 @@ xpmem_remove_segs_of_tg(struct xpmem_thread_group *seg_tg)
 {
     struct xpmem_segment *seg;
 
-    DBUG_ON(current->tgid != seg_tg->tgid);
+    DBUG_ON
+        (   (current->tgid != seg_tg->tgid) &&
+            (seg_tg->tgid != XPMEM_REMOTE_TG_TGID)
+        );
 
     read_lock(&seg_tg->seg_list_lock);
 

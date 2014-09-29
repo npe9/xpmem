@@ -71,7 +71,7 @@ xpmem_check_permit_mode(int flags, struct xpmem_segment *seg)
  * Create a new and unique apid.
  */
 xpmem_apid_t
-xpmem_make_apid(struct xpmem_segment *seg, struct xpmem_thread_group *ap_tg)
+xpmem_make_apid(struct xpmem_thread_group *ap_tg)
 {
     struct xpmem_id apid;
     xpmem_apid_t *apid_p = (xpmem_apid_t *)&apid;
@@ -146,7 +146,7 @@ xpmem_get_segment(int                         flags,
     ap->seg = seg;
     ap->tg = ap_tg;
     ap->apid = apid;
-    ap->apid = remote_apid;
+    ap->remote_apid = remote_apid;
     ap->mode = flags;
     INIT_LIST_HEAD(&ap->att_list);
     INIT_LIST_HEAD(&ap->ap_node);
@@ -215,6 +215,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         remote_apid = xpmem_try_get_remote(segid, flags, permit_type, permit_value);
 
         if (remote_apid <= 0) {
+            printk("Could not get remote apid\n");
             return PTR_ERR(seg_tg);
         }
 
@@ -225,14 +226,16 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         xpmem_make_segment(0, 0, permit_type, permit_value, xpmem_my_part->tg_remote, segid);
 
         /* Now, try the ref again */
-        seg_tg = xpmem_tg_ref_by_segid(segid);
+        seg_tg = xpmem_tg_ref_by_tgid(xpmem_my_part->tg_remote->tgid);
         if (IS_ERR(seg_tg)) {
+            printk("Could not get seg_tg\n");
             return PTR_ERR(seg_tg);
         }
     }
 
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);
     if (IS_ERR(seg)) {
+        printk("Could not get seg\n");
         xpmem_tg_deref(seg_tg);
         return PTR_ERR(seg);
     }
@@ -253,7 +256,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         return -XPMEM_ERRNO_NOPROC;
     }
 
-    apid = xpmem_make_apid(seg, ap_tg);
+    apid = xpmem_make_apid(ap_tg);
     if (apid < 0) {
         xpmem_tg_deref(ap_tg);
         xpmem_seg_deref(seg);
@@ -325,9 +328,15 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     spin_lock(&seg->lock);
     list_del_init(&ap->ap_node);
     spin_unlock(&seg->lock);
-
+    
     xpmem_seg_deref(seg);   /* deref of xpmem_get()'s ref */
     xpmem_tg_deref(seg_tg); /* deref of xpmem_get()'s ref */
+
+    /* If the segment is for a remote segid, remove it */
+    if (ap->remote_apid > 0) {
+        xpmem_remove_seg(seg_tg, seg);
+        xpmem_release_remote(&(xpmem_my_part->part_state), ap->remote_apid);
+    }
 
     xpmem_ap_destroyable(ap);
 }
@@ -377,7 +386,7 @@ xpmem_release(xpmem_apid_t apid)
 
     ap_tg = xpmem_tg_ref_by_apid(apid);
     if (IS_ERR(ap_tg)) {
-        return xpmem_release_remote(&(xpmem_my_part->part_state), apid);
+        return PTR_ERR(ap_tg);
     }
 
     if (current->tgid != ap_tg->tgid) {
