@@ -330,41 +330,34 @@ xpmem_detach_domain(struct xpmem_cmd_detach_ex * detach_ex)
 }
 
 
-static unsigned long 
-xpmem_map_pfn_range(u64 * pfns, 
-                    u64 num_pfns)
+static int 
+xpmem_map_pfn_range(u64   at_vaddr,
+                    u64 * pfns, 
+                    u64   num_pfns)
 {
     struct vm_area_struct * vma = NULL;
     unsigned long size = 0;
     unsigned long addr = 0;
-    unsigned long attach_addr = 0;
     u64 i = 0;
     int status = 0;
     struct xpmem_remote_attach_struct * remote;
     struct list_head * head;
 
     size = num_pfns * PAGE_SIZE;
-    attach_addr = vm_mmap(NULL, 0, size, PROT_READ | PROT_WRITE,
-            MAP_SHARED, 0); 
 
-    if (IS_ERR_VALUE(attach_addr)) {
-        printk(KERN_ERR "XPMEM: vm_mmap failed\n");
-        return attach_addr;
-    }   
-
-    vma = find_vma(current->mm, attach_addr);
+    vma = find_vma(current->mm, at_vaddr);
     if (!vma) {
         printk(KERN_ERR "XPMEM: find_vma failed - this should be impossible\n");
         return -ENOMEM;
     }   
 
     for (i = 0; i < num_pfns; i++) {
-        addr = attach_addr + (i * PAGE_SIZE);
+        addr = at_vaddr + (i * PAGE_SIZE);
 
         status = remap_pfn_range(vma, addr, pfns[i], PAGE_SIZE, vma->vm_page_prot);
         if (status) {
             printk(KERN_ERR "XPMEM: remap_pfn_range failed\n");
-            vm_munmap(attach_addr, size);
+            vm_munmap(at_vaddr, size);
             return -ENOMEM;
         }
     }   
@@ -372,18 +365,18 @@ xpmem_map_pfn_range(u64 * pfns,
     if (!attach_htable) {
         attach_htable = create_htable(0, domain_hash_fn, domain_eq_fn);
         if (!attach_htable) {
-            vm_munmap(attach_addr, size);
+            vm_munmap(at_vaddr, size);
             return -ENOMEM;
         }
     }
 
     remote = kmalloc(sizeof(struct xpmem_remote_attach_struct), GFP_KERNEL);
     if (!remote) {
-        vm_munmap(attach_addr, size);
+        vm_munmap(at_vaddr, size);
         return -1;
     }
 
-    remote->vaddr = attach_addr;
+    remote->vaddr = at_vaddr;
     remote->paddr = (pfns[0] << PAGE_SHIFT);
     remote->size = size;
 
@@ -391,19 +384,19 @@ xpmem_map_pfn_range(u64 * pfns,
     if (!head) {
         head = kmalloc(sizeof(struct list_head), GFP_KERNEL);
         if (!head) {
-            vm_munmap(attach_addr, size);
+            vm_munmap(at_vaddr, size);
             return -ENOMEM;
         }
 
         INIT_LIST_HEAD(head);
         if (!htable_insert(attach_htable, (uintptr_t)current->tgid, (uintptr_t)head)) {
-            vm_munmap(attach_addr, size);
+            vm_munmap(at_vaddr, size);
             return -1;
         }
     }
     list_add_tail(&(remote->node), head);
     
-    return attach_addr;
+    return 0;
 }
 
 
@@ -792,10 +785,11 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
                     xpmem_apid_t                   apid,
                     off_t                          offset,
                     size_t                         size,
-                    u64                          * vaddr)
+                    u64                            at_vaddr)
 {
     struct xpmem_domain_state * state   = (struct xpmem_domain_state *)part->domain_priv;
     struct xpmem_cmd_ex         cmd;
+    int                         ret     = 0;
 
     if (!state->initialized) {
         return -1;
@@ -828,12 +822,12 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
 
         /* Map pfn list */
         if (state->cmd->attach.num_pfns > 0) {
-            *vaddr = (u64)xpmem_map_pfn_range(
-                        state->cmd->attach.pfns,
-                        state->cmd->attach.num_pfns
-                    );
+            ret = xpmem_map_pfn_range(
+                at_vaddr,
+                state->cmd->attach.pfns,
+                state->cmd->attach.num_pfns);
         } else {
-            *vaddr = 0;
+            ret = -1;
         }
     }
 
@@ -841,7 +835,7 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
 
     kfree(state->cmd);
 
-    return 0;
+    return ret;
 }
 
 

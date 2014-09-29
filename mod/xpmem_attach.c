@@ -160,6 +160,7 @@ xpmem_fault_handler(struct vm_area_struct *vma, struct vm_fault *vmf)
          */
         return VM_FAULT_SIGBUS;
     }
+
     xpmem_att_ref(att);
     ap = att->ap;
     xpmem_ap_ref(ap);
@@ -310,13 +311,6 @@ out_1:
     return VM_FAULT_SIGBUS;
 }
 
-static int
-xpmem_remote_fault_handler(struct vm_area_struct *vma, struct vm_fault *vmf)
-{
-    printk(KERN_ERR "XPMEM: Page fault in remote attachment address!!!!!\n");
-    return VM_FAULT_SIGBUS;
-}
-
 struct vm_operations_struct xpmem_vm_ops = {
     .close = xpmem_close_handler,
     .fault = xpmem_fault_handler
@@ -343,6 +337,26 @@ xpmem_mmap(struct file *file, struct vm_area_struct *vma)
 }
 
 /*
+ * Attach a remote XPMEM address segment
+ */
+static int
+xpmem_try_attach_remote(xpmem_segid_t segid, 
+                        xpmem_apid_t  apid,
+                        off_t         offset,
+                        size_t        size,
+                        u64           at_vaddr)
+{
+    return xpmem_attach_remote(
+        &(xpmem_my_part->part_state),
+        segid,
+        apid,
+        offset,
+        size,
+        at_vaddr);
+}
+
+
+/*
  * Attach a XPMEM address segment.
  */
 int
@@ -358,36 +372,27 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     struct xpmem_attachment *att;
     struct vm_area_struct *vma;
 
-    if (apid <= 0) {
-        printk("ATTACH 1\n");
+    if (apid <= 0)
         return -EINVAL;
-    }
 
     /* Ensure vaddr is valid */
-    if (vaddr && vaddr + PAGE_SIZE - offset_in_page(vaddr) >= TASK_SIZE) {
-        printk("ATTACH 2\n");
+    if (vaddr && vaddr + PAGE_SIZE - offset_in_page(vaddr) >= TASK_SIZE)
         return -EINVAL;
-    }
 
     /* The start of the attachment must be page aligned */
-    if (offset_in_page(vaddr) != 0 || offset_in_page(offset) != 0) {
-        printk("ATTACH 3\n");
+    if (offset_in_page(vaddr) != 0 || offset_in_page(offset) != 0)
         return -EINVAL;
-    }
 
     /* If the size is not page aligned, fix it */
     if (offset_in_page(size) != 0) 
         size += PAGE_SIZE - offset_in_page(size);
 
     ap_tg = xpmem_tg_ref_by_apid(apid);
-    if (IS_ERR(ap_tg)) {
-        printk("ATTACH 4\n");
+    if (IS_ERR(ap_tg))
         return PTR_ERR(ap_tg);
-    }
 
     ap = xpmem_ap_ref_by_apid(ap_tg, apid);
     if (IS_ERR(ap)) {
-        printk("ATTACH 5\n");
         xpmem_tg_deref(ap_tg);
         return PTR_ERR(ap);
     }
@@ -404,8 +409,6 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     ret = xpmem_validate_access(ap, offset, size, XPMEM_RDWR, &seg_vaddr);
     if (ret != 0)
         goto out_2;
-
-    printk("XPMEM ATTACH\n");
 
     /* size needs to reflect page offset to start of segment */
     size += offset_in_page(seg_vaddr);
@@ -479,7 +482,17 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
         ret = at_vaddr;
         goto out_3;
     }
+
+    /* if remote, load pfns in now */
+    if (ap->remote_apid > 0) {
+        if (xpmem_try_attach_remote(seg->segid, ap->remote_apid, offset, size, at_vaddr) != 0) {
+            vm_munmap(at_vaddr, size);
+            ret = -EFAULT;
+            goto out_3;
+        }
+    }
     down_write(&current->mm->mmap_sem);
+
     att->at_vaddr = at_vaddr;
 
     vma = find_vma(current->mm, at_vaddr);
@@ -488,10 +501,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
         VM_DONTCOPY /*| VM_RESERVED*/ | VM_IO | VM_DONTEXPAND | VM_PFNMAP;
     vma->vm_ops = &xpmem_vm_ops;
 
-    /* TODO: if remote, load in now */
-
     att->at_vma = vma;
-
 
     /*
      * The attach point where we mapped the portion of the segment the
@@ -501,6 +511,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
      * they expected to see.
      */
     *at_vaddr_p = at_vaddr + offset_in_page(att->vaddr);
+
     ret = 0;
 out_3:
     if (ret != 0) {
@@ -581,7 +592,12 @@ xpmem_detach(u64 at_vaddr)
         return -EACCES;
     }
 
-    xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
+    if (ap->remote_apid == 0) {
+        xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
+    } else {
+        /* TODO: detach */
+        printk("WOULD DETACH HERE\n");
+    }
 
     vma->vm_private_data = NULL;
 
@@ -645,7 +661,11 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
     DBUG_ON((vma->vm_end - vma->vm_start) != att->at_size);
     DBUG_ON(vma->vm_private_data != att);
 
-    xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
+    if (ap->remote_apid == 0) {
+        xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
+    } else {
+        /* TODO: detach */
+    }
 
     vma->vm_private_data = NULL;
 
@@ -759,8 +779,10 @@ xpmem_clear_PTEs_of_att(struct xpmem_attachment *att, u64 start, u64 end,
                 unpin_at, invalidate_len);
 
         /* Unpin the pages */
-        xpmem_unpin_pages(att->ap->seg, att->mm, unpin_at,
-                invalidate_len);
+        if (att->ap->remote_apid == 0)  {
+            xpmem_unpin_pages(att->ap->seg, att->mm, unpin_at,
+                    invalidate_len);
+        }
 
         /*
          * Clear the PTEs, using the vma out of the att if we

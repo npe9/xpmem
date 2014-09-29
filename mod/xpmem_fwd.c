@@ -717,6 +717,9 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
         memset(&(dom_cmd), 0, sizeof(struct xpmem_cmd_ex));
 
         dom_cmd.type            = XPMEM_DOMID_RELEASE;
+        dom_cmd.req_dom         = part_state->domid;
+        dom_cmd.src_dom         = part_state->domid;
+        dom_cmd.dst_dom         = XPMEM_NS_DOMID;
         dom_cmd.domid_req.domid = part_state->domid;
 
         if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &dom_cmd)) {

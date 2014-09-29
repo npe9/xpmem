@@ -124,7 +124,7 @@ int xpmem_attach_remote(struct xpmem_partition_state * part,
                         xpmem_apid_t                   apid, 
                         off_t                          offset, 
                         size_t                         size, 
-                        u64                          * vaddr);
+                        u64                            at_vaddr);
 
 int xpmem_detach_remote(struct xpmem_partition_state * part,
                         xpmem_segid_t                  segid,
