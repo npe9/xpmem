@@ -879,7 +879,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             domid = xpmem_search_segid(ns_state, cmd->get.segid);
 
             if (domid == 0) {
-                printk(KERN_ERR "XPMEM: cannot find segid %lli in hashtable\n", cmd->get.segid);
+                printk(KERN_ERR "XPMEM: cannot find segid %lli in hashtable. Cannot complete XPMEM_GET\n", cmd->get.segid);
                 goto err_get;
             }
 
@@ -908,36 +908,25 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         }
 
         case XPMEM_RELEASE: {
-            /* Extended apids are always allocated in the range [segid.uniq.
-             * segid.uniq + XPMEM_MAX_UNIQ_APID), so we can simply reuse the
-             * segid htable by flooring the apid uniq field. Yes, this is a hack
-             */
-            struct xpmem_id search_id;
+            xpmem_domid_t domid = 0;
 
-            memcpy(&search_id, &(cmd->release.apid), sizeof(struct xpmem_id));
-            search_id.uniq &= ~(XPMEM_MAX_UNIQ_APID - 1);
+            /* Search segid map */
+            domid = xpmem_search_segid(ns_state, cmd->attach.segid);
 
-            {
-                xpmem_domid_t domid = 0;
-
-                /* Search segid map */
-                domid = xpmem_search_segid(ns_state, *((xpmem_segid_t *)&search_id));
-
-                if (domid == 0) {
-                    printk(KERN_ERR "XPMEM: cannot find apid %lli in hashtable\n", cmd->release.apid);
-                    goto err_release;
-                }
-
-                /* Search domid map for link */
-                out_link = xpmem_search_domid(part_state, domid);
-
-                if (out_link == 0) {
-                    printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", domid);
-                    goto err_release;
-                }
-
-                out_cmd->dst_dom = domid;
+            if (domid == 0) {
+                printk(KERN_ERR "XPMEM: cannot find segid %lli in hashtable\n. Cannot complete XPMEM_RELEASE", cmd->release.apid);
+                goto err_release;
             }
+
+            /* Search domid map for link */
+            out_link = xpmem_search_domid(part_state, domid);
+
+            if (out_link == 0) {
+                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", domid);
+                goto err_release;
+            }
+
+            out_cmd->dst_dom = domid;
 
             break;
 
@@ -953,36 +942,25 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         }
 
         case XPMEM_ATTACH: {
-            /* Extended apids are always allocated in the range [segid.uniq.
-             * segid.uniq + XPMEM_MAX_UNIQ_APID), so we can simply reuse the
-             * segid htable by flooring the apid uniq field. Yes, this is a hack
-             */
-            struct xpmem_id search_id;
+            xpmem_domid_t domid = 0;
 
-            memcpy(&search_id, &(cmd->attach.apid), sizeof(struct xpmem_id));
-            search_id.uniq &= ~(XPMEM_MAX_UNIQ_APID - 1);
+            /* Search segid map */
+            domid = xpmem_search_segid(ns_state, cmd->attach.segid);
 
-            {
-                xpmem_domid_t domid = 0;
-
-                /* Search segid map */
-                domid = xpmem_search_segid(ns_state, *((xpmem_segid_t *)&search_id));
-
-                if (domid == 0) {
-                    printk(KERN_ERR "XPMEM: cannot find apid %lli in hashtable\n", cmd->attach.apid);
-                    goto err_attach;
-                }
-
-                /* Search domid map for link */
-                out_link = xpmem_search_domid(part_state, domid);
-
-                if (out_link == 0) {
-                    printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", domid);
-                    goto err_attach;
-                }
-
-                out_cmd->dst_dom = domid;
+            if (domid == 0) {
+                printk(KERN_ERR "XPMEM: cannot find apid %lli in hashtable. Cannot complete XPMEM_ATTACH\n", cmd->attach.apid);
+                goto err_attach;
             }
+
+            /* Search domid map for link */
+            out_link = xpmem_search_domid(part_state, domid);
+
+            if (out_link == 0) {
+                printk(KERN_ERR "XPMEM: cannot find domid %lli in hashtable\n", domid);
+                goto err_attach;
+            }
+
+            out_cmd->dst_dom = domid;
 
             break;
 
@@ -998,9 +976,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         }
 
         case XPMEM_DETACH: {
-            /* Ignore detaches for now, because it's not clear how to figure out
-             * a destination domain from just a virtual address
-             */
+            /* Ignore detaches for now */
             {
                 out_cmd->type    = XPMEM_DETACH_COMPLETE;
                 out_cmd->dst_dom = cmd->src_dom;
