@@ -26,10 +26,12 @@ struct xpmem_cmd_get_ex {
 };
 
 struct xpmem_cmd_release_ex {
+    xpmem_segid_t segid; /* needed for routing */
     xpmem_apid_t apid;
 };
 
 struct xpmem_cmd_attach_ex {
+    xpmem_segid_t segid; /* needed for routing */
     xpmem_apid_t apid;
     uint64_t off;
     uint64_t size;
@@ -38,6 +40,7 @@ struct xpmem_cmd_attach_ex {
 };
 
 struct xpmem_cmd_detach_ex {
+    xpmem_segid_t segid; /* needed for routing */
     uint64_t vaddr;
 };
 
