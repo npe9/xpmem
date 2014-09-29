@@ -558,7 +558,6 @@ xpmem_detach(u64 at_vaddr)
     att = (struct xpmem_attachment *)vma->vm_private_data;
     if (!xpmem_is_vm_ops_set(vma) || att == NULL) {
         up_write(&current->mm->mmap_sem);
-        //return xpmem_detach_remote(&(xpmem_my_part->part_state), at_vaddr);
         return PTR_ERR(att);
     }
     xpmem_att_ref(att);
@@ -583,6 +582,10 @@ xpmem_detach(u64 at_vaddr)
     ap = att->ap;
     xpmem_ap_ref(ap);
 
+    if (ap->remote_apid > 0) {
+        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->apid, at_vaddr);
+    }
+
     if (current->tgid != ap->tg->tgid) {
         att->flags &= ~XPMEM_FLAG_DESTROYING;
         xpmem_ap_deref(ap);
@@ -592,12 +595,7 @@ xpmem_detach(u64 at_vaddr)
         return -EACCES;
     }
 
-    if (ap->remote_apid == 0) {
-        xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
-    } else {
-        /* TODO: detach */
-        printk("WOULD DETACH HERE\n");
-    }
+    xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
 
     vma->vm_private_data = NULL;
 
@@ -661,11 +659,7 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
     DBUG_ON((vma->vm_end - vma->vm_start) != att->at_size);
     DBUG_ON(vma->vm_private_data != att);
 
-    if (ap->remote_apid == 0) {
-        xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
-    } else {
-        /* TODO: detach */
-    }
+    xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
 
     vma->vm_private_data = NULL;
 
@@ -779,10 +773,8 @@ xpmem_clear_PTEs_of_att(struct xpmem_attachment *att, u64 start, u64 end,
                 unpin_at, invalidate_len);
 
         /* Unpin the pages */
-        if (att->ap->remote_apid == 0)  {
-            xpmem_unpin_pages(att->ap->seg, att->mm, unpin_at,
-                    invalidate_len);
-        }
+        xpmem_unpin_pages(att->ap->seg, att->mm, unpin_at,
+                invalidate_len);
 
         /*
          * Clear the PTEs, using the vma out of the att if we

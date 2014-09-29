@@ -15,6 +15,7 @@
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
 #include <linux/delay.h>
+#include <linux/memory_hotplug.h>
 
 #include <xpmem.h>
 #include <xpmem_private.h>
@@ -237,6 +238,7 @@ __xpmem_work_fn(struct xpmem_palacios_state * state)
 
         memcpy(cmd->attach.pfns, pfn_buf, pfn_size);
         kfree(pfn_buf);
+
     }
 
     /* Clear device interrupt flag */

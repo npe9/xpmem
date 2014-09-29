@@ -441,6 +441,9 @@ extern void xpmem_unpin_pages(struct xpmem_segment *, struct mm_struct *, u64,
 extern void xpmem_unblock_recall_PFNs(struct xpmem_thread_group *);
 extern int xpmem_fork_begin(void);
 extern int xpmem_fork_end(void);
+
+/* found in xpmem_palacios.c */
+extern int xpmem_palacios_detach_paddr(struct xpmem_partition_state *, u64);
 #define XPMEM_TGID_STRING_LEN   11
 extern spinlock_t xpmem_unpin_procfs_lock;
 extern struct proc_dir_entry *xpmem_unpin_procfs_dir;

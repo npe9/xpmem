@@ -32,34 +32,6 @@ struct xpmem_domain_state {
 };
 
 
-struct xpmem_hashtable * attach_htable = NULL;
-
-struct xpmem_remote_attach_struct {
-    unsigned long vaddr;
-    unsigned long paddr;
-    unsigned long size;
-    struct list_head node;
-};
-
-
-extern int
-xpmem_palacios_detach_paddr(struct xpmem_partition_state * part_state,
-                            u64                            vaddr);
-
-static u32 
-domain_hash_fn(uintptr_t key)
-{
-    return hash_long(key);
-}
-
-static int
-domain_eq_fn(uintptr_t key1, 
-            uintptr_t key2)            
-{
-    return (key1 == key2);
-}
-
-
 
 static int
 xpmem_validate_remote_access(struct xpmem_access_permit * ap, 
@@ -340,8 +312,6 @@ xpmem_map_pfn_range(u64   at_vaddr,
     unsigned long addr = 0;
     u64 i = 0;
     int status = 0;
-    struct xpmem_remote_attach_struct * remote;
-    struct list_head * head;
 
     size = num_pfns * PAGE_SIZE;
 
@@ -357,83 +327,13 @@ xpmem_map_pfn_range(u64   at_vaddr,
         status = remap_pfn_range(vma, addr, pfns[i], PAGE_SIZE, vma->vm_page_prot);
         if (status) {
             printk(KERN_ERR "XPMEM: remap_pfn_range failed\n");
-            vm_munmap(at_vaddr, size);
             return -ENOMEM;
         }
     }   
 
-    if (!attach_htable) {
-        attach_htable = create_htable(0, domain_hash_fn, domain_eq_fn);
-        if (!attach_htable) {
-            vm_munmap(at_vaddr, size);
-            return -ENOMEM;
-        }
-    }
-
-    remote = kmalloc(sizeof(struct xpmem_remote_attach_struct), GFP_KERNEL);
-    if (!remote) {
-        vm_munmap(at_vaddr, size);
-        return -1;
-    }
-
-    remote->vaddr = at_vaddr;
-    remote->paddr = (pfns[0] << PAGE_SHIFT);
-    remote->size = size;
-
-    head = (struct list_head *)htable_search(attach_htable, current->tgid);
-    if (!head) {
-        head = kmalloc(sizeof(struct list_head), GFP_KERNEL);
-        if (!head) {
-            vm_munmap(at_vaddr, size);
-            return -ENOMEM;
-        }
-
-        INIT_LIST_HEAD(head);
-        if (!htable_insert(attach_htable, (uintptr_t)current->tgid, (uintptr_t)head)) {
-            vm_munmap(at_vaddr, size);
-            return -1;
-        }
-    }
-    list_add_tail(&(remote->node), head);
-    
     return 0;
 }
 
-
-static void 
-xpmem_detach_vaddr(struct xpmem_partition_state * part_state,
-                   u64                            vaddr)
-{
-    struct list_head * head = NULL;
-
-    if (!attach_htable) {
-        return;
-    }
-
-    head = (struct list_head *)htable_search(attach_htable, current->tgid);
-    if (!head) {
-        printk(KERN_ERR "XPMEM_EXTENDED: LEAKING VIRTUAL ADDRESS SPACE\n");
-    } else {
-        struct xpmem_remote_attach_struct * remote = NULL, * next = NULL;
-        list_for_each_entry_safe(remote, next, head, node) {
-            if (remote->vaddr == vaddr) {
-                vm_munmap(remote->vaddr, remote->size);
-
-                /* If we are running in a Palacios VM, we need to tell the hypervisor */
-                xpmem_palacios_detach_paddr(part_state, remote->paddr);
-
-                list_del(&(remote->node));
-                kfree(remote);
-                break;
-            }
-        }
-
-        if (list_empty(head)) {
-            htable_remove(attach_htable, (uintptr_t)current->tgid, 0);
-            kfree(head);
-        }
-    }
-}
 
 
 /* Callback for command being issued by the XPMEM name/forwarding service */
@@ -882,8 +782,7 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
 
     kfree(state->cmd);
 
-    /* Free virtual address space */
-    xpmem_detach_vaddr(part, vaddr);
+    //xpmem_detach_vaddr(part, vaddr);
 
     return 0;
 }
