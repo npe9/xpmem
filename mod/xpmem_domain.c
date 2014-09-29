@@ -197,8 +197,9 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
      */
 
     get_ex->apid = apid;
+    get_ex->size = seg->size;
 
-    printk("Returning apid %lli\n", get_ex->apid);
+    printk("Returning apid %lli (size=%llu)\n", get_ex->apid, get_ex->size);
     return 0;
 }
 
@@ -695,7 +696,8 @@ xpmem_get_remote(struct xpmem_partition_state * part,
                  int                            flags,
                  int                            permit_type,
                  u64                            permit_value,
-                 xpmem_apid_t                 * apid)
+                 xpmem_apid_t                 * apid,
+                 u64                          * size)
 {
     struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
     struct xpmem_cmd_ex         cmd;
@@ -729,8 +731,9 @@ xpmem_get_remote(struct xpmem_partition_state * part,
             return -1;
         }
 
-        /* Grab allocated apid */
+        /* Grab allocated apid and size */
         *apid = state->cmd->get.apid;
+        *size = state->cmd->get.size;
     }
 
     mutex_unlock(&(state->mutex));

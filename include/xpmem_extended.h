@@ -112,7 +112,8 @@ xpmem_get_remote(struct xpmem_partition_state * part,
                  int                            flags, 
                  int                            permit_type, 
                  u64                            permit_value, 
-                 xpmem_apid_t                 * apid);
+                 xpmem_apid_t                 * apid,
+                 u64                          * size);
 
 int xpmem_release_remote(struct xpmem_partition_state * part,
                          xpmem_segid_t                  segid,

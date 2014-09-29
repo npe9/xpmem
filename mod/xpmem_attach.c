@@ -301,9 +301,21 @@ out_1:
     return VM_FAULT_SIGBUS;
 }
 
+static int
+xpmem_remote_fault_handler(struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+    printk(KERN_ERR "XPMEM: Page fault in remote attachment address!!!!!\n");
+    return VM_FAULT_SIGBUS;
+}
+
 struct vm_operations_struct xpmem_vm_ops = {
     .close = xpmem_close_handler,
     .fault = xpmem_fault_handler
+};
+
+struct vm_operations_struct xpmem_remote_vm_ops = {
+    .close = xpmem_close_handler,
+    .fault = xpmem_remote_fault_handler,
 };
 
 /*
@@ -342,16 +354,22 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     struct xpmem_attachment *att;
     struct vm_area_struct *vma;
 
-    if (apid <= 0)
+    if (apid <= 0) {
+        printk("ATTACH 1\n");
         return -EINVAL;
+    }
 
     /* Ensure vaddr is valid */
-    if (vaddr && vaddr + PAGE_SIZE - offset_in_page(vaddr) >= TASK_SIZE)
+    if (vaddr && vaddr + PAGE_SIZE - offset_in_page(vaddr) >= TASK_SIZE) {
+        printk("ATTACH 2\n");
         return -EINVAL;
+    }
 
     /* The start of the attachment must be page aligned */
-    if (offset_in_page(vaddr) != 0 || offset_in_page(offset) != 0)
+    if (offset_in_page(vaddr) != 0 || offset_in_page(offset) != 0) {
+        printk("ATTACH 3\n");
         return -EINVAL;
+    }
 
     /* If the size is not page aligned, fix it */
     if (offset_in_page(size) != 0) 
@@ -359,12 +377,13 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
 
     ap_tg = xpmem_tg_ref_by_apid(apid);
     if (IS_ERR(ap_tg)) {
+        printk("ATTACH 4\n");
         return PTR_ERR(ap_tg);
-//        return xpmem_attach_remote(&(xpmem_my_part->part_state), apid, offset, size, at_vaddr_p);
     }
 
     ap = xpmem_ap_ref_by_apid(ap_tg, apid);
     if (IS_ERR(ap)) {
+        printk("ATTACH 5\n");
         xpmem_tg_deref(ap_tg);
         return PTR_ERR(ap);
     }
@@ -381,6 +400,8 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     ret = xpmem_validate_access(ap, offset, size, XPMEM_RDWR, &seg_vaddr);
     if (ret != 0)
         goto out_2;
+
+    printk("XPMEM ATTACH\n");
 
     /* size needs to reflect page offset to start of segment */
     size += offset_in_page(seg_vaddr);
@@ -461,7 +482,15 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     vma->vm_private_data = att;
     vma->vm_flags |=
         VM_DONTCOPY /*| VM_RESERVED*/ | VM_IO | VM_DONTEXPAND | VM_PFNMAP;
-    vma->vm_ops = &xpmem_vm_ops;
+
+    /* TODO: if remote, load in now */
+    if (ap->remote_apid > 0) {
+        printk("Using remote ops\n");
+        vma->vm_ops = &xpmem_remote_vm_ops;
+    } else {
+        printk("Using local ops\n");
+        vma->vm_ops = &xpmem_vm_ops;
+    }
 
     att->at_vma = vma;
 

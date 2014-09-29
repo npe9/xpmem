@@ -94,13 +94,16 @@ xpmem_make_apid(struct xpmem_thread_group *ap_tg)
 }
 
 
-static xpmem_apid_t
+static int
 xpmem_try_get_remote(xpmem_segid_t   segid,
                      int             flags,
                      int             permit_type,
-                     void          * permit_value)
+                     void          * permit_value,
+                     xpmem_apid_t  * remote_apid,
+                     size_t        * remote_size)
 {
     xpmem_apid_t apid   = 0;
+    size_t       size   = 0;
     int          status = 0;
     
     status = xpmem_get_remote(
@@ -109,14 +112,18 @@ xpmem_try_get_remote(xpmem_segid_t   segid,
         flags,
         permit_type,
         (u64)permit_value,
-        &apid);
+        &apid,
+        (u64 *)&size);
 
     if (status != 0) {
         printk(KERN_ERR "XPMEM: Cannot send remote get request\n");
         return -1;
     }
 
-    return apid;
+    *remote_apid = apid;
+    *remote_size = size;
+
+    return 0;
 }
 
 
@@ -193,6 +200,8 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 {
     xpmem_apid_t apid        = 0;
     xpmem_apid_t remote_apid = 0;
+    size_t       remote_size = 0;
+
     struct xpmem_segment *seg;
     struct xpmem_thread_group *ap_tg, *seg_tg;
     int status;
@@ -212,9 +221,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
     if (IS_ERR(seg_tg)) {
 
         /* No local segid matches this - let's try a remote one */
-        remote_apid = xpmem_try_get_remote(segid, flags, permit_type, permit_value);
-
-        if (remote_apid <= 0) {
+        if (xpmem_try_get_remote(segid, flags, permit_type, permit_value, &remote_apid, &remote_size) != 0) {
             printk("Could not get remote apid\n");
             return PTR_ERR(seg_tg);
         }
@@ -223,7 +230,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
          * was created locally by using the xpmem remote thread group to create
          * a "shadow" segment
          */
-        xpmem_make_segment(0, 0, permit_type, permit_value, xpmem_my_part->tg_remote, segid);
+        xpmem_make_segment(0, remote_size, permit_type, permit_value, xpmem_my_part->tg_remote, segid);
 
         /* Now, try the ref again */
         seg_tg = xpmem_tg_ref_by_tgid(xpmem_my_part->tg_remote->tgid);
