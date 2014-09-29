@@ -165,6 +165,7 @@ xpmem_fault_handler(struct vm_area_struct *vma, struct vm_fault *vmf)
     xpmem_ap_ref(ap);
     ap_tg = ap->tg;
     xpmem_tg_ref(ap_tg);
+
     if ((ap->flags & XPMEM_FLAG_DESTROYING) ||
             (ap_tg->flags & XPMEM_FLAG_DESTROYING)) {
         xpmem_att_deref(att);
@@ -172,6 +173,14 @@ xpmem_fault_handler(struct vm_area_struct *vma, struct vm_fault *vmf)
         xpmem_tg_deref(ap_tg);
         return VM_FAULT_SIGBUS;
     }
+
+    if (ap->remote_apid > 0) {
+        xpmem_att_deref(att);
+        xpmem_ap_deref(ap);
+        xpmem_tg_deref(ap_tg);
+        return VM_FAULT_SIGBUS;
+    }
+
     DBUG_ON(current->tgid != ap_tg->tgid);
     DBUG_ON(ap->mode != XPMEM_RDWR);
 
@@ -311,11 +320,6 @@ xpmem_remote_fault_handler(struct vm_area_struct *vma, struct vm_fault *vmf)
 struct vm_operations_struct xpmem_vm_ops = {
     .close = xpmem_close_handler,
     .fault = xpmem_fault_handler
-};
-
-struct vm_operations_struct xpmem_remote_vm_ops = {
-    .close = xpmem_close_handler,
-    .fault = xpmem_remote_fault_handler,
 };
 
 /*
@@ -482,15 +486,9 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     vma->vm_private_data = att;
     vma->vm_flags |=
         VM_DONTCOPY /*| VM_RESERVED*/ | VM_IO | VM_DONTEXPAND | VM_PFNMAP;
+    vma->vm_ops = &xpmem_vm_ops;
 
     /* TODO: if remote, load in now */
-    if (ap->remote_apid > 0) {
-        printk("Using remote ops\n");
-        vma->vm_ops = &xpmem_remote_vm_ops;
-    } else {
-        printk("Using local ops\n");
-        vma->vm_ops = &xpmem_vm_ops;
-    }
 
     att->at_vma = vma;
 
