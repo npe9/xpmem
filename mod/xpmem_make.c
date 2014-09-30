@@ -189,7 +189,7 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
 
     xpmem_seg_up_write(seg);
 
-    if (seg->flags & XPMEM_SEG_REMOTE) {
+    if (!(seg->flags & XPMEM_SEG_REMOTE)) {
         xpmem_remove_remote(&(xpmem_my_part->part_state), seg->segid);
     }
 
