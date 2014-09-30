@@ -43,7 +43,7 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg)
      */
     xpmem_make_remote(&(xpmem_my_part->part_state), segid_p);
 
-    DBUG_ON(*segid_p <= 0);
+    //DBUG_ON(*segid_p <= 0);
     return *segid_p;
 }
 
@@ -133,7 +133,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
     }
 
     segid = xpmem_make_segid(seg_tg);
-    if (segid < 0) {
+    if (segid <= 0) {
         xpmem_tg_deref(seg_tg);
         return segid;
     }
