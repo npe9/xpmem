@@ -341,11 +341,14 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     xpmem_seg_deref(seg);   /* deref of xpmem_get()'s ref */
     xpmem_tg_deref(seg_tg); /* deref of xpmem_get()'s ref */
 
-    /* If this is the last release of a segment, remove it */
+    /* Release remote apid */
     if (ap->flags & XPMEM_AP_REMOTE) {
+
         DBUG_ON(ap->remote_apid <= 0);
-        if (atomic_read(&seg->refcnt) == 0) {
-            xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
+        xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
+
+        /* If this is the last ref to the 'fake' segment, remove it */
+        if (atomic_read(&seg->refcnt) == 1) {
             xpmem_remove_seg(seg_tg, seg);
         }
     }

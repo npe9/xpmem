@@ -372,7 +372,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         case XPMEM_DETACH_COMPLETE: {
             state->cmd = kmalloc(sizeof(struct xpmem_cmd_ex), GFP_KERNEL);
             if (!state->cmd) {
-                break;
+                goto wakeup;
             }
 
             *state->cmd = *cmd;
@@ -381,7 +381,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
                 state->cmd->attach.pfns = kmalloc(sizeof(u64) * cmd->attach.num_pfns, GFP_KERNEL);
                 if (!state->cmd->attach.pfns) {
                     kfree(state->cmd);
-                    break;
+                    goto wakeup;
                 }
 
                 memcpy(state->cmd->attach.pfns, cmd->attach.pfns, cmd->attach.num_pfns * sizeof(u64));
@@ -389,8 +389,11 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
 
             state->cmd_complete = 1;
 
-            mb();
-            wake_up_interruptible(&(state->dom_waitq));
+            wakeup:
+            {
+                mb();
+                wake_up_interruptible(&(state->dom_waitq));
+            }
 
             break;
         }
@@ -493,6 +496,7 @@ xpmem_make_remote(struct xpmem_partition_state * part,
         
         /* Check command completion  */
         if (state->cmd_complete == 0) {
+            mutex_unlock(&(state->mutex));
             return -1;
         }
 
@@ -537,6 +541,7 @@ xpmem_remove_remote(struct xpmem_partition_state * part,
 
         /* Check command completion  */
         if (state->cmd_complete == 0) {
+            mutex_unlock(&(state->mutex));
             return -1;
         }
     }
@@ -586,6 +591,7 @@ xpmem_get_remote(struct xpmem_partition_state * part,
 
         /* Check command completion  */
         if (state->cmd_complete == 0) {
+            mutex_unlock(&(state->mutex));
             return -1;
         }
 
@@ -633,6 +639,7 @@ xpmem_release_remote(struct xpmem_partition_state * part,
 
         /* Check command completion  */
         if (state->cmd_complete == 0) {
+            mutex_unlock(&(state->mutex));
             return -1;
         }
     }
@@ -682,6 +689,7 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
 
         /* Check command completion  */
         if (state->cmd_complete == 0) {
+            mutex_unlock(&(state->mutex));
             return -1;
         }
 
@@ -739,6 +747,7 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
 
         /* Check command completion  */
         if (state->cmd_complete == 0) {
+            mutex_unlock(&(state->mutex));
             return -1;
         }
     }
