@@ -78,7 +78,7 @@ extern uint32_t xpmem_debug_on;
         printk("[%d]%s: "format"\n", current->tgid, __func__, ##args);
 
 #define XPMEM_ERR(format, args...) \
-    printk(KERN_ERR "[%s:%d] XPMEM_ERR: "format, __func__, __LINE__, ##args);
+    printk(KERN_ERR "XPMEM_ERR: "format" [%s:%d]\n", ##args, __FILE__, __LINE__);
 
 #define delayed_work work_struct
 

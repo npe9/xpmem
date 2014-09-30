@@ -90,7 +90,7 @@ xpmem_ping_ns(struct xpmem_partition_state * part_state,
 
             if (xpmem_search_link(part_state, search_id)) {
                 if (xpmem_send_cmd_link(part_state, search_id, &ping_cmd)) {
-                    XPMEM_ERR("Cannot send PING on link %lli\n", search_id);
+                    XPMEM_ERR("Cannot send PING on link %lli", search_id);
                 }
             }
 
@@ -130,7 +130,7 @@ xpmem_pong_ns(struct xpmem_partition_state * part_state,
 
             if (xpmem_search_link(part_state, search_id)) {
                 if (xpmem_send_cmd_link(part_state, search_id, &pong_cmd)) {
-                    XPMEM_ERR("Cannot send PONG on link %lli\n", search_id);
+                    XPMEM_ERR("Cannot send PONG on link %lli", search_id);
                 }
             }
         }
@@ -175,7 +175,7 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
                 cmd->type = XPMEM_PONG_NS;
 
                 if (xpmem_send_cmd_link(part_state, link, cmd)) {
-                    XPMEM_ERR("Cannot send command on link %lli\n", link);
+                    XPMEM_ERR("Cannot send command on link %lli", link);
                 }
             }
 
@@ -207,7 +207,7 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
             ret = xpmem_add_domid(part_state, XPMEM_NS_DOMID, link);
 
             if (ret == 0) {
-                XPMEM_ERR("Cannot insert domid %lli into hashtable\n", (xpmem_domid_t)XPMEM_NS_DOMID);
+                XPMEM_ERR("Cannot insert domid %lli into hashtable", (xpmem_domid_t)XPMEM_NS_DOMID);
             }
 
             /* Broadcast the PONG to all our neighbors, except the source */
@@ -224,7 +224,7 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
                 domid_req.dst_dom = XPMEM_NS_DOMID;
 
                 if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &domid_req)) {
-                    XPMEM_ERR("Cannot send command on link %lli\n", fwd_state->ns_link);
+                    XPMEM_ERR("Cannot send command on link %lli", fwd_state->ns_link);
                 }
             }
 
@@ -232,7 +232,7 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
         }
 
         default: {
-            XPMEM_ERR("Unknown PING operation: %s\n", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown PING operation: %s", cmd_to_string(cmd->type));
             return;
         }
     }
@@ -313,7 +313,7 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
                 ret = xpmem_add_domid(part_state, part_state->domid, part_state->local_link);
 
                 if (ret == 0) {
-                    XPMEM_ERR("Cannot insert domid %lli into hashtable\n", part_state->domid);
+                    XPMEM_ERR("Cannot insert domid %lli into hashtable", part_state->domid);
                 }
 
                 return;
@@ -322,7 +322,7 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
                 unsigned long                 flags = 0;
 
                 if (list_empty(&(fwd_state->domid_req_list))) {
-                    XPMEM_ERR("We currently do not support the buffering of XPMEM domids\n");
+                    XPMEM_ERR("We currently do not support the buffering of XPMEM domids");
                     return;
                 }
 
@@ -343,7 +343,7 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
                 ret = xpmem_add_domid(part_state, cmd->domid_req.domid, out_link);
 
                 if (ret == 0) {
-                    XPMEM_ERR("Cannot insert domid %lli into hashtable\n", cmd->domid_req.domid);
+                    XPMEM_ERR("Cannot insert domid %lli into hashtable", cmd->domid_req.domid);
                     out_cmd->domid_req.domid = -1;
                 }
             }
@@ -357,21 +357,21 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_search_domid(part_state, out_cmd->dst_dom);
 
             if (out_link == 0) {
-                XPMEM_ERR("Cannot find domid %lli in hashtable\n", out_cmd->dst_dom);
+                XPMEM_ERR("Cannot find domid %lli in hashtable", out_cmd->dst_dom);
                 return;
             }
 
             break;
 
         default: {
-            XPMEM_ERR("Unknown domid operation: %s\n", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown domid operation: %s", cmd_to_string(cmd->type));
             return;
         }
     }
 
     /* Send the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
-        XPMEM_ERR("Cannot send command on link %lli\n", out_link);
+        XPMEM_ERR("Cannot send command on link %lli", out_link);
     }
 }
 
@@ -454,13 +454,13 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
     /* If we don't have a domid, we need to fail */
     if (part_state->domid <= 0) {
-        XPMEM_ERR("This domain has no XPMEM domid. Are you running the nameserver anywhere?\n");
+        XPMEM_ERR("This domain has no XPMEM domid. Are you running the nameserver anywhere?");
 
         xpmem_set_failure(out_cmd);
         xpmem_set_complete(out_cmd);
 
         if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
-            XPMEM_ERR("Cannot send command on link %lli\n", out_link);
+            XPMEM_ERR("Cannot send command on link %lli", out_link);
         }
         return;
     }
@@ -482,7 +482,7 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_search_domid(part_state, out_cmd->dst_dom);
 
             if (out_link == 0) {
-                XPMEM_ERR("Cannot find domid %lli in hashtable\n", out_cmd->dst_dom);
+                XPMEM_ERR("Cannot find domid %lli in hashtable", out_cmd->dst_dom);
                 return;
             }
 
@@ -490,14 +490,14 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         }
 
         default: {
-            XPMEM_ERR("Unknown operation: %s\n", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown operation: %s", cmd_to_string(cmd->type));
             return;
         }
     }
 
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
-        XPMEM_ERR("Cannot send command on link %lli\n", out_link);
+        XPMEM_ERR("Cannot send command on link %lli", out_link);
     }
 }
 
@@ -665,7 +665,7 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
     );
 
     if (fwd_state->ping_thread == NULL) {
-        XPMEM_ERR("Cannot create kernel thread\n");
+        XPMEM_ERR("Cannot create kernel thread");
         kfree(fwd_state);
         return -1;
     }
@@ -720,7 +720,7 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
         dom_cmd.domid_req.domid = part_state->domid;
 
         if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &dom_cmd)) {
-            XPMEM_ERR("Cannot send DOMID_RELEASE on link %lli\n", fwd_state->ns_link);
+            XPMEM_ERR("Cannot send DOMID_RELEASE on link %lli", fwd_state->ns_link);
         }
     }
 

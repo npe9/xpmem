@@ -225,7 +225,6 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 
         /* No local segment found. Look for a remote one */
         if (xpmem_try_get_remote(segid, flags, permit_type, permit_value, &remote_apid, &remote_size) != 0) {
-            printk("Could not get remote apid\n");
             return PTR_ERR(seg_tg);
         }
 
@@ -238,14 +237,12 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         /* Now, try the ref again */
         seg_tg = xpmem_tg_ref_by_tgid(xpmem_my_part->tg_remote->tgid);
         if (IS_ERR(seg_tg)) {
-            printk("Could not get seg_tg\n");
             return PTR_ERR(seg_tg);
         }
     }
 
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);
     if (IS_ERR(seg)) {
-        printk("Could not get seg\n");
         xpmem_tg_deref(seg_tg);
         return PTR_ERR(seg);
     }

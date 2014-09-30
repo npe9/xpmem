@@ -97,14 +97,14 @@ enclave_segid_show(struct seq_file     * file,
     struct rb_node             * p   = NULL;
     struct xpmem_segid_rb_node * tmp = NULL;
 
-    seq_printf(file, "Domain %lli segids (%lu total):\n", 
+    seq_printf(file, "Domain %lli segids (%lu total):", 
         domain->domid, 
         domain->num_segids);
 
     for (p = rb_first(&(domain->segid_tree)); p != NULL; p = rb_next(p)) {
         tmp = rb_entry(p, struct xpmem_segid_rb_node, tree_node);
 
-        seq_printf(file, "  %lli (tgid = %d, uniq = %u)\n", 
+        seq_printf(file, "  %lli (tgid = %d, uniq = %u)", 
             tmp->segid,
             xpmem_segid_to_tgid(tmp->segid),
             xpmem_segid_to_uniq(tmp->segid));
@@ -118,14 +118,14 @@ enclave_apid_show(struct seq_file     * file,
     struct rb_node             * p   = NULL;
     struct xpmem_apid_rb_node * tmp = NULL;
 
-    seq_printf(file, "Domain %lli apids (%lu total):\n", 
+    seq_printf(file, "Domain %lli apids (%lu total):", 
         domain->domid, 
         domain->num_apids);
 
     for (p = rb_first(&(domain->apid_tree)); p != NULL; p = rb_next(p)) {
         tmp = rb_entry(p, struct xpmem_apid_rb_node, tree_node);
 
-        seq_printf(file, "  %lli (tgid = %d, uniq = %u), from domid %lli (segid = %lli, tgid = %d, uniq = %u)\n", 
+        seq_printf(file, "  %lli (tgid = %d, uniq = %u), from domid %lli (segid = %lli, tgid = %d, uniq = %u)", 
             tmp->apid,
             xpmem_apid_to_tgid(tmp->apid),
             xpmem_apid_to_uniq(tmp->apid),
@@ -144,7 +144,7 @@ proc_segid_show(struct seq_file * file,
     struct xpmem_ns_state * state  = NULL;
 
     if (IS_ERR(domain)) {
-        seq_printf(file, "NULL DOMID\n");
+        seq_printf(file, "NULL DOMID");
         return 0;
     }
 
@@ -167,7 +167,7 @@ proc_apid_show(struct seq_file * file,
     struct xpmem_ns_state * state  = NULL;
 
     if (IS_ERR(domain)) {
-        seq_printf(file, "NULL DOMID\n");
+        seq_printf(file, "NULL DOMID");
         return 0;
     }
 
@@ -418,7 +418,7 @@ alloc_xpmem_segid(struct xpmem_ns_state * ns_state,
 
     /* Add to domain */
     if (domain_add_xpmem_segid(domain, *segid) != 0) {
-        XPMEM_ERR("Cannot add segid %lli (tgid: %d, uniq: %u) to domain %lli tree\n",
+        XPMEM_ERR("Cannot add segid %lli (tgid: %d, uniq: %u) to domain %lli tree",
             *segid, 
             xpmem_segid_to_tgid(*segid),
             xpmem_segid_to_uniq(*segid),
@@ -450,7 +450,7 @@ free_xpmem_segid(struct xpmem_ns_state * ns_state,
 
     /* Remove from domain */
     if (domain_remove_xpmem_segid(domain, segid) != 0) {
-        XPMEM_ERR("Cannot remove segid %lli (tgid: %d, uniq: %u) from domain %lli tree\n",
+        XPMEM_ERR("Cannot remove segid %lli (tgid: %d, uniq: %u) from domain %lli tree",
             segid,
             xpmem_segid_to_tgid(segid),
             xpmem_segid_to_uniq(segid),
@@ -517,7 +517,7 @@ alloc_xpmem_domain(struct xpmem_ns_state * ns_state,
     domain->domid = (xpmem_domid_t)alloc_xpmem_domid(ns_state, domain, domid);
 
     if (domain->domid == -1) {
-        XPMEM_ERR("No free domids: cannot create new domain!\n");
+        XPMEM_ERR("No free domids: cannot create new domain!");
         return NULL;
     }
 
@@ -683,19 +683,19 @@ xpmem_ns_process_ping_cmd(struct xpmem_partition_state * part_state,
 
         case XPMEM_PONG_NS: {
             /* We received a PONG. WTF */
-            XPMEM_ERR("Name server received a PONG? Are there multiple name servers running?\n");
+            XPMEM_ERR("Name server received a PONG? Are there multiple name servers running?");
             return;
         }
 
         default: {
-            XPMEM_ERR("Unknown PING operation: %s\n", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown PING operation: %s", cmd_to_string(cmd->type));
             return;
         }
     }
 
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
-        XPMEM_ERR("Cannot send command on link %lli\n", link);
+        XPMEM_ERR("Cannot send command on link %lli", link);
     }
 }
 
@@ -723,7 +723,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
             domain = alloc_xpmem_domain(ns_state, -1);
 
             if (domain == NULL) {
-                XPMEM_ERR("Cannot create new domain\n");
+                XPMEM_ERR("Cannot create new domain");
                 out_cmd->domid_req.domid = -1;
                 goto out_domid_req;
             }
@@ -734,7 +734,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
             ret = xpmem_add_domid(part_state, domain->domid, link);
 
             if (ret == 0) {
-                XPMEM_ERR("Cannot insert domid %lli into hashtable\n", domain->domid);
+                XPMEM_ERR("Cannot insert domid %lli into hashtable", domain->domid);
                 out_cmd->domid_req.domid = -1;
                 goto out_domid_req;
             }
@@ -750,7 +750,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
 
         case XPMEM_DOMID_RESPONSE: {
             /* We've been allocated a domid. Interesting. */
-            XPMEM_ERR("Name server has been allocated a domid? Are there multiple name servers running?\n");
+            XPMEM_ERR("Name server has been allocated a domid? Are there multiple name servers running?");
             return;
         }
 
@@ -761,28 +761,28 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
             ret = free_xpmem_domain(ns_state, req_domain);
 
             if (ret != 0) {
-                XPMEM_ERR("Cannot free domain\n");
+                XPMEM_ERR("Cannot free domain");
             }
 
             /* Update domid map */
             ret = xpmem_remove_domid(part_state, cmd->domid_req.domid);
 
             if (ret == 0) {
-                XPMEM_ERR("Cannot free domid %lli from hashtable\n", cmd->domid_req.domid);
+                XPMEM_ERR("Cannot free domid %lli from hashtable", cmd->domid_req.domid);
             }
 
             /* No command to send */
             return;
         }
         default: {
-            XPMEM_ERR("Unknown domid operation: %s\n", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown domid operation: %s", cmd_to_string(cmd->type));
             return;
         }
     }
 
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
-        XPMEM_ERR("Cannot send command on link %lli\n", link);
+        XPMEM_ERR("Cannot send command on link %lli", link);
     }
 }
 
@@ -810,7 +810,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
             /* Allocate a unique segid to this domain */
             if (alloc_xpmem_segid(ns_state, req_domain, &(cmd->make.segid))) {
-                XPMEM_ERR("Cannot allocate segid\n");
+                XPMEM_ERR("Cannot allocate segid");
                 out_cmd->make.segid = -1;
                 goto out_make;
             }
@@ -819,7 +819,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             ret = xpmem_add_segid(ns_state, cmd->make.segid, cmd->src_dom);
 
             if (ret == 0) {
-                XPMEM_ERR("Cannot insert segid %lli hashtable\n", cmd->make.segid);
+                XPMEM_ERR("Cannot insert segid %lli hashtable", cmd->make.segid);
                 out_cmd->make.segid = -1;
                 goto out_make;
             }
@@ -838,21 +838,32 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_REMOVE: {
             xpmem_domid_t domid = 0;
 
-            /* Add segid to free list */
-            if (free_xpmem_segid(ns_state, req_domain, cmd->remove.segid)) {
-                XPMEM_ERR("Cannot free segid %lli\n", cmd->remove.segid);
-            }
-
-            /* Remove segid from map */            
-            domid = xpmem_remove_segid(ns_state, cmd->remove.segid); 
+            /* Search segid from domid's map */            
+            domid = xpmem_search_segid(ns_state, cmd->remove.segid); 
 
             if (domid == 0) {
-                XPMEM_ERR("Cannot remove segid %lli from hashtable (tgid: %d, uniq: %d)\n",
+                XPMEM_ERR("Cannot remove segid %lli from hashtable (tgid: %d, uniq: %d)",
                     cmd->remove.segid,
                     xpmem_segid_to_tgid(cmd->remove.segid),
                     xpmem_segid_to_uniq(cmd->remove.segid));
+                goto out_remove;
             }
 
+            if (domid != req_domain->domid) {
+                XPMEM_ERR("Domain %lli trying to remove segid %lli, which was allocated to domid %lli",
+                    req_domain->domid, cmd->remove.segid, domid);
+                goto out_remove;
+            }
+
+            /* Proceed with the removal */
+            domid = xpmem_remove_segid(ns_state, cmd->remove.segid);
+
+            /* Add segid to free list */
+            if (free_xpmem_segid(ns_state, req_domain, cmd->remove.segid)) {
+                XPMEM_ERR("Cannot free segid %lli", cmd->remove.segid);
+            }
+
+            out_remove:
             { 
                 out_cmd->type    = XPMEM_REMOVE_COMPLETE;
                 out_cmd->dst_dom = cmd->src_dom;
@@ -870,7 +881,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             domid = xpmem_search_segid(ns_state, cmd->get.segid);
 
             if (domid == 0) {
-                XPMEM_ERR("Cannot find segid %lli in hashtable. Cannot complete XPMEM_GET\n", cmd->get.segid);
+                XPMEM_ERR("Cannot find segid %lli in hashtable. Cannot complete XPMEM_GET", cmd->get.segid);
                 goto err_get;
             }
 
@@ -878,7 +889,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_search_domid(part_state, domid);
 
             if (out_link == 0) {
-                XPMEM_ERR("Cannot find domid %lli in hashtable\n", domid);
+                XPMEM_ERR("Cannot find domid %lli in hashtable", domid);
                 goto err_get;
             }
 
@@ -905,7 +916,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             domid = xpmem_search_segid(ns_state, cmd->attach.segid);
 
             if (domid == 0) {
-                XPMEM_ERR("Cannot find segid %lli in hashtable\n. Cannot complete XPMEM_RELEASE", cmd->release.apid);
+                XPMEM_ERR("Cannot find segid %lli in hashtable. Cannot complete XPMEM_RELEASE", cmd->release.apid);
                 goto err_release;
             }
 
@@ -913,7 +924,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_search_domid(part_state, domid);
 
             if (out_link == 0) {
-                XPMEM_ERR("Cannot find domid %lli in hashtable\n", domid);
+                XPMEM_ERR("Cannot find domid %lli in hashtable", domid);
                 goto err_release;
             }
 
@@ -939,7 +950,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             domid = xpmem_search_segid(ns_state, cmd->attach.segid);
 
             if (domid == 0) {
-                XPMEM_ERR("Cannot find apid %lli in hashtable. Cannot complete XPMEM_ATTACH\n", cmd->attach.apid);
+                XPMEM_ERR("Cannot find apid %lli in hashtable. Cannot complete XPMEM_ATTACH", cmd->attach.apid);
                 goto err_attach;
             }
 
@@ -947,7 +958,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_search_domid(part_state, domid);
 
             if (out_link == 0) {
-                XPMEM_ERR("Cannot find domid %lli in hashtable\n", domid);
+                XPMEM_ERR("Cannot find domid %lli in hashtable", domid);
                 goto err_attach;
             }
 
@@ -983,7 +994,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
             if (cmd->get.apid > 0) {
                 if (domain_add_xpmem_apid(req_domain, src_domain, cmd->get.segid, cmd->get.apid) != 0) {
-                    XPMEM_ERR("Cannot add apid %lli to domain %lli tree\n",
+                    XPMEM_ERR("Cannot add apid %lli to domain %lli tree",
                         cmd->get.apid, req_domain->domid);
                 }
             }
@@ -995,7 +1006,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             /* Perform apid accounting */
 
             if (domain_remove_xpmem_apid(req_domain, cmd->release.apid) != 0) {
-                XPMEM_ERR("Cannot remove apid %lli from domain %lli tree\n",
+                XPMEM_ERR("Cannot remove apid %lli from domain %lli tree",
                     cmd->release.apid, req_domain->domid);
             }
 
@@ -1013,7 +1024,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_search_domid(part_state, cmd->dst_dom);
 
             if (out_link == 0) {
-                XPMEM_ERR("Cannot find domid %lli in hashtable\n", cmd->dst_dom);
+                XPMEM_ERR("Cannot find domid %lli in hashtable", cmd->dst_dom);
                 return;
             }
 
@@ -1022,7 +1033,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
 
         default: {
-            XPMEM_ERR("Unknown operation: %s\n", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown operation: %s", cmd_to_string(cmd->type));
             return;
         }
     }
@@ -1032,7 +1043,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
-        XPMEM_ERR("Cannot send command on link %lli\n", link);
+        XPMEM_ERR("Cannot send command on link %lli", link);
     }
 }
 
@@ -1070,7 +1081,7 @@ prepare_domains(struct xpmem_partition_state  * part_state,
 
     /* Always make sure we are the destination */
     if (d_domid != XPMEM_NS_DOMID) {
-        XPMEM_ERR("Name server processing errant command (dst domid:%lli, ns domid:%lli)\n",
+        XPMEM_ERR("Name server processing errant command (dst domid:%lli, ns domid:%lli)",
             d_domid, (xpmem_domid_t)XPMEM_NS_DOMID);
         return -1;
     }
@@ -1086,14 +1097,14 @@ prepare_domains(struct xpmem_partition_state  * part_state,
             if ((r_domid <= 0) || 
                 (r_domid >= XPMEM_MAX_DOMID))
             {
-                XPMEM_ERR("Invalid request domid (%lli)\n", r_domid);
+                XPMEM_ERR("Invalid request domid (%lli)", r_domid);
                 return -1;
             }
 
             if ((s_domid <= 0) || 
                 (s_domid >= XPMEM_MAX_DOMID))
             {
-                XPMEM_ERR("Invalid source domid (%lli)\n", s_domid);
+                XPMEM_ERR("Invalid source domid (%lli)", s_domid);
                 return -1;
             }
 
@@ -1102,12 +1113,12 @@ prepare_domains(struct xpmem_partition_state  * part_state,
             s = part_state->ns_state->domain_map[s_domid];
 
             if (r == NULL) {
-                XPMEM_ERR("NULL request domain (domid:%lli)\n", r_domid);
+                XPMEM_ERR("NULL request domain (domid:%lli)", r_domid);
                 return -1;
             }
 
             if (s == NULL) {
-                XPMEM_ERR("NULL source domain (domid:%lli)\n", s_domid);
+                XPMEM_ERR("NULL source domain (domid:%lli)", s_domid);
                 return -1;
             }
 
@@ -1135,7 +1146,7 @@ xpmem_ns_deliver_cmd(struct xpmem_partition_state * part_state,
     
     /* Sanity check domains */
     if (prepare_domains(part_state, cmd, &req_domain, &src_domain) != 0) {
-        XPMEM_ERR("Command with malformed domids: (req:%lli, src:%lli, dst:%lli)\n",
+        XPMEM_ERR("Command with malformed domids: (req:%lli, src:%lli, dst:%lli)",
             cmd->req_dom, cmd->src_dom, cmd->dst_dom);
         return 0;
     }

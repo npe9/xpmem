@@ -218,7 +218,7 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, num_pfns, 0);
 
     if (ret != 0) {
-        XPMEM_ERR("Could not pin memory\n");
+        XPMEM_ERR("Could not pin memory");
         goto out_3;
     }
 
@@ -231,7 +231,7 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     for (i = 0; i < num_pfns; i++) {
         pfn = xpmem_vaddr_to_PFN(seg_tg->mm, seg_vaddr + (i * PAGE_SIZE));
         if (!pfn_valid(pfn)) {
-            XPMEM_ERR("Invalid PFN\n");
+            XPMEM_ERR("Invalid PFN");
             kfree(pfns);
 
             ret = -EFAULT;
@@ -285,7 +285,7 @@ xpmem_map_pfn_range(u64   at_vaddr,
 
     vma = find_vma(current->mm, at_vaddr);
     if (!vma) {
-        XPMEM_ERR("find_vma() failed\n");
+        XPMEM_ERR("find_vma() failed");
         return -ENOMEM;
     }   
 
@@ -294,7 +294,7 @@ xpmem_map_pfn_range(u64   at_vaddr,
 
         status = remap_pfn_range(vma, addr, pfns[i], PAGE_SIZE, vma->vm_page_prot);
         if (status) {
-            XPMEM_ERR("remap_pfn_range() failed\n");
+            XPMEM_ERR("remap_pfn_range() failed");
             return -ENOMEM;
         }
     }   
@@ -396,7 +396,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         }
 
         default:
-            XPMEM_ERR("Domain given unknown XPMEM command %d\n", cmd->type);
+            XPMEM_ERR("Domain given unknown XPMEM command %d", cmd->type);
             return -1;
 
     }
@@ -423,7 +423,7 @@ xpmem_domain_init(struct xpmem_partition_state * part)
             (void *)state);
 
     if (state->link <= 0) {
-        XPMEM_ERR("Failed to register local domain with name/forwarding service\n");
+        XPMEM_ERR("Failed to register local domain with name/forwarding service");
         kfree(state);
         return -1;
     }
