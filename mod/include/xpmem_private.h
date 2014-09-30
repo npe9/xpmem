@@ -546,14 +546,6 @@ xpmem_att_destroyable(struct xpmem_attachment *att)
 static inline void
 xpmem_tg_ref(struct xpmem_thread_group *tg)
 {
-    /* Do not allow refs of the remote thread group, unless this is in the
-     * initialization */
-    if (tg->tgid == XPMEM_REMOTE_TG_TGID) {
-        if (!(tg->flags & XPMEM_FLAG_CREATING_REMOTE)) {
-            return;
-        }
-    }
-
     DBUG_ON(atomic_read(&tg->refcnt) <= 0);
     atomic_inc(&tg->refcnt);
 }
