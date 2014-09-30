@@ -61,8 +61,8 @@ struct xpmem_segid_rb_node {
 
 /* RB-tree node for domain apid accounting */
 struct xpmem_apid_rb_node {
-    xpmem_domid_t  src_domid; /* source domain of the segid */
-    xpmem_segid_t  src_segid; /* segid target of the XPMEM_GET */
+    xpmem_domid_t  dst_domid; /* destination domain of the apid */
+    xpmem_segid_t  segid;     /* segid target of the XPMEM_GET */
     xpmem_apid_t   apid;      /* remote apid returned from the XPMEM_GET */
     struct rb_node tree_node;
 };
@@ -97,14 +97,14 @@ enclave_segid_show(struct seq_file     * file,
     struct rb_node             * p   = NULL;
     struct xpmem_segid_rb_node * tmp = NULL;
 
-    seq_printf(file, "Domain %lli segids (%lu total):", 
+    seq_printf(file, "Domain %lli segids (%lu total):\n", 
         domain->domid, 
         domain->num_segids);
 
     for (p = rb_first(&(domain->segid_tree)); p != NULL; p = rb_next(p)) {
         tmp = rb_entry(p, struct xpmem_segid_rb_node, tree_node);
 
-        seq_printf(file, "  %lli (tgid = %d, uniq = %u)", 
+        seq_printf(file, "  %lli (tgid = %d, uniq = %u)\n", 
             tmp->segid,
             xpmem_segid_to_tgid(tmp->segid),
             xpmem_segid_to_uniq(tmp->segid));
@@ -118,21 +118,19 @@ enclave_apid_show(struct seq_file     * file,
     struct rb_node             * p   = NULL;
     struct xpmem_apid_rb_node * tmp = NULL;
 
-    seq_printf(file, "Domain %lli apids (%lu total):", 
+    seq_printf(file, "Domain %lli apids (%lu total):\n", 
         domain->domid, 
         domain->num_apids);
 
     for (p = rb_first(&(domain->apid_tree)); p != NULL; p = rb_next(p)) {
         tmp = rb_entry(p, struct xpmem_apid_rb_node, tree_node);
 
-        seq_printf(file, "  %lli (tgid = %d, uniq = %u), from domid %lli (segid = %lli, tgid = %d, uniq = %u)", 
+        seq_printf(file, "  %lli (tgid = %d, uniq = %u, segid=%llu), for domid %lli\n", 
             tmp->apid,
             xpmem_apid_to_tgid(tmp->apid),
             xpmem_apid_to_uniq(tmp->apid),
-            tmp->src_domid,
-            tmp->src_segid,
-            xpmem_segid_to_tgid(tmp->src_segid),
-            xpmem_segid_to_uniq(tmp->src_segid));
+            tmp->segid,
+            tmp->dst_domid);
     }
 }
 
@@ -144,7 +142,7 @@ proc_segid_show(struct seq_file * file,
     struct xpmem_ns_state * state  = NULL;
 
     if (IS_ERR(domain)) {
-        seq_printf(file, "NULL DOMID");
+        seq_printf(file, "NULL DOMID\n");
         return 0;
     }
 
@@ -167,7 +165,7 @@ proc_apid_show(struct seq_file * file,
     struct xpmem_ns_state * state  = NULL;
 
     if (IS_ERR(domain)) {
-        seq_printf(file, "NULL DOMID");
+        seq_printf(file, "NULL DOMID\n");
         return 0;
     }
 
@@ -313,7 +311,7 @@ domain_remove_xpmem_segid(struct xpmem_domain * domain,
 
 static int
 domain_add_xpmem_apid(struct xpmem_domain * domain, 
-                      struct xpmem_domain * segid_domain,
+                      struct xpmem_domain * dst_domain,
                       xpmem_segid_t         segid,
                       xpmem_apid_t          apid)
 {
@@ -342,9 +340,9 @@ domain_add_xpmem_apid(struct xpmem_domain * domain,
             return -1;
         }
 
-        node->apid       = apid;
-        node->src_segid  = segid;
-        node->src_domid  = segid_domain->domid;
+        node->apid      = apid;
+        node->segid     = segid;
+        node->dst_domid = dst_domain->domid;
 
         rb_link_node(&(node->tree_node), parent, p);
         rb_insert_color(&(node->tree_node), &(domain->apid_tree));
@@ -993,7 +991,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             /* Perform apid accounting */
 
             if (cmd->get.apid > 0) {
-                if (domain_add_xpmem_apid(req_domain, src_domain, cmd->get.segid, cmd->get.apid) != 0) {
+                if (domain_add_xpmem_apid(src_domain, req_domain, cmd->get.segid, cmd->get.apid) != 0) {
                     XPMEM_ERR("Cannot add apid %lli to domain %lli tree",
                         cmd->get.apid, req_domain->domid);
                 }
@@ -1005,7 +1003,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_RELEASE_COMPLETE: {
             /* Perform apid accounting */
 
-            if (domain_remove_xpmem_apid(req_domain, cmd->release.apid) != 0) {
+            if (domain_remove_xpmem_apid(src_domain, cmd->release.apid) != 0) {
                 XPMEM_ERR("Cannot remove apid %lli from domain %lli tree",
                     cmd->release.apid, req_domain->domid);
             }
