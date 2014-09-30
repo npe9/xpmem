@@ -38,8 +38,6 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg)
     segid.tgid = seg_tg->tgid;
     segid.uniq = (unsigned short)uniq;
 
-    printk("Calling xpmem make remote\n");
-
     /* Register with the nameserver, which will almost certainly change the uniq
      * value assigned here
      */
