@@ -276,7 +276,7 @@ xpmem_send_cmd_link(struct xpmem_partition_state * state,
     struct xpmem_link_connection * conn = xpmem_search_link(state, link);
 
     if (conn == NULL) {
-        printk(KERN_ERR "XPMEM: NULL connection for link %lli\n", link);
+        XPMEM_ERR("NULL connection for link %lli\n", link);
         return -1;
     }
 
@@ -319,7 +319,7 @@ xpmem_add_connection(struct xpmem_partition_state * part_state,
             /* Associate the link with our domid, if we have one */
             if (part_state->domid > 0) {
                 if (xpmem_add_domid(part_state, part_state->domid, part_state->local_link) == 0) {
-                    printk(KERN_ERR "XPMEM: cannot insert into domid hashtable\n");
+                    XPMEM_ERR("Cannot insert into domid hashtable\n");
                     return -1;
                 }
             }
@@ -327,7 +327,6 @@ xpmem_add_connection(struct xpmem_partition_state * part_state,
 
         conn = kmalloc(sizeof(struct xpmem_link_connection), GFP_KERNEL);
         if (!conn) {
-            printk(KERN_ERR "XPMEM: out of memory\n");
             return -1;
         }
 
@@ -337,7 +336,7 @@ xpmem_add_connection(struct xpmem_partition_state * part_state,
 
         /* Update the link map */
         if (xpmem_add_link(part_state, link, conn) == 0) {
-            printk(KERN_ERR "XPMEM: cannot insert into link hashtable\n");
+            XPMEM_ERR("Cannot insert into link hashtable\n");
             kfree(conn);
             return -1;
         }
@@ -441,13 +440,13 @@ xpmem_partition_init(struct xpmem_partition_state * state, int is_ns)
     if (is_ns) {
         status = xpmem_ns_init(state);
         if (status != 0) {
-            printk(KERN_ERR "XPMEM: Could not initialize name service\n");
+            XPMEM_ERR("Could not initialize name service\n");
             goto err_ns;
         }
     } else {
         status = xpmem_fwd_init(state);
         if (status != 0) {
-            printk(KERN_ERR "XPMEM: Could not initialize forwarding service\n");
+            XPMEM_ERR("Could not initialize forwarding service\n");
             goto err_fwd;
         }
     }
@@ -456,14 +455,14 @@ xpmem_partition_init(struct xpmem_partition_state * state, int is_ns)
     /* Bring up palacios device driver / host OS interface */
     status = xpmem_palacios_init(state);
     if (status != 0) {
-        printk(KERN_ERR "XPMEM: Could not initialize Palacios XPMEM state\n");
+        XPMEM_ERR("Could not initialize Palacios XPMEM state\n");
         goto err_palacios;
     }
 
     /* Register a local domain */
     status = xpmem_domain_init(state);
     if (status != 0) {
-        printk(KERN_ERR "XPMEM: Could not initialize local domain XPMEM state\n");
+        XPMEM_ERR("Could not initialize local domain XPMEM state\n");
         goto err_domain;
     }
 

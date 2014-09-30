@@ -218,13 +218,12 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, num_pfns, 0);
 
     if (ret != 0) {
-        printk(KERN_ERR "XPMEM: could not pin memory\n");
+        XPMEM_ERR("Could not pin memory\n");
         goto out_3;
     }
 
     pfns = kmalloc(sizeof(u64) * num_pfns, GFP_KERNEL);
     if (!pfns) {
-        printk(KERN_ERR "XPMEM: out of memory\n");
         ret = -ENOMEM;
         goto out_3;
     }
@@ -232,7 +231,7 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     for (i = 0; i < num_pfns; i++) {
         pfn = xpmem_vaddr_to_PFN(seg_tg->mm, seg_vaddr + (i * PAGE_SIZE));
         if (!pfn_valid(pfn)) {
-            printk(KERN_ERR "XPMEM: invalid PFN\n");
+            XPMEM_ERR("Invalid PFN\n");
             kfree(pfns);
 
             ret = -EFAULT;
@@ -286,7 +285,7 @@ xpmem_map_pfn_range(u64   at_vaddr,
 
     vma = find_vma(current->mm, at_vaddr);
     if (!vma) {
-        printk(KERN_ERR "XPMEM: find_vma failed - this should be impossible\n");
+        XPMEM_ERR("find_vma() failed\n");
         return -ENOMEM;
     }   
 
@@ -295,7 +294,7 @@ xpmem_map_pfn_range(u64   at_vaddr,
 
         status = remap_pfn_range(vma, addr, pfns[i], PAGE_SIZE, vma->vm_page_prot);
         if (status) {
-            printk(KERN_ERR "XPMEM: remap_pfn_range failed\n");
+            XPMEM_ERR("remap_pfn_range() failed\n");
             return -ENOMEM;
         }
     }   
@@ -373,7 +372,6 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         case XPMEM_DETACH_COMPLETE: {
             state->cmd = kmalloc(sizeof(struct xpmem_cmd_ex), GFP_KERNEL);
             if (!state->cmd) {
-                printk(KERN_ERR "XPMEM: out of memory\n");
                 break;
             }
 
@@ -382,7 +380,6 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
             if (cmd->type == XPMEM_ATTACH_COMPLETE) {
                 state->cmd->attach.pfns = kmalloc(sizeof(u64) * cmd->attach.num_pfns, GFP_KERNEL);
                 if (!state->cmd->attach.pfns) {
-                    printk(KERN_ERR "XPMEM: out of memory\n");
                     kfree(state->cmd);
                     break;
                 }
@@ -399,7 +396,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         }
 
         default:
-            printk(KERN_ERR "XPMEM: domain given unknown XPMEM command %d\n", cmd->type);
+            XPMEM_ERR("Domain given unknown XPMEM command %d\n", cmd->type);
             return -1;
 
     }
@@ -426,8 +423,7 @@ xpmem_domain_init(struct xpmem_partition_state * part)
             (void *)state);
 
     if (state->link <= 0) {
-        printk(KERN_ERR "XPMEM: failed to register local domain with"
-            " name/forwarding service\n");
+        XPMEM_ERR("Failed to register local domain with name/forwarding service\n");
         kfree(state);
         return -1;
     }

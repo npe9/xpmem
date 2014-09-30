@@ -116,7 +116,6 @@ xpmem_try_get_remote(xpmem_segid_t   segid,
         (u64 *)&size);
 
     if (status != 0) {
-        printk(KERN_ERR "XPMEM: Cannot send remote get request\n");
         return -1;
     }
 

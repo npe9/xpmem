@@ -12,6 +12,7 @@
 #include <linux/kallsyms.h>
 #include <linux/mm.h>
 
+#include <xpmem_private.h>
 #include <xpmem_syms.h>
 
 
@@ -78,7 +79,7 @@ xpmem_linux_symbol_init(void)
         symbol_addr = kallsyms_lookup_name("tlb_gather_mmu");
 
         if (symbol_addr == 0) {
-            printk(KERN_ERR "XPMEM: Linux symbol tlb_gather_mmu not found.\n");
+            XPMEM_ERR("Linux symbol tlb_gather_mmu not found.\n");
             return -1;
         }
 
@@ -93,7 +94,7 @@ xpmem_linux_symbol_init(void)
         symbol_addr = kallsyms_lookup_name("tlb_finish_mmu");
 
         if (symbol_addr == 0) {
-            printk(KERN_ERR "XPMEM: Linux symbol tlb_finish_mmu not found.\n");
+            XPMEM_ERR("Linux symbol tlb_finish_mmu not found.\n");
             return -1;
         }
 
@@ -107,7 +108,7 @@ xpmem_linux_symbol_init(void)
         symbol_addr = kallsyms_lookup_name("tlb_flush_mmu");
 
         if (symbol_addr == 0) {
-            printk(KERN_ERR "XPMEM: Linux symbol tlb_flush_mmu not found.\n");
+            XPMEM_ERR("Linux symbol tlb_flush_mmu not found.\n");
             return -1;
         }
 
@@ -121,7 +122,7 @@ xpmem_linux_symbol_init(void)
         symbol_addr = kallsyms_lookup_name("huge_pte_offset");
 
         if (symbol_addr == 0) {
-            printk(KERN_ERR "XPMEM: Linux symbol huge_pte_offset not found.\n");
+            XPMEM_ERR("Linux symbol huge_pte_offset not found.\n");
             return -1;
         }
 
@@ -135,7 +136,7 @@ xpmem_linux_symbol_init(void)
         symbol_addr = kallsyms_lookup_name("zap_page_range");
 
         if (symbol_addr == 0) {
-            printk(KERN_ERR "XPMEM: Linux symbol zap_page_range not found.\n");
+            XPMEM_ERR("Linux symbol zap_page_range not found.\n");
             return -1;
         }
 
