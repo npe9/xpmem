@@ -341,11 +341,13 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     xpmem_seg_deref(seg);   /* deref of xpmem_get()'s ref */
     xpmem_tg_deref(seg_tg); /* deref of xpmem_get()'s ref */
 
-    /* If the segment is for a remote segid, remove it */
+    /* If this is the last release of a segment, remove it */
     if (ap->flags & XPMEM_AP_REMOTE) {
         DBUG_ON(ap->remote_apid <= 0);
-        xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
-        xpmem_remove_seg(seg_tg, seg);
+        if (atomic_read(&seg->refcnt) == 0) {
+            xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
+            xpmem_remove_seg(seg_tg, seg);
+        }
     }
 
     xpmem_ap_destroyable(ap);
