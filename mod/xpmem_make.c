@@ -77,6 +77,10 @@ xpmem_make_segment(u64                         vaddr,
     INIT_LIST_HEAD(&seg->ap_list);
     INIT_LIST_HEAD(&seg->seg_node);
 
+    if (seg->vaddr == 0) {
+        seg->flags = XPMEM_SEG_REMOTE;
+    }
+
     xpmem_seg_not_destroyable(seg);
 
     /* add seg to its tg's list of segs */
@@ -185,7 +189,9 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
 
     xpmem_seg_up_write(seg);
 
-    xpmem_remove_remote(&(xpmem_my_part->part_state), seg->segid);
+    if (seg->flags & XPMEM_SEG_REMOTE) {
+        xpmem_remove_remote(&(xpmem_my_part->part_state), seg->segid);
+    }
 
     xpmem_seg_destroyable(seg);
 

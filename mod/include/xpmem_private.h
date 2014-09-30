@@ -373,11 +373,12 @@ xpmem_apid_to_uniq(xpmem_segid_t apid)
 #define XPMEM_FLAG_DESTROYING       0x00010 /* being destroyed */
 #define XPMEM_FLAG_DESTROYED        0x00020 /* 'being destroyed' finished */
 #define XPMEM_FLAG_CREATING_REMOTE  0x00040 /* being created */
-#define XPMEM_AP_REMOTE             0x00080 /* remote access permit */
-#define XPMEM_ATT_REMOTE            0x00100 /* remote attachment struct */
+#define XPMEM_SEG_REMOTE            0x00080 /* remote access permit */
+#define XPMEM_AP_REMOTE             0x00100 /* remote access permit */
+#define XPMEM_ATT_REMOTE            0x00200 /* remote attachment struct */
 
-#define XPMEM_FLAG_VALIDPTEs        0x00200 /* valid PTEs exist */
-#define XPMEM_FLAG_RECALLINGPFNS    0x00400 /* recalling PFNs */
+#define XPMEM_FLAG_VALIDPTEs        0x00400 /* valid PTEs exist */
+#define XPMEM_FLAG_RECALLINGPFNS    0x00800 /* recalling PFNs */
 
 #define XPMEM_DONT_USE_1        0x10000
 #define XPMEM_DONT_USE_2        0x20000
