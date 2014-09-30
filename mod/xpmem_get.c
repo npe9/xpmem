@@ -80,7 +80,7 @@ xpmem_make_apid(struct xpmem_thread_group *ap_tg)
     DBUG_ON(sizeof(struct xpmem_id) != sizeof(xpmem_apid_t));
 
     uniq = atomic_inc_return(&ap_tg->uniq_apid);
-    if (uniq > XPMEM_MAX_UNIQ_APID) {
+    if (uniq > XPMEM_MAX_UNIQ_ID) {
         atomic_dec(&ap_tg->uniq_apid);
         return -EBUSY;
     }

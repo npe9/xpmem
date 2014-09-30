@@ -1199,14 +1199,14 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
     part_state->ns_state = ns_state;
 
     /* Populate segid list */
-    for (i = XPMEM_MIN_SEGID; i < XPMEM_MAX_UNIQ_SEGID; i++) {
+    for (i = XPMEM_MIN_SEGID; i < XPMEM_MAX_UNIQ_ID; i++) {
         iter = kmalloc(sizeof(struct xpmem_segid_list_node), GFP_KERNEL);
 
         if (!iter) {
             goto err_malloc; 
         }
 
-        iter->uniq = (i * XPMEM_MAX_UNIQ_APID);
+        iter->uniq = i;
         list_add_tail(&(iter->list_node), &(ns_state->segid_free_list));
     }
 

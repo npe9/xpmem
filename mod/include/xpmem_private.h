@@ -334,8 +334,6 @@ struct xpmem_id {
 };
 
 #define XPMEM_MAX_UNIQ_ID       ((1 << (sizeof(short) * 8)) - 1)
-#define XPMEM_MAX_UNIQ_APID     32
-#define XPMEM_MAX_UNIQ_SEGID    (XPMEM_MAX_UNIQ_ID / XPMEM_MAX_UNIQ_APID)
 
 static inline pid_t
 xpmem_segid_to_tgid(xpmem_segid_t segid)
