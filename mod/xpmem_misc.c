@@ -94,17 +94,6 @@ xpmem_tg_deref(struct xpmem_thread_group *tg)
 {
     char tgid_string[XPMEM_TGID_STRING_LEN];
 
-    /* Do not allow derefs of the remote thread group, unless we are explicitly 
-     * destorying on module teardown
-     */
-    if (tg->tgid == XPMEM_REMOTE_TG_TGID) {
-        if (!(tg->flags & XPMEM_FLAG_DESTROYING)) {
-            return;
-        }
-    }
-
-    /* Do not allow the derefing of the remote thread group */
-
     DBUG_ON(atomic_read(&tg->refcnt) <= 0);
     if (atomic_dec_return(&tg->refcnt) != 0)
         return;

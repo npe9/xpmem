@@ -119,6 +119,10 @@ xpmem_try_get_remote(xpmem_segid_t   segid,
         return -1;
     }
 
+    if (apid == -1) {
+        return -1;
+    }
+
     *remote_apid = apid;
     *remote_size = size;
 
@@ -232,6 +236,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
          * was created locally by using the xpmem remote thread group to create
          * a "shadow" segment
          */
+        (void)xpmem_tg_ref_by_tgid(XPMEM_REMOTE_TG_TGID);
         xpmem_make_segment(0, remote_size, permit_type, permit_value, xpmem_my_part->tg_remote, segid);
 
         /* Now, try the ref again */
@@ -345,10 +350,15 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     if (ap->flags & XPMEM_AP_REMOTE) {
 
         DBUG_ON(ap->remote_apid <= 0);
+<<<<<<< HEAD
         xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
 
         /* If this is the last ref to the 'fake' segment, remove it */
         if (atomic_read(&seg->refcnt) == 1) {
+=======
+        if (atomic_read(&seg->refcnt) == 1) {
+            xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
+>>>>>>> 5b3ab47454c8a5a06dc14fc146c5b23eeb7137b5
             xpmem_remove_seg(seg_tg, seg);
         }
     }
