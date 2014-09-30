@@ -220,6 +220,7 @@ struct xpmem_thread_group {
     atomic_t                        n_pinned;               /* #of pages pinned by this tg */
     atomic_t                        uniq_segid;             /* uniq segid generation for this thread group */
     atomic_t                        uniq_apid;              /* uniq apid generation for this thread group */
+    atomic_t                        uniq_attid;             /* uniq atid geneation for this thread group */
 
     /* Synchronization */
     spinlock_t                      lock;                   /* tg lock */
@@ -254,12 +255,6 @@ struct xpmem_segment {
 };
 
 
-typedef enum xpmem_access_mode {
-    LOCAL,
-    REMOTE_SEG,
-    REOMTE_AP
-} xpmem_access_mode_t;
-
 struct xpmem_access_permit {
     /* List of attachments */
     struct list_head                att_list;               /* atts of this access permit's seg */
@@ -268,9 +263,6 @@ struct xpmem_access_permit {
     xpmem_apid_t                    apid;                   /* unique apid */
     xpmem_apid_t                    remote_apid;            /* unique remote apid */
     int                             mode;                   /* read/write mode */
-
-    /* Extended access mode */
-    xpmem_access_mode_t             access_mode;            /* local, remote segment + local access, local segment + remote access */
 
     struct xpmem_segment          * seg;                    /* seg permitted to be accessed */
     struct xpmem_thread_group     * tg;                     /* access permit's tg */
@@ -293,6 +285,7 @@ struct xpmem_attachment {
     struct xpmem_access_permit    * ap;                     /* associated access permit */
 
     /* The local thread's attached region */
+    atomic_t                        atid;                   /* uniq atid */
     struct mm_struct              * mm;                     /* mm struct attached to */
     struct vm_area_struct         * at_vma;                 /* vma where seg is attachment */
     u64                             at_vaddr;               /* address where seg is attached */
@@ -374,9 +367,11 @@ xpmem_apid_to_uniq(xpmem_segid_t apid)
  * are defined in xpmem.h, so we reserved space here via XPMEM_DONT_USE_X
  * to prevent overlap.
  */
-#define XPMEM_FLAG_DESTROYING       0x00040 /* being destroyed */
-#define XPMEM_FLAG_DESTROYED        0x00080 /* 'being destroyed' finished */
-#define XPMEM_FLAG_CREATING_REMOTE  0x00100 /* being created */
+#define XPMEM_FLAG_DESTROYING       0x00010 /* being destroyed */
+#define XPMEM_FLAG_DESTROYED        0x00020 /* 'being destroyed' finished */
+#define XPMEM_FLAG_CREATING_REMOTE  0x00040 /* being created */
+#define XPMEM_AP_REMOTE             0x00080 /* remote access permit */
+#define XPMEM_ATT_REMOTE            0x00100 /* remote attachment struct */
 
 #define XPMEM_FLAG_VALIDPTEs        0x00200 /* valid PTEs exist */
 #define XPMEM_FLAG_RECALLINGPFNS    0x00400 /* recalling PFNs */
@@ -417,6 +412,7 @@ extern int xpmem_remove(xpmem_segid_t);
 /* found in xpmem_get.c */
 extern int xpmem_check_permit_mode(int, struct xpmem_segment *);
 extern xpmem_apid_t xpmem_make_apid(struct xpmem_thread_group *);
+extern int xpmem_get_segment(int, int, void *, xpmem_apid_t, xpmem_apid_t, struct xpmem_segment *, struct xpmem_thread_group *, struct xpmem_thread_group *);
 extern int xpmem_get(xpmem_segid_t, int, int, void *, xpmem_apid_t *);
 extern void xpmem_release_aps_of_tg(struct xpmem_thread_group *);
 extern void xpmem_release_ap(struct xpmem_thread_group *, struct xpmem_access_permit *);
@@ -470,7 +466,7 @@ extern void xpmem_ap_deref(struct xpmem_access_permit *);
 extern void xpmem_att_deref(struct xpmem_attachment *);
 extern int xpmem_seg_down_read(struct xpmem_thread_group *,
                    struct xpmem_segment *, int, int);
-extern int xpmem_validate_access(struct xpmem_access_permit *, off_t, size_t,
+extern int xpmem_validate_access(struct xpmem_thread_group *, struct xpmem_access_permit *, off_t, size_t,
                  int, u64 *);
 extern void xpmem_block_nonfatal_signals(sigset_t *);
 extern void xpmem_unblock_nonfatal_signals(sigset_t *);

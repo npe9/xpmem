@@ -175,7 +175,7 @@ xpmem_fault_handler(struct vm_area_struct *vma, struct vm_fault *vmf)
         return VM_FAULT_SIGBUS;
     }
 
-    if (ap->remote_apid > 0) {
+    if (ap->flags & XPMEM_AP_REMOTE) {
         xpmem_att_deref(att);
         xpmem_ap_deref(ap);
         xpmem_tg_deref(ap_tg);
@@ -406,7 +406,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     if (ret != 0)
         goto out_1;
 
-    ret = xpmem_validate_access(ap, offset, size, XPMEM_RDWR, &seg_vaddr);
+    ret = xpmem_validate_access(ap_tg, ap, offset, size, XPMEM_RDWR, &seg_vaddr);
     if (ret != 0)
         goto out_2;
 
@@ -484,7 +484,8 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     }
 
     /* if remote, load pfns in now */
-    if (ap->remote_apid > 0) {
+    if (ap->flags & XPMEM_AP_REMOTE) {
+        DBUG_ON(ap->remote_apid <= 0);
         if (xpmem_try_attach_remote(seg->segid, ap->remote_apid, offset, size, at_vaddr) != 0) {
             vm_munmap(at_vaddr, size);
             ret = -EFAULT;
@@ -582,8 +583,8 @@ xpmem_detach(u64 at_vaddr)
     ap = att->ap;
     xpmem_ap_ref(ap);
 
-    if (ap->remote_apid > 0) {
-        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->apid, at_vaddr);
+    if (ap->flags & XPMEM_AP_REMOTE) {
+        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->remote_apid, at_vaddr);
     }
 
     if (current->tgid != ap->tg->tgid) {
@@ -627,6 +628,32 @@ xpmem_detach(u64 at_vaddr)
 }
 
 /*
+ * Detach a remote attached XPMEM address segment. 
+ */
+static void
+xpmem_detach_remote_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
+{
+    mutex_lock(&att->mutex);
+
+    if (att->flags & XPMEM_FLAG_DESTROYING) {
+        mutex_unlock(&att->mutex);
+        return;
+    }
+
+    att->flags |= XPMEM_FLAG_DESTROYING;
+
+    spin_lock(&ap->lock);
+    list_del_init(&att->att_node);
+    spin_unlock(&ap->lock);
+
+    mutex_unlock(&att->mutex);
+
+    att->flags &= ~XPMEM_FLAG_VALIDPTEs;
+
+    xpmem_att_destroyable(att);
+}
+
+/*
  * Detach an attached XPMEM address segment. This is functionally identical
  * to xpmem_detach(). It is called when ap and att are known.
  */
@@ -635,6 +662,11 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
 {
     struct vm_area_struct *vma;
     int ret = 0;
+
+    if (att->flags & XPMEM_ATT_REMOTE) {
+        xpmem_detach_remote_att(ap, att);
+        return;
+    }
 
     /* must lock mmap_sem before att's sema to prevent deadlock */
     down_write(&att->mm->mmap_sem);
@@ -659,12 +691,15 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
     DBUG_ON((vma->vm_end - vma->vm_start) != att->at_size);
     DBUG_ON(vma->vm_private_data != att);
 
-    xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
+    if (att->mm != NULL) {
+        xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
+    }
 
     vma->vm_private_data = NULL;
 
     //ret = do_munmap(att->mm, vma->vm_start, att->at_size);
-    if (att->mm == current->mm) {
+    if (att->mm == current->mm)
+    {
         up_write(&(current->mm->mmap_sem));
         {
             ret = vm_munmap(vma->vm_start, att->at_size);

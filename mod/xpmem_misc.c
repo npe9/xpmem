@@ -289,11 +289,11 @@ xpmem_seg_down_read(struct xpmem_thread_group *seg_tg,
  * Ensure that a user is correctly accessing a segment for a copy or an attach.
  */
 int
-xpmem_validate_access(struct xpmem_access_permit *ap, off_t offset,
+xpmem_validate_access(struct xpmem_thread_group * tg, struct xpmem_access_permit *ap, off_t offset,
               size_t size, int mode, u64 *vaddr)
 {
     /* ensure that this thread has permission to access segment */
-    if (current->tgid != ap->tg->tgid ||
+    if (tg->tgid != ap->tg->tgid ||
         (mode == XPMEM_RDWR && ap->mode == XPMEM_RDONLY))
         return -EACCES;
 

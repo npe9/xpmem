@@ -159,6 +159,10 @@ xpmem_get_segment(int                         flags,
     INIT_LIST_HEAD(&ap->ap_node);
     INIT_LIST_HEAD(&ap->ap_hashnode);
 
+    if (ap->remote_apid > 0) {
+        ap->flags = XPMEM_AP_REMOTE;
+    }
+
     xpmem_ap_not_destroyable(ap);
 
     /* add ap to its seg's access permit list */
@@ -220,13 +224,13 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
     seg_tg = xpmem_tg_ref_by_segid(segid);
     if (IS_ERR(seg_tg)) {
 
-        /* No local segid matches this - let's try a remote one */
+        /* No local segment found. Look for a remote one */
         if (xpmem_try_get_remote(segid, flags, permit_type, permit_value, &remote_apid, &remote_size) != 0) {
             printk("Could not get remote apid\n");
             return PTR_ERR(seg_tg);
         }
 
-        /* Else, we have a remote apid. The strategy is to fake like the segid
+        /* We've been given a remote apid. The strategy is to fake like the segid
          * was created locally by using the xpmem remote thread group to create
          * a "shadow" segment
          */
@@ -306,8 +310,10 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
         xpmem_att_ref(att);
         spin_unlock(&ap->lock);
         xpmem_detach_att(ap, att);
-        DBUG_ON(atomic_read(&att->mm->mm_users) <= 0);
-        DBUG_ON(atomic_read(&att->mm->mm_count) <= 0);
+        if (!(att->flags & XPMEM_ATT_REMOTE)) {
+            DBUG_ON(atomic_read(&att->mm->mm_users) <= 0);
+            DBUG_ON(atomic_read(&att->mm->mm_count) <= 0);
+        }
         xpmem_att_deref(att);
         spin_lock(&ap->lock);
     }
@@ -340,7 +346,8 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     xpmem_tg_deref(seg_tg); /* deref of xpmem_get()'s ref */
 
     /* If the segment is for a remote segid, remove it */
-    if (ap->remote_apid > 0) {
+    if (ap->flags & XPMEM_AP_REMOTE) {
+        DBUG_ON(ap->remote_apid <= 0);
         xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
         xpmem_remove_seg(seg_tg, seg);
     }

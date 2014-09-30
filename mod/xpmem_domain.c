@@ -33,34 +33,13 @@ struct xpmem_domain_state {
 
 
 
-static int
-xpmem_validate_remote_access(struct xpmem_access_permit * ap, 
-                             off_t                        offset,
-                             size_t                       size, 
-                             int                          mode, 
-                             u64                        * vaddr)
-{
-    if (mode == XPMEM_RDWR && ap->mode == XPMEM_RDONLY) {
-        return -EACCES;
-    }
-
-    if (offset < 0 || size == 0 || offset + size > ap->seg->size) {
-        return -EINVAL;
-    }
-
-    *vaddr = ap->seg->vaddr + offset;
-    return 0;
-}
-
-
 static int 
 xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
 {
     xpmem_apid_t apid;
-    struct xpmem_access_permit *ap;
     struct xpmem_segment *seg;
     struct xpmem_thread_group *ap_tg, *seg_tg;
-    int index;
+    int status;
 
     xpmem_segid_t segid = get_ex->segid;
     int flags = get_ex->flags;
@@ -80,33 +59,25 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
 
     seg_tg = xpmem_tg_ref_by_segid(segid);
     if (IS_ERR(seg_tg)) {
-        printk("GET DOMAIN: Cannot get seg_tg\n");
         return PTR_ERR(seg_tg);
     }   
 
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);
     if (IS_ERR(seg)) {
-        printk("GET DOMAIN: Cannot get seg\n");
         xpmem_tg_deref(seg_tg);
         return PTR_ERR(seg);
     }
 
     /* assuming XPMEM_PERMIT_MODE, do the appropriate permission check */
     if (xpmem_check_permit_mode(flags, seg) != 0) {
-        printk("GET DOMAIN: invalid permit mode\n");
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
         return -EACCES;
     }
 
-    /* find accessor's thread group structure.
-     * NOTE: we do this ref by segid, which means the ap_tg struct is for the
-     * source (local) process that created the segid */
-    //ap_tg = xpmem_tg_ref_by_tgid(current->tgid);
-    ap_tg = xpmem_tg_ref_by_segid(segid);
+    /* find accessor's thread group structure by using the remote thread group */
+    ap_tg = xpmem_tg_ref_by_tgid(XPMEM_REMOTE_TG_TGID);
     if (IS_ERR(ap_tg)) {
-        printk("GET DOMAIN: Cannot get ap_tg\n");
-        DBUG_ON(PTR_ERR(ap_tg) != -ENOENT);
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
         return -XPMEM_ERRNO_NOPROC;
@@ -114,64 +85,19 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
 
     apid = xpmem_make_apid(ap_tg);
     if (apid < 0) {
-        printk("GET DOMAIN: Cannot make apid\n");
         xpmem_tg_deref(ap_tg);
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
         return apid;
     }
 
-    /* create a new xpmem_access_permit structure with a unique apid */
-    ap = kzalloc(sizeof(struct xpmem_access_permit), GFP_KERNEL);
-    if (ap == NULL) {
-        xpmem_tg_deref(ap_tg);
-        xpmem_seg_deref(seg);
-        xpmem_tg_deref(seg_tg);
-        return -ENOMEM;
+    status = xpmem_get_segment(flags, permit_type, permit_value, apid, 0, seg, seg_tg, ap_tg);
+
+    if (status == 0) { 
+        get_ex->apid = apid;
+        get_ex->size = seg->size;
     }
 
-    ap->lock = __SPIN_LOCK_UNLOCKED(ap->lock);
-    ap->seg = seg;
-    ap->tg = ap_tg;
-    ap->apid = apid;
-    ap->mode = flags;
-    INIT_LIST_HEAD(&ap->att_list);
-    INIT_LIST_HEAD(&ap->ap_node);
-    INIT_LIST_HEAD(&ap->ap_hashnode);
-
-    xpmem_ap_not_destroyable(ap);
-
-    /* add ap to its seg's access permit list */
-    spin_lock(&seg->lock);
-    list_add_tail(&ap->ap_node, &seg->ap_list);
-    spin_unlock(&seg->lock);
-
-    /* add ap to its hash list */
-    index = xpmem_ap_hashtable_index(ap->apid);
-    write_lock(&ap_tg->ap_hashtable[index].lock);
-    list_add_tail(&ap->ap_hashnode, &ap_tg->ap_hashtable[index].list);
-    write_unlock(&ap_tg->ap_hashtable[index].lock);
-
-    xpmem_tg_deref(ap_tg);
-
-    /*
-     * The following two derefs
-     *
-     *      xpmem_seg_deref(seg);
-     *      xpmem_tg_deref(seg_tg);
-     *
-     * aren't being done at this time in order to prevent the seg
-     * and seg_tg structures from being prematurely kfree'd as long as the
-     * potential for them to be referenced via this ap structure exists.
-     *
-     * These two derefs will be done by xpmem_release_ap() at the time
-     * this ap structure is destroyed.
-     */
-
-    get_ex->apid = apid;
-    get_ex->size = seg->size;
-
-    printk("Returning apid %lli (size=%llu)\n", get_ex->apid, get_ex->size);
     return 0;
 }
 
@@ -212,6 +138,7 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     struct xpmem_thread_group *ap_tg, *seg_tg;
     struct xpmem_access_permit *ap;
     struct xpmem_segment *seg;
+    struct xpmem_attachment * att;
 
     xpmem_apid_t apid = attach_ex->apid;
     off_t offset = attach_ex->off;
@@ -247,12 +174,44 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     if (ret != 0)
         goto out_1;
 
-    ret = xpmem_validate_remote_access(ap, offset, size, XPMEM_RDWR, &seg_vaddr);
+    ret = xpmem_validate_access(ap_tg, ap, offset, size, XPMEM_RDWR, &seg_vaddr);
     if (ret != 0)
         goto out_2;
 
     /* size needs to reflect page offset to start of segment */
     size += offset_in_page(seg_vaddr);
+
+    seg = ap->seg;
+
+    /* create new attach structure */
+    att = kzalloc(sizeof(struct xpmem_attachment), GFP_KERNEL);
+    if (att == NULL) {
+        ret = -ENOMEM;
+        goto out_2;
+    }
+
+    mutex_init(&att->mutex);
+    att->at_size = size;
+    att->ap = ap;
+    att->mm = NULL;
+    att->at_vaddr = 0;
+    att->flags |= XPMEM_ATT_REMOTE;
+    INIT_LIST_HEAD(&att->att_node);
+
+    xpmem_att_not_destroyable(att);
+    xpmem_att_ref(att);
+
+    mutex_lock(&att->mutex);
+
+    /* link attach structure to its access permit'a att list */
+    spin_lock(&ap->lock);
+    list_add_tail(&att->att_node, &ap->att_list);
+    if (ap->flags & XPMEM_FLAG_DESTROYING) {
+        spin_unlock(&ap->lock);
+        ret = -ENOENT;
+        goto out_3;
+    }
+    spin_unlock(&ap->lock);
 
     /* This will allocate and pin pages in the source virtual address space */
     num_pfns = size / PAGE_SIZE;
@@ -260,14 +219,14 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
 
     if (ret != 0) {
         printk(KERN_ERR "XPMEM: could not pin memory\n");
-        goto out_2;
+        goto out_3;
     }
 
     pfns = kmalloc(sizeof(u64) * num_pfns, GFP_KERNEL);
     if (!pfns) {
         printk(KERN_ERR "XPMEM: out of memory\n");
         ret = -ENOMEM;
-        goto out_2;
+        goto out_3;
     }
 
     for (i = 0; i < num_pfns; i++) {
@@ -277,7 +236,7 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
             kfree(pfns);
 
             ret = -EFAULT;
-            goto out_2;
+            goto out_3;
         }
         pfns[i] = pfn;
     }
@@ -285,6 +244,16 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     attach_ex->num_pfns = num_pfns;
     attach_ex->pfns = pfns;
 
+out_3:
+    if (ret != 0) {
+        att->flags |= XPMEM_FLAG_DESTROYING;
+        spin_lock(&ap->lock);
+        list_del_init(&att->att_node);
+        spin_unlock(&ap->lock);
+        xpmem_att_destroyable(att);
+    }
+    mutex_unlock(&att->mutex);
+    xpmem_att_deref(att);
 out_2:
     xpmem_seg_up_read(seg_tg, seg, 0);
 out_1:
@@ -781,8 +750,6 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
     mutex_unlock(&(state->mutex));
 
     kfree(state->cmd);
-
-    //xpmem_detach_vaddr(part, vaddr);
 
     return 0;
 }
