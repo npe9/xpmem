@@ -562,7 +562,6 @@ add_xpmem_apid(struct xpmem_ns_state * ns_state,
 static int
 remove_xpmem_apid(struct xpmem_ns_state * ns_state,
                   struct xpmem_domain   * domain,
-                  struct xpmem_domain   * req_domain,
                   xpmem_segid_t           segid,
                   xpmem_apid_t            apid)
 {
@@ -572,22 +571,7 @@ remove_xpmem_apid(struct xpmem_ns_state * ns_state,
     search_key.segid = segid;
     search_key.apid  = apid;
 
-    /* First, search the hashtable for the domain */
-    val = xpmem_ht_search_id(ns_state, ns_state->apid_map, search_key);
-
-    if (val == NULL) {
-        XPMEM_ERR("Cannot free apid %lli: cannot find source domain", apid);
-        return -1;
-    }
-
-    /* Make sure it matches the requesting domain */
-    if (val->dst_domid != req_domain->domid) {
-        XPMEM_ERR("Domain %lli trying to release apid %lli that was allocated to domain %lli",
-            req_domain->domid, apid, val->dst_domid); 
-        return -1;
-    }
-
-    /* Proceed with the removal */
+    /* Remove from hashtable */
     val = xpmem_ht_remove_id(ns_state, ns_state->apid_map, search_key);
 
     /* Remove from domain tree */
@@ -949,8 +933,8 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         }
 
         case XPMEM_RELEASE: {
-            struct xpmem_domain * dst_domain = NULL;
-            struct xpmem_id_val * val        = NULL;
+            struct xpmem_domain * apid_domain = NULL;
+            struct xpmem_id_val * val         = NULL;
             struct xpmem_id_key   key;
 
             key.segid = cmd->release.segid;
@@ -964,11 +948,18 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 goto err_release;
             }
 
+            /* Make sure the releasing domain has permission */
+            if (val->dst_domid != req_domain->domid) {
+                XPMEM_ERR("Domain %lli trying to release apid %lli, which was allocated to domain %lli",
+                    req_domain->domid, cmd->release.apid, val->dst_domid);
+                goto err_release;
+            }
+
             /* Grab the apid's source domain from the domid */
-            dst_domain = ns_state->domain_map[val->domid];
+            apid_domain = ns_state->domain_map[val->domid];
 
             /* Perform removal */
-            if (remove_xpmem_apid(ns_state, dst_domain, req_domain, cmd->release.apid, cmd->release.apid) != 0) {
+            if (remove_xpmem_apid(ns_state, apid_domain, cmd->release.segid, cmd->release.apid) != 0) {
                 XPMEM_ERR("Cannot remove apid %lli. Cannot complete XPMEM_RELEASE", cmd->release.apid);
                 goto err_release;
             }
@@ -1008,6 +999,13 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
             if (val == NULL) {
                 XPMEM_ERR("Cannot find apid %lli in hashtable. Cannot complete XPMEM_ATTACH", cmd->attach.apid);
+                goto err_attach;
+            }
+
+            /* Make sure the attaching domain has permission */
+            if (val->dst_domid != req_domain->domid) {
+                XPMEM_ERR("Domain %lli trying to attach to apid %lli, which was allocated to domain %lli",
+                    req_domain->domid, cmd->attach.apid, val->dst_domid);
                 goto err_attach;
             }
 
