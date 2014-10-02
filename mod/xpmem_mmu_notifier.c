@@ -35,7 +35,7 @@ xpmem_invalidate_PTEs_range(struct xpmem_thread_group *seg_tg,
             seg_end = seg->vaddr + seg->size;
 
             if (start <= seg_end && end >= seg_start) {
-                XPMEM_DEBUG("start=%lx, end=%lx", start, end);
+                //XPMEM_DEBUG("start=%lx, end=%lx", start, end);
                 xpmem_clear_PTEs_range(seg, start, end, 1);
             }
         }

@@ -7,6 +7,7 @@
 
 
 #include <xpmem.h>
+#include <xpmem_iface.h>
 
 
 struct xpmem_cmd_make_ex {
@@ -42,7 +43,7 @@ struct xpmem_cmd_attach_ex {
 
 struct xpmem_cmd_detach_ex {
     xpmem_segid_t segid; /* needed for routing */
-    xpmem_segid_t apid;
+    xpmem_apid_t  apid;
     uint64_t vaddr;
 };
 
