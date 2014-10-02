@@ -83,43 +83,50 @@ extern uint32_t xpmem_debug_on;
 #define delayed_work work_struct
 
 static inline pte_t *
-xpmem_hugetlb_pte(struct mm_struct *mm, u64 vaddr, u64 *offset)
+xpmem_hugetlb_pte(struct mm_struct *mm, u64 vaddr, u64 *offset, int is_pmd, pmd_t *pmd)
 {
     struct vm_area_struct *vma;
-    u64 address;
+    u64 address, hps;
     pte_t *pte;
 
     vma = find_vma(mm, vaddr);
-    if (!vma)
+    if (!vma) {
         return NULL;
-    
-    if (is_vm_hugetlb_page(vma)) {
-        struct hstate *hs = hstate_vma(vma);
-
-        address = vaddr & huge_page_mask(hs);
-        if (offset) {
-            *offset = (vaddr & (huge_page_size(hs) - 1)) & PAGE_MASK;
-            XPMEM_DEBUG("vaddr = %llx, offset = %llx", vaddr, *offset);
-        }
-        
-#ifdef CONFIG_CRAY_MRT
-        pte = huge_pte_offset(mm, address, huge_page_size(hs));
-#else
-        pte = huge_pte_offset(mm, address);
-#endif
-        XPMEM_DEBUG("pte = %lx", pte_val(*pte));
-
-        if (!pte || pte_none(*pte))
-            return NULL;
-        
-        return (pte_t *)pte;
     }
 
-    /*
-     * We should never enter this area since xpmem_hugetlb_pte() is only
-     * called if {pgd,pud,pmd}_large() is true
-     */
-    BUG();
+    if (is_vm_hugetlb_page(vma)) {
+        struct hstate *hs = hstate_vma(vma);
+        hps = huge_page_size(hs);
+        address = vaddr & huge_page_mask(hs);
+    } else if (is_pmd && pmd_trans_huge(*pmd)) {
+        hps = PMD_SIZE;
+        address = vaddr & PMD_MASK;
+    } else {
+        /*
+         * We should never enter this area since xpmem_hugetlb_pte() is only
+         * called if {pgd,pud,pmd}_large() is true
+         */
+        BUG();
+        return NULL;
+    }
+
+    if (offset) {
+        *offset = (vaddr & (hps - 1)) & PAGE_MASK;
+        XPMEM_DEBUG("vaddr = %llx, offset = %llx", vaddr, *offset);
+    }
+
+#ifdef CONFIG_CRAY_MRT
+    pte = huge_pte_offset(mm, address, hps);
+#else
+    pte = huge_pte_offset(mm, address);
+#endif
+
+    XPMEM_DEBUG("pte = %lx", pte_val(*pte));
+
+    if (!pte || pte_none(*pte))
+        return NULL;
+    
+    return (pte_t *)pte;
 }
 
 /*
@@ -142,7 +149,7 @@ xpmem_vaddr_to_pte_offset(struct mm_struct *mm, u64 vaddr, u64 *offset)
         return NULL;
     else if (pgd_large(*pgd)) {
         XPMEM_DEBUG("pgd = %p", pgd);
-        return xpmem_hugetlb_pte(mm, vaddr, offset);
+        return xpmem_hugetlb_pte(mm, vaddr, offset, 0, NULL);
     }
 
     pud = pud_offset(pgd, vaddr);
@@ -150,7 +157,7 @@ xpmem_vaddr_to_pte_offset(struct mm_struct *mm, u64 vaddr, u64 *offset)
         return NULL;
     else if (pud_large(*pud)) {
         XPMEM_DEBUG("pud = %p", pud);
-        return xpmem_hugetlb_pte(mm, vaddr, offset);
+        return xpmem_hugetlb_pte(mm, vaddr, offset, 0, NULL);
     }
 
     pmd = pmd_offset(pud, vaddr);
@@ -158,7 +165,7 @@ xpmem_vaddr_to_pte_offset(struct mm_struct *mm, u64 vaddr, u64 *offset)
         return NULL;
     else if (pmd_large(*pmd)) {
         XPMEM_DEBUG("pmd = %p", pmd);
-        return xpmem_hugetlb_pte(mm, vaddr, offset);
+        return xpmem_hugetlb_pte(mm, vaddr, offset, 1, pmd);
     }
 
     pte = pte_offset_map(pmd, vaddr);

@@ -129,12 +129,114 @@ xpmem_release_domain(struct xpmem_cmd_release_ex * release_ex)
     return 0;
 }
 
+
+static int
+xpmem_fault_pages(struct xpmem_attachment  * att,
+                  u64                     ** p_pfns,
+                  u64                     *  p_num_pfns)
+{
+    struct xpmem_segment       * seg    = NULL;
+    struct xpmem_access_permit * ap     = NULL;
+    struct xpmem_thread_group  * seg_tg = NULL;
+    struct xpmem_thread_group  * ap_tg  = NULL;
+
+    u64 * pfns      = NULL;
+    u64   num_pfns  = 0;
+    u64   pfn       = 0;
+    u64   seg_vaddr = 0;
+    u64   i         = 0;
+
+    int  ret        = 0;
+
+    xpmem_att_ref(att);
+    ap = att->ap;
+    xpmem_ap_ref(ap);
+    ap_tg = ap->tg;
+    xpmem_tg_ref(ap_tg);
+
+    if ((ap->flags    & XPMEM_FLAG_DESTROYING) ||
+        (ap_tg->flags & XPMEM_FLAG_DESTROYING))
+    {
+        xpmem_att_deref(att);
+        xpmem_ap_deref(ap);
+        xpmem_tg_deref(ap_tg);
+        return -1;
+    }
+
+    seg = ap->seg;
+    xpmem_seg_ref(seg);
+    seg_tg = seg->tg;
+    xpmem_tg_ref(seg_tg);
+
+    /* Get read access to the segment */
+    ret = xpmem_seg_down_read(seg_tg, seg, 1, 0);
+    if (ret != 0) {
+        goto out;
+    }
+
+    /* Lock the att's mutex */
+    while (mutex_lock_interruptible(&(att->mutex)));
+
+    /* Grab the segemnt vaddr */
+    seg_vaddr = ((u64)att->vaddr & PAGE_MASK);
+
+    /* Take the segment thread's mmap sem */
+    down_read(&(seg_tg->mm->mmap_sem));
+    atomic_inc(&(seg_tg->mm->mm_users));
+
+    /* Fault in the pages */
+    num_pfns = att->at_size / PAGE_SIZE;
+    ret      = xpmem_ensure_valid_PFNs(seg, seg_vaddr, att->at_size, 1);
+
+    /* Release the mmap sem */
+    up_read(&(seg_tg->mm->mmap_sem));
+    atomic_dec(&(seg_tg->mm->mm_users));
+
+    if (ret != 0) {
+        goto out_2;
+    }
+
+    pfns = kmalloc(sizeof(u64) * num_pfns, GFP_KERNEL);
+    if (!pfns) {
+        ret = -ENOMEM;
+        goto out_2;
+    }
+
+    for (i = 0; i < num_pfns; i++) {
+        pfn = xpmem_vaddr_to_PFN(seg_tg->mm, seg_vaddr + (i * PAGE_SIZE));
+
+        if (!pfn_valid(pfn) || pfn <= 0) {
+            XPMEM_ERR("Invalid PFN");
+            kfree(pfns);
+
+            ret = -EFAULT;
+            goto out_2;
+        }
+
+        pfns[i] = pfn;
+    }
+ 
+    *p_pfns     = pfns;
+    *p_num_pfns = num_pfns;
+
+out_2:
+    mutex_unlock(&(att->mutex));
+    xpmem_seg_up_read(seg_tg, seg, 1);
+
+out:
+    xpmem_att_deref(att);
+    xpmem_ap_deref(ap);
+    xpmem_tg_deref(ap_tg);
+    xpmem_seg_deref(seg);
+    xpmem_tg_deref(seg_tg);
+    return ret;
+}
+
 static int 
 xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
 {
     int ret;
-    u64 seg_vaddr, pfn, num_pfns, i;
-    u64 * pfns;
+    u64 seg_vaddr;
     struct xpmem_thread_group *ap_tg, *seg_tg;
     struct xpmem_access_permit *ap;
     struct xpmem_segment *seg;
@@ -191,6 +293,7 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     }
 
     mutex_init(&att->mutex);
+    att->vaddr   = seg_vaddr;
     att->at_size = size;
     att->ap = ap;
     att->mm = NULL;
@@ -200,8 +303,6 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
 
     xpmem_att_not_destroyable(att);
     xpmem_att_ref(att);
-
-    mutex_lock(&att->mutex);
 
     /* link attach structure to its access permit'a att list */
     spin_lock(&ap->lock);
@@ -213,35 +314,8 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     }
     spin_unlock(&ap->lock);
 
-    /* This will allocate and pin pages in the source virtual address space */
-    num_pfns = size / PAGE_SIZE;
-    ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, num_pfns, 0);
-
-    if (ret != 0) {
-        XPMEM_ERR("Could not pin memory");
-        goto out_3;
-    }
-
-    pfns = kmalloc(sizeof(u64) * num_pfns, GFP_KERNEL);
-    if (!pfns) {
-        ret = -ENOMEM;
-        goto out_3;
-    }
-
-    for (i = 0; i < num_pfns; i++) {
-        pfn = xpmem_vaddr_to_PFN(seg_tg->mm, seg_vaddr + (i * PAGE_SIZE));
-        if (!pfn_valid(pfn)) {
-            XPMEM_ERR("Invalid PFN");
-            kfree(pfns);
-
-            ret = -EFAULT;
-            goto out_3;
-        }
-        pfns[i] = pfn;
-    }
-
-    attach_ex->num_pfns = num_pfns;
-    attach_ex->pfns = pfns;
+    /* fault pages into the seg, copy to remote domain */
+    ret = xpmem_fault_pages(att, &(attach_ex->pfns), &(attach_ex->num_pfns));
 
 out_3:
     if (ret != 0) {
@@ -251,7 +325,6 @@ out_3:
         spin_unlock(&ap->lock);
         xpmem_att_destroyable(att);
     }
-    mutex_unlock(&att->mutex);
     xpmem_att_deref(att);
 out_2:
     xpmem_seg_up_read(seg_tg, seg, 0);
