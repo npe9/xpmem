@@ -12,7 +12,6 @@
 #include <linux/kthread.h>
 #include <linux/timer.h>
 #include <linux/delay.h>
-#include <linux/rbtree.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 
@@ -85,12 +84,12 @@ struct xpmem_domain {
     /* Assigned domid */
     xpmem_domid_t           domid;
 
-    /* rb-tree of assigned segids */
+    /* list of assigned segids */
     struct list_head        segid_list;
     /* Number of segids allocated */
     unsigned long           num_segids;
 
-    /* rb-tree of attached apids */
+    /* list of attached apids */
     struct list_head        apid_list;
     /* Number of apids attached to */
     unsigned long           num_apids;
@@ -452,7 +451,7 @@ alloc_xpmem_segid(struct xpmem_ns_state * ns_state,
     val->domid     = domain->domid;
     val->dst_domid = -1;
 
-    /* Add to domain tree */
+    /* Add to domain list */
     domain_add_xpmem_segid(domain, val);
 
     /* Add to segid map */
@@ -495,7 +494,7 @@ free_xpmem_segid(struct xpmem_ns_state * ns_state,
     /* Proceed with the removal */
     val = xpmem_ht_remove_id(ns_state, ns_state->segid_map, search_key);
 
-    /* Remove from domain tree */
+    /* Remove from domain list */
     domain_remove_xpmem_segid(domain, val);
 
     /* Add segid back to the free list */
@@ -546,7 +545,7 @@ add_xpmem_apid(struct xpmem_ns_state * ns_state,
     val->domid     = domain->domid;
     val->dst_domid = req_domain->domid;
 
-    /* Add to domain tree */
+    /* Add to domain list */
     domain_add_xpmem_apid(domain, val);
 
     /* Add to apid map */
@@ -574,7 +573,7 @@ remove_xpmem_apid(struct xpmem_ns_state * ns_state,
     /* Remove from hashtable */
     val = xpmem_ht_remove_id(ns_state, ns_state->apid_map, search_key);
 
-    /* Remove from domain tree */
+    /* Remove from domain list */
     domain_remove_xpmem_apid(domain, val);
 
     return 0;
@@ -686,6 +685,8 @@ static int
 free_xpmem_domain(struct xpmem_ns_state * ns_state,
                   struct xpmem_domain   * domain)
 {
+    struct xpmem_id_val * iter, * next;
+
     /* Tear down proc dirs */
     {
         char name[16];
@@ -696,6 +697,35 @@ free_xpmem_domain(struct xpmem_ns_state * ns_state,
         remove_proc_entry("segids", domain->proc_dir);
         remove_proc_entry("remote-apids", domain->proc_dir);
         remove_proc_entry(name, xpmem_proc_dir);
+    }
+
+    /* Free segid/apid lists */
+    if (domain->num_segids > 0) {
+        XPMEM_ERR("Domain %lli is being freed, but has %lu outstanding segids assigned to it!", 
+            domain->domid, domain->num_segids);
+
+        list_for_each_entry_safe(iter, next, &(domain->segid_list), node) {
+            list_del(&(iter->node)); 
+
+            /* Free the segid */
+            free_xpmem_segid(ns_state, domain, iter->segid); 
+
+            kfree(iter);
+        }
+    }
+
+    if (domain->num_apids > 0) {
+        XPMEM_ERR("Domain %lli is being freed, but has allocated %lu apids that have not been released!",
+            domain->domid, domain->num_apids);
+
+        list_for_each_entry_safe(iter, next, &(domain->apid_list), node) {
+            list_del(&(iter->node)); 
+
+            /* Free the apid */
+            remove_xpmem_apid(ns_state, domain, iter->segid, iter->apid); 
+
+            kfree(iter);
+        }
     }
 
     /* Free domid */
@@ -815,7 +845,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
         }
 
         case XPMEM_DOMID_RELEASE: {
-            /* A domain has gone away - free it and release it's domid */
+            /* A domain has gone away - free it and release its domid */
             int ret = 0;
 
             ret = free_xpmem_domain(ns_state, req_domain);
@@ -1044,9 +1074,8 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             break;
         }
 
-        case XPMEM_GET_COMPLETE:  {
+        case XPMEM_GET_COMPLETE: {
             /* Perform apid accounting */
-
             if (cmd->get.apid > 0) {
                 if (add_xpmem_apid(ns_state, src_domain, req_domain, cmd->get.segid, cmd->get.apid) != 0) {
                     XPMEM_ERR("Cannot add apid %lli", cmd->get.apid);
@@ -1093,11 +1122,11 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
 
 static void
-prepare_domids(struct xpmem_partition_state   * part_state,
-               xpmem_link_t                     link,
-               struct xpmem_cmd_ex            * cmd)
+prepare_domids(struct xpmem_partition_state * part_state,
+               xpmem_link_t                   link,
+               struct xpmem_cmd_ex          * cmd)
 {
-    /* If the source is local, we need to setup the domids for routing - otherwise */
+    /* If the source is local, we need to setup the domids for routing */
     if (link == part_state->local_link) {
         if (cmd->req_dom == 0) {
             /* The request is being generated here: set the req domid */
@@ -1233,6 +1262,7 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
     /* Create segid map */
     ns_state->segid_map = create_htable(0, xpmem_segid_hash_fn, xpmem_segid_eq_fn);
     if (!ns_state->segid_map) {
+        kfree(ns_state);
         return -1;
     }
 
@@ -1240,6 +1270,7 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
     ns_state->apid_map  = create_htable(0, xpmem_apid_hash_fn, xpmem_apid_eq_fn);
     if (!ns_state->apid_map) {
         free_htable(ns_state->segid_map, 1, 1);
+        kfree(ns_state);
         return -1;
     }
 
@@ -1305,8 +1336,21 @@ xpmem_ns_deinit(struct xpmem_partition_state * part_state)
     /* Free segid map */
     free_htable(ns_state->segid_map, 1, 1);
 
+    /* Free apid map */
+    free_htable(ns_state->apid_map, 1, 1);
+
     /* Free any remaining domains */
     free_all_xpmem_domains(ns_state);
+
+    /* Free segid list */
+    {
+        struct xpmem_segid_list_node * iter, * next;
+
+        list_for_each_entry_safe(iter, next, &(ns_state->segid_free_list), list_node) {
+            list_del(&(iter->node);
+            kfree(iter);
+        }
+    }
     
     /* Final cleanup */
     kfree(ns_state);

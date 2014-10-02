@@ -236,8 +236,6 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
             return;
         }
     }
-
-    
 }
 
 /* Process an XPMEM_DOMID_REQUEST/RESPONSE command */
