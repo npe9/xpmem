@@ -1347,7 +1347,7 @@ xpmem_ns_deinit(struct xpmem_partition_state * part_state)
         struct xpmem_segid_list_node * iter, * next;
 
         list_for_each_entry_safe(iter, next, &(ns_state->segid_free_list), list_node) {
-            list_del(&(iter->node);
+            list_del(&(iter->list_node));
             kfree(iter);
         }
     }
