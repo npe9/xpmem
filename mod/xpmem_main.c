@@ -345,8 +345,8 @@ xpmem_create_remote_thread_group(void)
     tg->uid = XPMEM_REMOTE_TG_UID;
     tg->gid = XPMEM_REMOTE_TG_GID;
 #else
-    tg->uid.val = XPMEM_REMOTE_TG_UID;
-    tg->gid.val = XPMEM_REMOTE_TG_GID;
+    tg->uid = from_kuid(&init_user_ns, XPMEM_REMOTE_TG_UID);
+    tg->gid = from_kgid(&init_user_ns, XPMEM_REMOTE_TG_GID);
 #endif
     atomic_set(&tg->uniq_segid, 0);
     atomic_set(&tg->uniq_apid, 0);
