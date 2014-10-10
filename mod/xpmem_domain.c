@@ -577,9 +577,9 @@ xpmem_make_remote(struct xpmem_partition_state * part,
         *segid = state->cmd->make.segid;
     }
 
-    mutex_unlock(&(state->mutex));
-
     kfree(state->cmd);
+
+    mutex_unlock(&(state->mutex));
 
     return 0;
 }
@@ -619,9 +619,9 @@ xpmem_remove_remote(struct xpmem_partition_state * part,
         }
     }
 
-    mutex_unlock(&(state->mutex));
-
     kfree(state->cmd);
+
+    mutex_unlock(&(state->mutex));
 
     return 0;
 }
@@ -673,9 +673,9 @@ xpmem_get_remote(struct xpmem_partition_state * part,
         *size = state->cmd->get.size;
     }
 
-    mutex_unlock(&(state->mutex));
-
     kfree(state->cmd);
+
+    mutex_unlock(&(state->mutex));
 
     return 0;
 }
@@ -717,9 +717,9 @@ xpmem_release_remote(struct xpmem_partition_state * part,
         }
     }
 
-    mutex_unlock(&(state->mutex));
-
     kfree(state->cmd);
+
+    mutex_unlock(&(state->mutex));
 
     return 0;
 }
@@ -777,9 +777,13 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
         }
     }
 
-    mutex_unlock(&(state->mutex));
+    if (state->cmd->attach.num_pfns > 0) {
+        kfree(state->cmd->attach.pfns);
+    }
 
     kfree(state->cmd);
+
+    mutex_unlock(&(state->mutex));
 
     return ret;
 }
@@ -825,9 +829,9 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
         }
     }
 
-    mutex_unlock(&(state->mutex));
-
     kfree(state->cmd);
+
+    mutex_unlock(&(state->mutex));
 
     return 0;
 }
