@@ -240,7 +240,7 @@ xpmem_search_or_remove_link(struct xpmem_partition_state * state,
         if (remove) {
             result = (struct xpmem_link_connection *)htable_remove(state->link_map,
                         (uintptr_t)link,
-                        1);
+                        0);
         } else {
             result = (struct xpmem_link_connection *)htable_search(state->link_map,
                         (uintptr_t)link);
