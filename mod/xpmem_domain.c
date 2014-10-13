@@ -426,6 +426,10 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
 
             xpmem_cmd_deliver(state->part, state->link, cmd);
 
+            if (cmd->attach.num_pfns > 0) {
+                kfree(cmd->attach.pfns);
+            }
+
             break;
 
         case XPMEM_DETACH:
