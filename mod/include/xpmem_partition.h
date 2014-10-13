@@ -18,7 +18,7 @@
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 
-#define XPMEM_MAX_LINK_ID 16
+#define XPMEM_MAX_LINK_ID 128
 
 /* The well-known name server's domid */
 #define XPMEM_NS_DOMID    1
