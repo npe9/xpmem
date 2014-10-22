@@ -28,6 +28,9 @@ struct xpmem_request_struct {
     /* Has it been allocated */
     int                   allocated;
 
+    /* Has command been serviced? */
+    int                   serviced;
+
     /* Completed command struct */
     struct xpmem_cmd_ex * cmd;
 
@@ -67,6 +70,7 @@ alloc_request_id(struct xpmem_domain_state * state)
                 struct xpmem_request_struct * req = &(state->requests[i]);
 
                 req->allocated = 1;
+                req->serviced  = 0;
                 req->cmd       = NULL;
 
                 id = i;
@@ -458,7 +462,7 @@ xpmem_cmd_wait(struct xpmem_domain_state  * state,
 {
     struct xpmem_request_struct * req = &(state->requests[reqid]);
 
-    wait_event_interruptible(req->waitq, req->cmd != NULL);
+    wait_event_interruptible(req->waitq, req->serviced > 0);
 
     if (req->cmd == NULL) {
         *resp = NULL; 
@@ -466,6 +470,7 @@ xpmem_cmd_wait(struct xpmem_domain_state  * state,
     }
 
     *resp = req->cmd;
+
     return 0;
 }
 
@@ -475,8 +480,29 @@ xpmem_cmd_wakeup(struct xpmem_domain_state * state,
 {
     struct xpmem_request_struct * req = &(state->requests[cmd->reqid]);
 
-    req->cmd = cmd;
+    /* Allocate response */
+    req->cmd = kmalloc(sizeof(struct xpmem_cmd_ex), GFP_KERNEL);
+    if (req->cmd == NULL) {
+        goto wakeup;
+    }
 
+    *(req->cmd) = *cmd;
+
+    if ((cmd->type            == XPMEM_ATTACH_COMPLETE) && 
+        (cmd->attach.num_pfns >  0))
+    {
+        req->cmd->attach.pfns = kmalloc(sizeof(u64) * cmd->attach.num_pfns, GFP_KERNEL);
+        if (req->cmd->attach.pfns == NULL) {
+            kfree(req->cmd);
+            req->cmd = NULL;
+            goto wakeup;
+        }
+
+        memcpy(req->cmd->attach.pfns, cmd->attach.pfns, sizeof(u64) * cmd->attach.num_pfns);
+    }
+
+wakeup:
+    req->serviced = 1;
     mb();
     wake_up_interruptible(&(req->waitq));
 }
@@ -552,6 +578,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         case XPMEM_RELEASE_COMPLETE:
         case XPMEM_ATTACH_COMPLETE: 
         case XPMEM_DETACH_COMPLETE:
+
             xpmem_cmd_wakeup(state, cmd);
 
             break;
@@ -668,6 +695,8 @@ xpmem_make_remote(struct xpmem_partition_state * part,
     /* Grab allocated segid */
     *segid = resp->make.segid;
 
+    kfree(resp);
+
 out:
     free_request_id(state, reqid);
     return status;
@@ -713,6 +742,8 @@ xpmem_remove_remote(struct xpmem_partition_state * part,
     if (status != 0) {
         goto out;
     }
+
+    kfree(resp);
 
 out:
     free_request_id(state, reqid);
@@ -772,6 +803,8 @@ xpmem_get_remote(struct xpmem_partition_state * part,
     *apid = resp->get.apid;
     *size = resp->get.size;
 
+    kfree(resp);
+
 out:
     free_request_id(state, reqid);
     return status;
@@ -819,6 +852,8 @@ xpmem_release_remote(struct xpmem_partition_state * part,
     if (status != 0) {
         goto out;
     }
+
+    kfree(resp);
 
 out:
     free_request_id(state, reqid);
@@ -879,9 +914,13 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
             at_vaddr,
             resp->attach.pfns,
             resp->attach.num_pfns);
+
+        kfree(resp->attach.pfns);
     } else {
         status = -1;
     }
+
+    kfree(resp);
 
 out:
     free_request_id(state, reqid);
@@ -934,6 +973,8 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
     if (status != 0) {
         goto out;
     }
+
+    kfree(resp);
 
 out:
     free_request_id(state, reqid);
