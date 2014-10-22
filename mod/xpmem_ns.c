@@ -755,7 +755,7 @@ free_all_xpmem_domains(struct xpmem_ns_state * ns_state)
 
 
 /* Process an XPMEM_PING/PONG_NS command */
-static void
+static int
 xpmem_ns_process_ping_cmd(struct xpmem_partition_state * part_state,
                           xpmem_link_t                   link,
                           struct xpmem_cmd_ex          * cmd)
@@ -774,24 +774,27 @@ xpmem_ns_process_ping_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_PONG_NS: {
             /* We received a PONG. WTF */
             XPMEM_ERR("Name server received a PONG? Are there multiple name servers running?");
-            return;
+            return 0;
         }
 
         default: {
             XPMEM_ERR("Unknown PING operation: %s", cmd_to_string(cmd->type));
-            return;
+            return -EINVAL;
         }
     }
 
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
         XPMEM_ERR("Cannot send command on link %lli", link);
+        return -EFAULT;
     }
+
+    return 0;
 }
 
 
 /* Process an XPMEM_DOMID_REQUEST/RESPONSE command */
-static void
+static int
 xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
                            struct xpmem_domain          * req_domain,
                            struct xpmem_domain          * src_domain,
@@ -807,7 +810,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
     switch (cmd->type) {
         case XPMEM_DOMID_REQUEST: {
             struct xpmem_domain * domain = NULL;
-            int ret = 0;
+            int                   status = 0;
 
             /* A domid is requested by someone downstream from us on 'link' */
             domain = alloc_xpmem_domain(ns_state, -1);
@@ -821,12 +824,11 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
             out_cmd->domid_req.domid = domain->domid;
 
             /* Update domid map */
-            ret = xpmem_add_domid(part_state, domain->domid, link);
+            status = xpmem_add_domid(part_state, domain->domid, link);
 
-            if (ret == 0) {
+            if (status == 0) {
                 XPMEM_ERR("Cannot insert domid %lli into hashtable", domain->domid);
-                out_cmd->domid_req.domid = -1;
-                goto out_domid_req;
+                return -EFAULT;
             }
 
             out_domid_req:
@@ -841,7 +843,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_DOMID_RESPONSE: {
             /* We've been allocated a domid. Interesting. */
             XPMEM_ERR("Name server has been allocated a domid? Are there multiple name servers running?");
-            return;
+            return 0;
         }
 
         case XPMEM_DOMID_RELEASE: {
@@ -852,6 +854,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
 
             if (ret != 0) {
                 XPMEM_ERR("Cannot free domain");
+                return -EFAULT;
             }
 
             /* Update domid map */
@@ -859,21 +862,25 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
 
             if (ret == 0) {
                 XPMEM_ERR("Cannot free domid %lli from hashtable", cmd->domid_req.domid);
+                return -EFAULT;
             }
 
             /* No command to send */
-            return;
+            return 0;
         }
         default: {
             XPMEM_ERR("Unknown domid operation: %s", cmd_to_string(cmd->type));
-            return;
+            return -EINVAL;
         }
     }
 
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
         XPMEM_ERR("Cannot send command on link %lli", link);
+        return -EFAULT;
     }
+
+    return 0;
 }
 
 
@@ -881,7 +888,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
 /* Process a regular XPMEM command. If we get here we are connected to the name
  * server already and have a domid
  */
-static void
+static int
 xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                            struct xpmem_domain          * req_domain,
                            struct xpmem_domain          * src_domain,
@@ -1098,7 +1105,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
             if (out_link == 0) {
                 XPMEM_ERR("Cannot find domid %lli in hashtable", cmd->dst_dom);
-                return;
+                return -EFAULT;
             }
 
             break; 
@@ -1107,7 +1114,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
         default: {
             XPMEM_ERR("Unknown operation: %s", cmd_to_string(cmd->type));
-            return;
+            return -EINVAL;
         }
     }
 
@@ -1117,7 +1124,10 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
         XPMEM_ERR("Cannot send command on link %lli", link);
+        return -EFAULT;
     }
+
+    return 0;
 }
 
 
@@ -1221,27 +1231,22 @@ xpmem_ns_deliver_cmd(struct xpmem_partition_state * part_state,
     if (prepare_domains(part_state, cmd, &req_domain, &src_domain) != 0) {
         XPMEM_ERR("Command with malformed domids: (req:%lli, src:%lli, dst:%lli)",
             cmd->req_dom, cmd->src_dom, cmd->dst_dom);
-        return 0;
+        return -EINVAL;
     }
 
     switch (cmd->type) {
         case XPMEM_PING_NS:
         case XPMEM_PONG_NS:
-            xpmem_ns_process_ping_cmd(part_state, link, cmd);
-            break;
+            return xpmem_ns_process_ping_cmd(part_state, link, cmd);
 
         case XPMEM_DOMID_REQUEST:
         case XPMEM_DOMID_RESPONSE:
         case XPMEM_DOMID_RELEASE:
-            xpmem_ns_process_domid_cmd(part_state, req_domain, src_domain, link, cmd);
-            break;
+            return xpmem_ns_process_domid_cmd(part_state, req_domain, src_domain, link, cmd);
 
         default:
-            xpmem_ns_process_xpmem_cmd(part_state, req_domain, src_domain, link, cmd);
-            break;
+            return xpmem_ns_process_xpmem_cmd(part_state, req_domain, src_domain, link, cmd);
     }   
-
-    return 0;
 }
 
 
