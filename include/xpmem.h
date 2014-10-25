@@ -32,6 +32,7 @@ struct xpmem_addr {
 };
 
 #define XPMEM_MAXADDR_SIZE  (size_t)(-1L)
+#define XPMEM_MAXNAME_SIZE  128
 
 /*
  * path to XPMEM device
@@ -60,17 +61,14 @@ struct xpmem_addr {
 #define XPMEM_IOC_MAGIC     'x'
 #define XPMEM_CMD_VERSION   _IO(XPMEM_IOC_MAGIC, 0)
 #define XPMEM_CMD_MAKE      _IO(XPMEM_IOC_MAGIC, 1)
-#define XPMEM_CMD_REMOVE    _IO(XPMEM_IOC_MAGIC, 2)
-#define XPMEM_CMD_GET       _IO(XPMEM_IOC_MAGIC, 3)
-#define XPMEM_CMD_RELEASE   _IO(XPMEM_IOC_MAGIC, 4)
-#define XPMEM_CMD_ATTACH    _IO(XPMEM_IOC_MAGIC, 5)
-#define XPMEM_CMD_DETACH    _IO(XPMEM_IOC_MAGIC, 6)
-#define XPMEM_CMD_FORK_BEGIN    _IO(XPMEM_IOC_MAGIC, 7)
-#define XPMEM_CMD_FORK_END  _IO(XPMEM_IOC_MAGIC, 8)
-#define XPMEM_CMD_EXT_LOCAL_CONNECT         _IO(XPMEM_IOC_MAGIC, 9)
-#define XPMEM_CMD_EXT_LOCAL_DISCONNECT      _IO(XPMEM_IOC_MAGIC, 10)
-#define XPMEM_CMD_EXT_REMOTE_CONNECT        _IO(XPMEM_IOC_MAGIC, 11)
-#define XPMEM_CMD_EXT_REMOTE_DISCONNECT     _IO(XPMEM_IOC_MAGIC, 12)
+#define XPMEM_CMD_SEARCH    _IO(XPMEM_IOC_MAGIC, 2)
+#define XPMEM_CMD_REMOVE    _IO(XPMEM_IOC_MAGIC, 3)
+#define XPMEM_CMD_GET       _IO(XPMEM_IOC_MAGIC, 4)
+#define XPMEM_CMD_RELEASE   _IO(XPMEM_IOC_MAGIC, 5)
+#define XPMEM_CMD_ATTACH    _IO(XPMEM_IOC_MAGIC, 6)
+#define XPMEM_CMD_DETACH    _IO(XPMEM_IOC_MAGIC, 7)
+#define XPMEM_CMD_FORK_BEGIN    _IO(XPMEM_IOC_MAGIC, 8)
+#define XPMEM_CMD_FORK_END  _IO(XPMEM_IOC_MAGIC, 9)
 
 /*
  * Structures used with the preceding ioctl() commands to pass data.
@@ -81,6 +79,14 @@ struct xpmem_cmd_make {
     int permit_type;
     __u64 permit_value;
     xpmem_segid_t segid;    /* returned on success */
+    char *name;
+    size_t name_size;
+};
+
+struct xpmem_cmd_search {
+    char *name;
+    size_t name_size;
+    xpmem_segid_t segid;   /* returned on success */
 };
 
 struct xpmem_cmd_remove {
@@ -115,6 +121,8 @@ struct xpmem_cmd_detach {
 #ifndef __KERNEL__
 extern int xpmem_version(void);
 extern xpmem_segid_t xpmem_make(void *, size_t, int, void *);
+extern xpmem_segid_t xpmem_make_name(void *, size_t, int, void *, char *, size_t);
+extern xpmem_segid_t xpmem_search(char *, size_t);
 extern int xpmem_remove(xpmem_segid_t);
 extern xpmem_apid_t xpmem_get(xpmem_segid_t, int, int, void *);
 extern int xpmem_release(xpmem_apid_t);

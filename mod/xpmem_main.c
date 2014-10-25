@@ -216,9 +216,25 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                    sizeof(struct xpmem_cmd_make)))
             return -EFAULT;
 
+        if (make_info.name_size > XPMEM_MAXNAME_SIZE)
+            return -EINVAL;
+
+        if (make_info.name_size > 0) {
+            if (strncpy_from_user(make_info.name,
+                    ((struct xpmem_cmd_make *)arg)->name,
+                    make_info.name_size) != make_info.name_size)
+                return -EFAULT;
+
+            /* Ensure name is truncated */
+            make_info.name[XPMEM_MAXNAME_SIZE - 1] = 0;
+        } else {
+            make_info.name = NULL;
+        }
+
         ret = xpmem_make(make_info.vaddr, make_info.size,
                  make_info.permit_type,
-                 (void *)make_info.permit_value, &segid);
+                 (void *)make_info.permit_value, 
+                 make_info.name, &segid);
         if (ret != 0)
             return ret;
 
@@ -227,6 +243,37 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             (void)xpmem_remove(segid);
             return -EFAULT;
         }
+        return 0;
+    }
+    case XPMEM_CMD_SEARCH: {
+        struct xpmem_cmd_search search_info;
+        xpmem_segid_t segid;
+
+        if (copy_from_user(&search_info, (void __user *)arg,
+                   sizeof(struct xpmem_cmd_search)))
+            return -EFAULT;
+
+        if (search_info.name_size > XPMEM_MAXNAME_SIZE)
+            return -EINVAL;
+
+        if (search_info.name_size <= 0) 
+            return -EINVAL;
+
+        if (strncpy_from_user(search_info.name,
+                ((struct xpmem_cmd_search *)arg)->name,
+                search_info.name_size) != search_info.name_size)
+            return -EFAULT;
+
+        /* Ensure name is truncated */
+        search_info.name[XPMEM_MAXNAME_SIZE - 1] = 0;
+
+        ret = xpmem_search(search_info.name, &segid);
+        if (ret != 0)
+            return ret;
+
+        if (put_user(segid,
+                &((struct xpmem_cmd_search __user *)arg)->segid))
+            return -EFAULT;
         return 0;
     }
     case XPMEM_CMD_REMOVE: {

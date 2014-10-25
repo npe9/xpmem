@@ -5,12 +5,16 @@
 #ifndef _XPMEM_EXTENDED_H
 #define _XPMEM_EXTENDED_H
 
-
 #include <xpmem.h>
 #include <xpmem_iface.h>
 
-
 struct xpmem_cmd_make_ex {
+    char          name[XPMEM_MAXNAME_SIZE];
+    xpmem_segid_t segid;
+};
+
+struct xpmem_cmd_search_ex {
+    char          name[XPMEM_MAXNAME_SIZE];
     xpmem_segid_t segid;
 };
 
@@ -20,31 +24,31 @@ struct xpmem_cmd_remove_ex {
 
 struct xpmem_cmd_get_ex {
     xpmem_segid_t segid;
-    uint32_t flags;
-    uint32_t permit_type;
-    uint64_t permit_value;
-    xpmem_apid_t apid;
-    uint64_t size;
+    uint32_t      flags;
+    uint32_t      permit_type;
+    uint64_t      permit_value;
+    xpmem_apid_t  apid;
+    uint64_t      size;
 };
 
 struct xpmem_cmd_release_ex {
     xpmem_segid_t segid; /* needed for routing */
-    xpmem_apid_t apid;
+    xpmem_apid_t  apid;
 };
 
 struct xpmem_cmd_attach_ex {
-    xpmem_segid_t segid; /* needed for routing */
-    xpmem_apid_t apid;
-    uint64_t off;
-    uint64_t size;
-    uint64_t num_pfns;
-    uint64_t * pfns;
+    xpmem_segid_t   segid; /* needed for routing */
+    xpmem_apid_t    apid;
+    uint64_t        off;
+    uint64_t        size;
+    uint64_t        num_pfns;
+    uint64_t      * pfns;
 };
 
 struct xpmem_cmd_detach_ex {
     xpmem_segid_t segid; /* needed for routing */
     xpmem_apid_t  apid;
-    uint64_t vaddr;
+    uint64_t      vaddr;
 };
 
 
@@ -55,6 +59,8 @@ struct xpmem_cmd_domid_req_ex {
 typedef enum {
     XPMEM_MAKE,
     XPMEM_MAKE_COMPLETE,
+    XPMEM_SEARCH,
+    XPMEM_SEARCH_COMPLETE,
     XPMEM_REMOVE,
     XPMEM_REMOVE_COMPLETE,
     XPMEM_GET,
@@ -83,10 +89,11 @@ struct xpmem_cmd_ex {
     xpmem_domid_t req_dom; /* The domain invoking the original XPMEM operation */
     xpmem_domid_t src_dom; /* The domain that created the most recent request / response */
     xpmem_domid_t dst_dom; /* The domain targeted with the command / response */
-    xpmem_op_t type;
+    xpmem_op_t    type;
 
     union {
         struct xpmem_cmd_make_ex      make;
+        struct xpmem_cmd_search_ex    search;
         struct xpmem_cmd_remove_ex    remove;
         struct xpmem_cmd_get_ex       get;
         struct xpmem_cmd_release_ex   release;
@@ -102,7 +109,13 @@ struct xpmem_partition_state;
  * service layer*/
 int 
 xpmem_make_remote(struct xpmem_partition_state * part, 
+                  char                         * name,
                   xpmem_segid_t                * segid);
+
+int
+xpmem_search_remote(struct xpmem_partition_state * part,
+                    char                         * name,
+                    xpmem_segid_t                * segid);
 
 int
 xpmem_remove_remote(struct xpmem_partition_state * part,
@@ -132,7 +145,6 @@ int xpmem_detach_remote(struct xpmem_partition_state * part,
                         xpmem_segid_t                  segid,
                         xpmem_apid_t                   apid,
                         u64                            vaddr);
-
 
 
 #endif /* _XPMEM_EXTENDED_H */

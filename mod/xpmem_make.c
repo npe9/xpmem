@@ -20,7 +20,7 @@
  * Create a new and unique segid.
  */
 static xpmem_segid_t
-xpmem_make_segid(struct xpmem_thread_group *seg_tg)
+xpmem_make_segid(struct xpmem_thread_group *seg_tg, char *name)
 {
     struct xpmem_id segid;
     xpmem_segid_t *segid_p = (xpmem_segid_t *)&segid;
@@ -41,7 +41,7 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg)
     /* Register with the nameserver, which will almost certainly change the uniq
      * value assigned here
      */
-    xpmem_make_remote(&(xpmem_my_part->part_state), segid_p);
+    xpmem_make_remote(&(xpmem_my_part->part_state), name, segid_p);
 
     //DBUG_ON(*segid_p <= 0);
     return *segid_p;
@@ -98,7 +98,7 @@ xpmem_make_segment(u64                         vaddr,
  */
 int
 xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
-       xpmem_segid_t *segid_p)
+       char *name, xpmem_segid_t *segid_p)
 {
     xpmem_segid_t segid;
     struct xpmem_thread_group *seg_tg;
@@ -132,7 +132,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
         return -EINVAL;
     }
 
-    segid = xpmem_make_segid(seg_tg);
+    segid = xpmem_make_segid(seg_tg, name);
     if (segid <= 0) {
         xpmem_tg_deref(seg_tg);
         return segid;
@@ -145,6 +145,12 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value,
     }
 
     return status;
+}
+
+int
+xpmem_search(char *name, xpmem_segid_t *segid)
+{
+    return xpmem_search_remote(&(xpmem_my_part->part_state), name, segid);
 }
 
 /*

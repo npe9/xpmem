@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <xpmem.h>
 
@@ -8,19 +9,29 @@
 #define PAGE_SIZE sysconf(_SC_PAGESIZE)
 
 int main(int argc, char ** argv) {
+    char * name;
     xpmem_segid_t segid;
     xpmem_apid_t apid;
     long num_pages;
 
     if (argc != 3) {
-        printf("Supply segid and num pages\n");
+        printf("Usage: %s <num_pages> <name>\n", *argv);
         return -1;
     }
 
-    segid = atoll(argv[1]);
-    num_pages = atol(argv[2]);
-    apid = xpmem_get(segid, XPMEM_RDWR, XPMEM_PERMIT_MODE, NULL);
+    num_pages = atol(*(++argv));
+    name = *(++argv);
 
+    printf("name: %s, num_pages: %lu\n", name, num_pages);
+
+    segid = xpmem_search(name, strlen(name));
+    if (segid <= 0) {
+        printf("Could not find segid for name %s\n", name);
+        return -1;
+    }
+    printf("segid = %lli\n", segid);
+
+    apid = xpmem_get(segid, XPMEM_RDWR, XPMEM_PERMIT_MODE, NULL);
     printf("apid: %lli\n", apid);
 
     if (apid <= 0) {

@@ -413,7 +413,8 @@ xpmem_vaddr_to_PFN(struct mm_struct *mm, u64 vaddr)
 
 /* found in xpmem_make.c */
 extern int xpmem_make_segment(u64, size_t, int, void *, struct xpmem_thread_group *, xpmem_segid_t );
-extern int xpmem_make(u64, size_t, int, void *, xpmem_segid_t *);
+extern int xpmem_make(u64, size_t, int, void *, char *, xpmem_segid_t *);
+extern int xpmem_search(char *, xpmem_segid_t *);
 extern void xpmem_remove_segs_of_tg(struct xpmem_thread_group *);
 extern int xpmem_remove_seg(struct xpmem_thread_group *, struct xpmem_segment *);
 extern int xpmem_remove(xpmem_segid_t);
