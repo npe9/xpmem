@@ -47,7 +47,7 @@ struct xpmem_domain_state {
 
     /* Array of request structs indexed by reqid */
     struct xpmem_request_struct    requests[MAX_UNIQ_REQ];
-
+    
     /* XPMEM connection link */
     xpmem_link_t                   link; 
 
@@ -454,7 +454,6 @@ xpmem_map_pfn_range(u64   at_vaddr,
 }
 
 
-
 static int
 xpmem_cmd_wait(struct xpmem_domain_state  * state,
                uint32_t                     reqid,
@@ -731,8 +730,8 @@ xpmem_search_remote(struct xpmem_partition_state * part,
 
     /* Setup command */
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
-    cmd.type         = XPMEM_SEARCH;
-    cmd.reqid        = reqid;
+    cmd.type  = XPMEM_SEARCH;
+    cmd.reqid = reqid;
 
     if (name != NULL) {
         strncpy(cmd.search.name, name, XPMEM_MAXNAME_SIZE);

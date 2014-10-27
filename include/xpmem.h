@@ -78,9 +78,9 @@ struct xpmem_cmd_make {
     size_t size;
     int permit_type;
     __u64 permit_value;
-    xpmem_segid_t segid;    /* returned on success */
     char *name;
     size_t name_size;
+    xpmem_segid_t segid;    /* returned on success */
 };
 
 struct xpmem_cmd_search {
