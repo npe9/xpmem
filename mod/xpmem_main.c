@@ -388,7 +388,7 @@ xpmem_create_remote_thread_group(void)
 
     tg->lock = __SPIN_LOCK_UNLOCKED(tg->lock);
     tg->tgid = XPMEM_REMOTE_TG_TGID;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,10)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,12,0)
     tg->uid = XPMEM_REMOTE_TG_UID;
     tg->gid = XPMEM_REMOTE_TG_GID;
 #else
