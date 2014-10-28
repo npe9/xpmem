@@ -5,12 +5,6 @@ EXTRA_CFLAGS  += -DMODULE=1 -D__KERNEL__=1 -DUSE_DBUG_ON
 
 EXTRA_CFLAGS  += -I$(PWD)/include -I$(PWD)/../include
 
-ifeq ($(NS),y)
-	EXTRA_CFLAGS += -DUSING_NS
-endif
-
-	
-
 xpmem-y := 	xpmem_main.o \
 		xpmem_make.o \
 		xpmem_get.o \

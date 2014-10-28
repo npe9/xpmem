@@ -40,6 +40,9 @@
 struct xpmem_partition * xpmem_my_part  = NULL;  /* pointer to this partition */
 struct proc_dir_entry  * xpmem_proc_dir = NULL;
 
+int ns = 0;
+module_param(ns, int, 0);
+
 
 /*
  * User open of the XPMEM driver. Called whenever /dev/xpmem is opened.
@@ -484,16 +487,9 @@ xpmem_init(void)
     if (ret != 0)
         goto out_1;
 
-#ifdef USING_NS
-    if (xpmem_partition_init(&(xpmem_my_part->part_state), 1) != 0) {
+    if (xpmem_partition_init(&(xpmem_my_part->part_state), ns) != 0) {
         goto out_2;
     }
-#else
-    if (xpmem_partition_init(&(xpmem_my_part->part_state), 0) != 0) {
-        goto out_2;
-    }
-        
-#endif
 
     /* Symbol lookups */
     xpmem_linux_symbol_init();
