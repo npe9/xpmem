@@ -674,7 +674,12 @@ add_xpmem_apid(struct xpmem_ns_state * ns_state,
     /* Add to apid map */
     if (xpmem_ht_add(ns_state, ns_state->apid_map, (uintptr_t)key, (uintptr_t)val) == 0) {
         XPMEM_ERR("Cannot add apid %lli to hashtable, probably because it is already present", apid);
+
         domain_remove_xpmem_apid(domain, val);
+
+        kfree(val);
+        kfree(key);
+
         return -1;
     }
 
