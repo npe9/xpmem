@@ -27,7 +27,6 @@
 #define XPMEM_DEVICE_ID     0x100d
 
 
-/* TODO: what about AMD? */
 #define VMCALL      ".byte 0x0F,0x01,0xC1\r"
 #define VMMCALL     ".byte 0x0F,0x01,0xD9\r"
 #define MAX_DEVICES     16
@@ -61,7 +60,6 @@ struct xpmem_bar_state {
 struct xpmem_palacios_state {
     void __iomem                 * xpmem_bar;   /* Bar memory */
     struct xpmem_bar_state         bar_state;   /* Bar state */
-    struct mutex                   mutex;       /* mutex for BAR hypercall access */
 
     unsigned int                   irq;         /* device irq number */
     struct work_struct             work;        /* work struct */
@@ -301,16 +299,10 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         return -1;
     }
 
-    while (mutex_lock_interruptible(&(state->mutex)));
-
-    {
-        xpmem_hcall(
-            state->bar_state.xpmem_hcall_id, 
-            cmd
-        );
-    }
-
-    mutex_unlock(&(state->mutex));
+    xpmem_hcall(
+        state->bar_state.xpmem_hcall_id, 
+        cmd
+    );
 
     return 0;
 }
@@ -398,7 +390,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
     /* Initialize the rest of the state */
     atomic_set(&(palacios_state->num_cmds), 0);
-    mutex_init(&(palacios_state->mutex));
     INIT_WORK(&(palacios_state->work), xpmem_work_fn);
 
     atomic_inc(&dev_off);
@@ -548,13 +539,7 @@ xpmem_palacios_detach_paddr(struct xpmem_partition_state * part,
         return 0;
     }
 
-    while (mutex_lock_interruptible(&(state->mutex)));
-
-    {
-        xpmem_detach_hcall(state->bar_state.xpmem_detach_hcall_id, paddr);
-    }
-
-    mutex_unlock(&(state->mutex));
+    xpmem_detach_hcall(state->bar_state.xpmem_detach_hcall_id, paddr);
 
     return 0;
 
