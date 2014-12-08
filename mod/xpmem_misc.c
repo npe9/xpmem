@@ -64,6 +64,30 @@ xpmem_tg_ref_by_tgid(pid_t tgid)
     return ERR_PTR(-ENOENT);
 }
 
+xpmem_segid_t
+xpmem_alias_to_segid(xpmem_segid_t alias)
+{
+    int index;
+    struct xpmem_segment *seg;
+
+    DBUG_ON(alias <= 0);
+
+    index = xpmem_seg_hashtable_index(alias);
+    read_lock(&xpmem_my_part->seg_hashtable[index].lock);
+
+    list_for_each_entry(seg, &xpmem_my_part->seg_hashtable[index].list,
+                                seg_hashnode) {
+        if (seg->alias == alias) {
+            read_unlock(&xpmem_my_part->seg_hashtable[index].lock);
+            return seg->segid;
+        }
+    }
+
+    read_unlock(&xpmem_my_part->seg_hashtable[index].lock);
+
+    return alias;
+}
+
 /*
  * Return a pointer to the xpmem_thread_group structure that corresponds to the
  * specified segid. Increment the refcnt as well if found.

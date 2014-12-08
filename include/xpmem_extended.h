@@ -9,13 +9,8 @@
 #include <xpmem_iface.h>
 
 struct xpmem_cmd_make_ex {
-    char          name[XPMEM_MAXNAME_SIZE];
     xpmem_segid_t segid;
-};
-
-struct xpmem_cmd_search_ex {
-    char          name[XPMEM_MAXNAME_SIZE];
-    xpmem_segid_t segid;
+    xpmem_segid_t alias;
 };
 
 struct xpmem_cmd_remove_ex {
@@ -59,8 +54,6 @@ struct xpmem_cmd_domid_req_ex {
 typedef enum {
     XPMEM_MAKE,
     XPMEM_MAKE_COMPLETE,
-    XPMEM_SEARCH,
-    XPMEM_SEARCH_COMPLETE,
     XPMEM_REMOVE,
     XPMEM_REMOVE_COMPLETE,
     XPMEM_GET,
@@ -80,7 +73,6 @@ typedef enum {
     XPMEM_DOMID_REQUEST,
     XPMEM_DOMID_RESPONSE,
     XPMEM_DOMID_RELEASE,
-
 } xpmem_op_t;
 
 
@@ -93,7 +85,6 @@ struct xpmem_cmd_ex {
 
     union {
         struct xpmem_cmd_make_ex      make;
-        struct xpmem_cmd_search_ex    search;
         struct xpmem_cmd_remove_ex    remove;
         struct xpmem_cmd_get_ex       get;
         struct xpmem_cmd_release_ex   release;
@@ -109,13 +100,8 @@ struct xpmem_partition_state;
  * service layer*/
 int 
 xpmem_make_remote(struct xpmem_partition_state * part, 
-                  char                         * name,
+                  xpmem_segid_t                  alias,
                   xpmem_segid_t                * segid);
-
-int
-xpmem_search_remote(struct xpmem_partition_state * part,
-                    char                         * name,
-                    xpmem_segid_t                * segid);
 
 int
 xpmem_remove_remote(struct xpmem_partition_state * part,

@@ -40,11 +40,11 @@ struct xpmem_ns_state {
     struct list_head               segid_free_list;
     struct xpmem_hashtable       * segid_map;
 
+    /* Alias management */
+    xpmem_segid_t                  alias_map[XPMEM_MIN_SEGID];
+
     /* Apid management */
     struct xpmem_hashtable       * apid_map;
-
-    /* Name management */
-    struct xpmem_hashtable       * name_map;
 
     /* Domain management */
     struct xpmem_domain          * domain_map[XPMEM_MAX_DOMID];
@@ -64,15 +64,10 @@ struct xpmem_id_key {
     xpmem_apid_t  apid;
 };
 
-/* Hashtable key entry for name management */
-struct xpmem_name_key {
-    char name[XPMEM_MAXNAME_SIZE];
-};
-
 /* Hashtable value entry for segid/apid management */
 struct xpmem_id_val {
-    char             name[XPMEM_MAXNAME_SIZE];
     xpmem_segid_t    segid;
+    xpmem_segid_t    alias;
     xpmem_apid_t     apid;
     xpmem_domid_t    domid;
     xpmem_domid_t    dst_domid;
@@ -129,17 +124,6 @@ xpmem_apid_eq_fn(uintptr_t key1,
            );
 }
 
-/* Name map eq function */
-static int
-xpmem_name_eq_fn(uintptr_t key1,
-                 uintptr_t key2)
-{
-    struct xpmem_name_key * n1 = (struct xpmem_name_key *)key1;
-    struct xpmem_name_key * n2 = (struct xpmem_name_key *)key2;
-
-    return (strcmp(n1->name, n2->name) == 0);
-}
-
 /* Segid map hash function */
 static u32
 xpmem_segid_hash_fn(uintptr_t key)
@@ -158,20 +142,6 @@ xpmem_apid_hash_fn(uintptr_t key)
     return hash_long(id->apid);
 }
 
-/* Name map hash function (djb2) */
-static u32
-xpmem_name_hash_fn(uintptr_t key)
-{
-    struct xpmem_name_key * n    = (struct xpmem_name_key *)key;
-    unsigned char         * str  = (unsigned char *)n->name;
-    unsigned long           hash = 5381;
-    int                     c    = 0;
-
-    while ((c = *str++))
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-
-    return hash;
-}
 
 /* Hashtable helpers */
 static int
@@ -247,14 +217,9 @@ enclave_segid_show(struct seq_file     * file,
         domain->num_segids);
 
     list_for_each_entry(val, &(domain->segid_list), node) {
-        if (val->name[0] != 0) {
-            seq_printf(file, "  %lli (name = %s)\n", 
-                val->segid,
-                val->name);
-        } else {
-            seq_printf(file, "  %lli\n", 
-                val->segid);
-        }
+        seq_printf(file, "  %lli (alias = %lli)\n", 
+            val->segid,
+            val->alias);
     }
 }
 
@@ -488,16 +453,81 @@ free_segid(struct xpmem_ns_state * ns_state,
     }
     spin_unlock(&(ns_state->lock));
 }
+
+static int
+add_alias(struct xpmem_ns_state * ns_state,
+          xpmem_segid_t           segid,
+          xpmem_segid_t           alias)
+{
+    int ret = 0;
+
+    if ((alias <= 0) ||
+        (alias >= XPMEM_MIN_SEGID))
+    {
+        return -1;
+    }
+
+    spin_lock(&(ns_state->lock));
+    {
+        if (ns_state->alias_map[alias] != 0) {
+            ret = -1;
+        } else {
+            ns_state->alias_map[alias] = segid;
+        }
+    }
+    spin_unlock(&(ns_state->lock));
+
+    return ret;
+}
+
+static xpmem_segid_t
+get_alias_segid(struct xpmem_ns_state * ns_state,
+                xpmem_segid_t           alias)
+{
+    xpmem_segid_t segid = alias;
+    
+    if ((alias <= 0) ||
+        (alias >= XPMEM_MIN_SEGID))
+    {
+        return segid;
+    }
+
+    spin_lock(&(ns_state->lock));
+    {
+        if (ns_state->alias_map[alias] > 0) {
+            segid = ns_state->alias_map[alias];
+        }
+    }
+    spin_unlock(&(ns_state->lock));
+
+    return segid;
+}
+
+static void
+remove_alias(struct xpmem_ns_state * ns_state,
+             xpmem_segid_t           alias)
+{
+    if ((alias <= 0) ||
+        (alias >= XPMEM_MIN_SEGID))
+    {
+        return;
+    }
+
+    spin_lock(&(ns_state->lock));
+    {
+        ns_state->alias_map[alias] = 0;
+    }
+    spin_unlock(&(ns_state->lock));
+}
                    
 
 static int
 alloc_xpmem_segid(struct xpmem_ns_state * ns_state, 
                   struct xpmem_domain   * domain,
                   xpmem_segid_t         * segid,
-                  char                  * name)
+                  xpmem_segid_t           alias)
 {
     struct xpmem_id_key          * key   = NULL;
-    struct xpmem_name_key        * n_key = NULL;
     struct xpmem_id_val          * val   = NULL;
 
     key = kmalloc(sizeof(struct xpmem_id_key), GFP_KERNEL);
@@ -505,15 +535,8 @@ alloc_xpmem_segid(struct xpmem_ns_state * ns_state,
         return -ENOMEM;
     }
 
-    n_key = kmalloc(sizeof(struct xpmem_name_key), GFP_KERNEL);
-    if (n_key == NULL) {
-        kfree(key);
-        return -ENOMEM;
-    }
-
     val = kmalloc(sizeof(struct xpmem_id_val), GFP_KERNEL);
     if (val == NULL) {
-        kfree(n_key);
         kfree(key);
         return -ENOMEM;
     }
@@ -523,7 +546,20 @@ alloc_xpmem_segid(struct xpmem_ns_state * ns_state,
         XPMEM_ERR("Cannot allocate segid");
 
         kfree(val);
-        kfree(n_key);
+        kfree(key);
+
+        return -1;
+    }
+
+    /* Record alias */
+    if ((alias > 0) &&
+        (add_alias(ns_state, *segid, alias) != 0)) 
+    {
+        XPMEM_ERR("Cannot allocate alias %lli", alias);
+
+        free_segid(ns_state, *segid);
+
+        kfree(val);
         kfree(key);
 
         return -1;
@@ -535,48 +571,25 @@ alloc_xpmem_segid(struct xpmem_ns_state * ns_state,
 
     /* Setup val */
     val->segid     = *segid;
+    val->alias     = alias;
     val->apid      = -1;
     val->domid     = domain->domid;
     val->dst_domid = -1;
 
-    /* Setup name key */
-    if (name != NULL) {
-        strncpy(n_key->name, name, XPMEM_MAXNAME_SIZE);
-        strncpy(val->name, name, XPMEM_MAXNAME_SIZE);
-    } else {
-        memset(val->name, 0, XPMEM_MAXNAME_SIZE);
-    }
-
     /* Add to domain list */
     domain_add_xpmem_segid(domain, val);
-
-    /* Add to name map */
-    if (name != NULL) {
-        if (xpmem_ht_add(ns_state, ns_state->name_map, (uintptr_t)n_key, (uintptr_t)val) == 0) {
-            XPMEM_ERR("Cannot add name '%s' to hashtable, probably because it is already present", name);
-                
-            domain_remove_xpmem_segid(domain, val);
-
-            kfree(n_key);
-            kfree(key);
-            kfree(val);
-
-            free_segid(ns_state, *segid);
-            return -1;
-        }
-    }
 
     /* Add to segid map */
     if (xpmem_ht_add(ns_state, ns_state->segid_map, (uintptr_t)key, (uintptr_t)val) == 0) {
         XPMEM_ERR("Cannot add segid %lli to hashtable, probably because it is already present", *segid);
 
         domain_remove_xpmem_segid(domain, val);
+        remove_alias(ns_state, alias);
+        free_segid(ns_state, *segid);
 
-        xpmem_ht_remove(ns_state, ns_state->name_map, (uintptr_t)n_key);
         kfree(val);
         kfree(key);
 
-        free_segid(ns_state, *segid);
         return -1;
     }
 
@@ -590,7 +603,6 @@ free_xpmem_segid(struct xpmem_ns_state * ns_state,
 {
     struct xpmem_id_val   * val        = NULL;
     struct xpmem_id_key     search_key;
-    struct xpmem_name_key   search_name;
 
     search_key.segid = segid;
     search_key.apid  = -1;
@@ -613,15 +625,8 @@ free_xpmem_segid(struct xpmem_ns_state * ns_state,
     /* Proceed with the removal */
     val = (struct xpmem_id_val *)xpmem_ht_remove(ns_state, ns_state->segid_map, (uintptr_t)&search_key);
 
-    /* Remove from name map, if possible */ 
-    if (val->name[0] != 0) {
-        memset(&search_name, 0, sizeof(struct xpmem_name_key));
-        strncpy(search_name.name, val->name, XPMEM_MAXNAME_SIZE);
-
-        if (xpmem_ht_remove(ns_state, ns_state->name_map, (uintptr_t)&search_name) == 0) {
-            XPMEM_ERR("Cannot find name %s in name map\n", val->name);
-        }
-    }
+    /* Free alias */
+    remove_alias(ns_state, val->alias);
 
     /* Remove from domain list */
     domain_remove_xpmem_segid(domain, val);
@@ -666,7 +671,6 @@ add_xpmem_apid(struct xpmem_ns_state * ns_state,
     val->apid      = apid;
     val->domid     = domain->domid;
     val->dst_domid = req_domain->domid;
-    memset(val->name, 0, XPMEM_MAXNAME_SIZE);
 
     /* Add to domain list */
     domain_add_xpmem_apid(domain, val);
@@ -1032,7 +1036,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
     switch (cmd->type) {
         case XPMEM_MAKE: {
             /* Allocate a unique segid to this domain */
-            if (alloc_xpmem_segid(ns_state, req_domain, &(cmd->make.segid), cmd->make.name)) {
+            if (alloc_xpmem_segid(ns_state, req_domain, &(cmd->make.segid), cmd->make.alias)) {
                 XPMEM_ERR("Cannot allocate segid");
                 out_cmd->make.segid = -1;
             }
@@ -1044,32 +1048,10 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             break;
         }
 
-        case XPMEM_SEARCH: {
-            /* Search a name for a previously allocated segid */
-            struct xpmem_id_val   * val;
-            struct xpmem_name_key   key;
-
-            strncpy(key.name, cmd->search.name, XPMEM_MAXNAME_SIZE);
-
-            /* Search segid map */
-            val = (struct xpmem_id_val *)xpmem_ht_search(ns_state, ns_state->name_map, (uintptr_t)&key);
-
-            if (val == NULL) {
-                out_cmd->search.segid = -1;
-            } else {
-                out_cmd->search.segid = val->segid;
-            }
-
-
-            out_cmd->type     = XPMEM_SEARCH_COMPLETE;
-            out_cmd->dst_dom  = cmd->src_dom;
-            out_cmd->src_dom  = part_state->domid;
-            out_link          = link;
-
-            break;
-        }
-
         case XPMEM_REMOVE: {
+            /* Convert alias to actual segid, if necessary */
+            cmd->remove.segid = get_alias_segid(ns_state, cmd->remove.segid);
+
             /* Free segid to free list */
             if (free_xpmem_segid(ns_state, req_domain, cmd->remove.segid)) {
                 XPMEM_ERR("Cannot free segid %lli", cmd->remove.segid);
@@ -1086,7 +1068,9 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             struct xpmem_id_val * val = NULL;
             struct xpmem_id_key   key;
 
-            key.segid = cmd->get.segid;
+            /* Convert alias to actual segid, if necessary */
+            cmd->get.segid = get_alias_segid(ns_state, cmd->get.segid);
+            key.segid      = cmd->get.segid;
 
             /* Search segid map */
             val = (struct xpmem_id_val *)xpmem_ht_search(ns_state, ns_state->segid_map, (uintptr_t)&key);
@@ -1125,8 +1109,11 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             struct xpmem_id_val * val         = NULL;
             struct xpmem_id_key   key;
 
-            key.segid = cmd->release.segid;
-            key.apid  = cmd->release.apid;
+            /* Convert alias to actual segid, if necessary */
+            cmd->release.segid = get_alias_segid(ns_state, cmd->release.segid);
+
+            key.segid          = cmd->release.segid;
+            key.apid           = cmd->release.apid;
 
             /* Search apid map */
             val = (struct xpmem_id_val *)xpmem_ht_search(ns_state, ns_state->apid_map, (uintptr_t)&key);
@@ -1179,8 +1166,11 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             struct xpmem_id_val * val = NULL;
             struct xpmem_id_key   key;
 
-            key.segid = cmd->attach.segid;
-            key.apid  = cmd->attach.apid;
+            /* Convert alias to actual segid, if necessary */
+            cmd->attach.segid = get_alias_segid(ns_state, cmd->attach.segid);
+
+            key.segid         = cmd->attach.segid;
+            key.apid          = cmd->attach.apid;
 
             /* Search apid map */
             val = (struct xpmem_id_val *)xpmem_ht_search(ns_state, ns_state->apid_map, (uintptr_t)&key);
@@ -1415,6 +1405,9 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
         return -1;
     }
 
+    /* Create alias map */
+    memset(ns_state->alias_map, 0, sizeof(xpmem_segid_t) * XPMEM_MIN_SEGID);
+
     /* Create segid map */
     ns_state->segid_map = create_htable(0, xpmem_segid_hash_fn, xpmem_segid_eq_fn);
     if (!ns_state->segid_map) {
@@ -1425,15 +1418,6 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
     /* Create apid map */
     ns_state->apid_map  = create_htable(0, xpmem_apid_hash_fn, xpmem_apid_eq_fn);
     if (!ns_state->apid_map) {
-        free_htable(ns_state->segid_map, 1, 1);
-        kfree(ns_state);
-        return -1;
-    }
-
-    /* Create name map */
-    ns_state->name_map  = create_htable(0, xpmem_name_hash_fn, xpmem_name_eq_fn);
-    if (!ns_state->name_map) {
-        free_htable(ns_state->apid_map, 1, 1);
         free_htable(ns_state->segid_map, 1, 1);
         kfree(ns_state);
         return -1;
@@ -1482,7 +1466,6 @@ err_malloc:
         kfree(iter);
     }
 
-    free_htable(ns_state->name_map, 0, 1);
     free_htable(ns_state->apid_map, 1, 1);
     free_htable(ns_state->segid_map, 1, 1);
 
@@ -1504,9 +1487,6 @@ xpmem_ns_deinit(struct xpmem_partition_state * part_state)
 
     /* Free apid map */
     free_htable(ns_state->apid_map, 1, 1);
-
-    /* Free name map */
-    free_htable(ns_state->name_map, 0, 1);
 
     /* Free any remaining domains */
     free_all_xpmem_domains(ns_state);

@@ -221,12 +221,18 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         (XPMEM_RDONLY | XPMEM_RDWR))
         return -EINVAL;
 
-    if (permit_type != XPMEM_PERMIT_MODE || permit_value != NULL)
+    if (permit_value != NULL)
         return -EINVAL;
+
+    if (permit_type == XPMEM_ALIAS_MODE) { 
+        /* Convert alias'd segid */
+        segid = xpmem_alias_to_segid(segid);
+    } else if (permit_type != XPMEM_PERMIT_MODE) {
+        return -EINVAL;
+    }
 
     seg_tg = xpmem_tg_ref_by_segid(segid);
     if (IS_ERR(seg_tg)) {
-
         /* No local segment found. Look for a remote one */
         if (xpmem_try_get_remote(segid, flags, permit_type, permit_value, &remote_apid, &remote_size) != 0) {
             return PTR_ERR(seg_tg);
@@ -237,7 +243,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
          * a "shadow" segment
          */
         (void)xpmem_tg_ref_by_tgid(XPMEM_REMOTE_TG_TGID);
-        xpmem_make_segment(0, remote_size, permit_type, permit_value, xpmem_my_part->tg_remote, segid);
+        xpmem_make_segment(0, remote_size, permit_type, permit_value, xpmem_my_part->tg_remote, segid, 0);
 
         /* Now, try the ref again */
         seg_tg = xpmem_tg_ref_by_tgid(xpmem_my_part->tg_remote->tgid);
@@ -252,8 +258,9 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         return PTR_ERR(seg);
     }
 
-    /* assuming XPMEM_PERMIT_MODE, do the appropriate permission check */
-    if (xpmem_check_permit_mode(flags, seg) != 0) {
+    /* do the appropriate permission check */
+    if ((seg->permit_type == XPMEM_PERMIT_MODE) && 
+        (xpmem_check_permit_mode(flags, seg) != 0)) {
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
         return -EACCES;
@@ -275,7 +282,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         xpmem_tg_deref(seg_tg);
         return apid;
     }
-    
+ 
     status = xpmem_get_segment(flags, permit_type, permit_value, apid, remote_apid, seg, seg_tg, ap_tg);
 
     if (status == 0) {

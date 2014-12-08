@@ -19,6 +19,10 @@
 #include <sys/types.h>
 #endif
 
+
+/* Well-known XPMEM segids */
+#define XPMEM_GIT_ROOT_SEGID 1
+
 /*
  * basic argument type definitions
  */
@@ -51,9 +55,10 @@ struct xpmem_addr {
 #define XPMEM_RDWR  0x2
 
 /*
- * Valid permit_type values for xpmem_make().
+ * Valid permit_type values for xpmem_make()/xpmem_get().
  */
-#define XPMEM_PERMIT_MODE   0x1
+#define XPMEM_PERMIT_MODE       0x1
+#define XPMEM_ALIAS_MODE        0x2
 
 /*
  * ioctl() commands used to interface to the kernel module.
@@ -77,17 +82,10 @@ struct xpmem_cmd_make {
     __u64 vaddr;
     size_t size;
     int permit_type;
-    __u64 permit_value;
-    char *name;
-    size_t name_size;
+    __s64 permit_value;
     xpmem_segid_t segid;    /* returned on success */
 };
 
-struct xpmem_cmd_search {
-    char *name;
-    size_t name_size;
-    xpmem_segid_t segid;   /* returned on success */
-};
 
 struct xpmem_cmd_remove {
     xpmem_segid_t segid;
@@ -97,7 +95,7 @@ struct xpmem_cmd_get {
     xpmem_segid_t segid;
     int flags;
     int permit_type;
-    __u64 permit_value;
+    __s64 permit_value;
     xpmem_apid_t apid;  /* returned on success */
 };
 
@@ -121,7 +119,6 @@ struct xpmem_cmd_detach {
 #ifndef __KERNEL__
 extern int xpmem_version(void);
 extern xpmem_segid_t xpmem_make(void *, size_t, int, void *);
-extern xpmem_segid_t xpmem_make_name(void *, size_t, int, void *, char *, size_t);
 extern xpmem_segid_t xpmem_search(char *, size_t);
 extern int xpmem_remove(xpmem_segid_t);
 extern xpmem_apid_t xpmem_get(xpmem_segid_t, int, int, void *);
