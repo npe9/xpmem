@@ -59,6 +59,14 @@ struct xpmem_hashtable {
     int (*eq_fn) (uintptr_t key1, uintptr_t key2);
 };
 
+static void * hash_alloc(size_t bytes)
+{
+    if (in_atomic()) {
+        return kmalloc(bytes, GFP_ATOMIC);
+    } else {
+        return kmalloc(bytes, GFP_KERNEL);
+    }
+}
 
 /* HASH FUNCTIONS */
 
@@ -139,7 +147,7 @@ static inline u32 indexFor(u32 table_length, u32 hash_value) {
 
 
 static void * tmp_realloc(void * old_ptr, u32 old_size, u32 new_size) {
-    void * new_buf = kmalloc(new_size, GFP_KERNEL);
+    void * new_buf = hash_alloc(new_size);
 
     if (new_buf == NULL) {
         return NULL;
@@ -199,13 +207,13 @@ struct xpmem_hashtable * create_htable(u32 min_size,
         }
     }
 
-    htable = (struct xpmem_hashtable *)kmalloc(sizeof(struct xpmem_hashtable), GFP_KERNEL);
+    htable = (struct xpmem_hashtable *)hash_alloc(sizeof(struct xpmem_hashtable));
 
     if (htable == NULL) {
         return NULL; /*oom*/
     }
 
-    htable->table = (struct hash_entry **)kmalloc(sizeof(struct hash_entry*) * size, GFP_KERNEL);
+    htable->table = (struct hash_entry **)hash_alloc(sizeof(struct hash_entry*) * size);
 
     if (htable->table == NULL) { 
         kfree(htable); 
@@ -241,7 +249,7 @@ static int hashtable_expand(struct xpmem_hashtable * htable) {
 
     new_size = primes[++(htable->prime_index)];
 
-    new_table = (struct hash_entry **)kmalloc(sizeof(struct hash_entry*) * new_size, GFP_KERNEL);
+    new_table = (struct hash_entry **)hash_alloc(sizeof(struct hash_entry*) * new_size);
 
     if (new_table != NULL) {
         memset(new_table, 0, new_size * sizeof(struct hash_entry *));
@@ -323,7 +331,7 @@ int htable_insert(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t valu
         hashtable_expand(htable);
     }
 
-    new_entry = (struct hash_entry *)kmalloc(sizeof(struct hash_entry), GFP_KERNEL);
+    new_entry = (struct hash_entry *)hash_alloc(sizeof(struct hash_entry));
 
     if (new_entry == NULL) { 
         (htable->entry_count)--; 
