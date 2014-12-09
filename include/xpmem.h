@@ -41,6 +41,7 @@ struct xpmem_addr {
  * path to XPMEM device
  */
 #define XPMEM_DEV_PATH  "/dev/xpmem"
+#define XPMEM_KITTEN_PATH  "/xpmem"
 
 /*
  * The following are the possible XPMEM related errors.
