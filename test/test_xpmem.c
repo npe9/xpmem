@@ -34,6 +34,8 @@ int main(int argc, char ** argv) {
         segid = xpmem_make((void *)addr, PAGE_SIZE * num_pages, XPMEM_PERMIT_MODE, (void *)0600);
     }
 
+    printf("segid: %lli\n", segid);
+
     if (segid <= 0) {
         printf("Cannot allocate segid\n");
         return -1;

@@ -19,9 +19,8 @@
 #include <sys/types.h>
 #endif
 
-
 /* Well-known XPMEM segids */
-#define XPMEM_GIT_ROOT_SEGID 1
+#define XPMEM_GIT_ROOT_SEGID 25
 
 /*
  * basic argument type definitions

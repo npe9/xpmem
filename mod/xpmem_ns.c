@@ -449,8 +449,8 @@ alloc_xpmem_segid(struct xpmem_ns_state * ns_state,
                   xpmem_segid_t           request,
                   xpmem_segid_t         * segid)
 {
-    struct xpmem_id_key          * key   = NULL;
-    struct xpmem_id_val          * val   = NULL;
+    struct xpmem_id_key * key = NULL;
+    struct xpmem_id_val * val = NULL;
 
     /* Generate a new segid */
     if (request > 0) {
