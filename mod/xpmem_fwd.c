@@ -142,16 +142,15 @@ xpmem_pong_ns(struct xpmem_partition_state * part_state,
 static int
 xpmem_have_ns_link(struct xpmem_fwd_state * fwd_state)
 {
-    unsigned long            flags     = 0;
-    int                      have_link = 0;
+    int have_link = 0;
 
-    spin_lock_irqsave(&(fwd_state->lock), flags);
+    spin_lock(&(fwd_state->lock));
     {
         if (fwd_state->ns_link > 0) {
             have_link = 1;
         }
     }
-    spin_unlock_irqrestore(&(fwd_state->lock), flags);
+    spin_unlock(&(fwd_state->lock));
 
     return have_link;
 }
@@ -184,14 +183,13 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
         }
 
         case XPMEM_PONG_NS: {
-            unsigned long flags = 0;
-            int           ret   = 0;
-            int           req   = 0;
+            int ret = 0;
+            int req = 0;
 
             /* We received a PONG. So, the nameserver can be found through this link */
 
             /* Remember the link */
-            spin_lock_irqsave(&(fwd_state->lock), flags);
+            spin_lock(&(fwd_state->lock));
             {
                 fwd_state->ns_link = link;
 
@@ -200,7 +198,7 @@ xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
                     fwd_state->domid_requested = 1;
                 }
             }
-            spin_unlock_irqrestore(&(fwd_state->lock), flags);
+            spin_unlock(&(fwd_state->lock));
 
             /* Update the domid map to remember this link */
             ret = xpmem_add_domid(part_state, XPMEM_NS_DOMID, link);
@@ -267,7 +265,6 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
             /* Buffer the request */
             {
                 struct xpmem_domid_req_iter * iter = NULL;
-                unsigned long                 flags = 0;
 
                 iter = kmalloc(sizeof(struct xpmem_domid_req_iter), GFP_KERNEL);
                 if (!iter) {
@@ -276,11 +273,11 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
 
                 iter->link = link;
 
-                spin_lock_irqsave(&(fwd_state->lock), flags);
+                spin_lock(&(fwd_state->lock));
                 {
                     list_add_tail(&(iter->node), &(fwd_state->domid_req_list));
                 }
-                spin_unlock_irqrestore(&(fwd_state->lock), flags);
+                spin_unlock(&(fwd_state->lock));
 
                 /* Forward request up to the nameserver */
                 out_link = fwd_state->ns_link;
@@ -311,21 +308,20 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
                 return 0;
             } else {
                 struct xpmem_domid_req_iter * iter = NULL;
-                unsigned long                 flags = 0;
 
                 if (list_empty(&(fwd_state->domid_req_list))) {
                     XPMEM_ERR("We currently do not support the buffering of XPMEM domids");
                     return -1;
                 }
 
-                spin_lock_irqsave(&(fwd_state->lock), flags);
+                spin_lock(&(fwd_state->lock));
                 {
                     iter = list_first_entry(&(fwd_state->domid_req_list),
                                 struct xpmem_domid_req_iter,
                                 node);
                     list_del(&(iter->node));
                 }
-                spin_unlock_irqrestore(&(fwd_state->lock), flags);
+                spin_unlock(&(fwd_state->lock));
 
                 /* Forward the domid to this link */
                 out_link = iter->link;

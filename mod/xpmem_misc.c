@@ -32,19 +32,6 @@ xpmem_tg_ref_by_tgid(pid_t tgid)
     int index;
     struct xpmem_thread_group *tg;
 
-    if (tgid == XPMEM_REMOTE_TG_TGID) {
-        tg = xpmem_my_part->tg_remote;
-
-        if (tg != NULL) {
-            if (!(tg->flags & XPMEM_FLAG_DESTROYING)) {
-                xpmem_tg_ref(tg);
-                return tg; 
-            }
-        }
-
-        return ERR_PTR(-ENOENT);
-    }   
-
     index = xpmem_tg_hashtable_index(tgid);
     read_lock(&xpmem_my_part->tg_hashtable[index].lock);
 
@@ -62,30 +49,6 @@ xpmem_tg_ref_by_tgid(pid_t tgid)
 
     read_unlock(&xpmem_my_part->tg_hashtable[index].lock);
     return ERR_PTR(-ENOENT);
-}
-
-xpmem_segid_t
-xpmem_alias_to_segid(xpmem_segid_t alias)
-{
-    int index;
-    struct xpmem_segment *seg;
-
-    DBUG_ON(alias <= 0);
-
-    index = xpmem_seg_hashtable_index(alias);
-    read_lock(&xpmem_my_part->seg_hashtable[index].lock);
-
-    list_for_each_entry(seg, &xpmem_my_part->seg_hashtable[index].list,
-                                seg_hashnode) {
-        if (seg->alias == alias) {
-            read_unlock(&xpmem_my_part->seg_hashtable[index].lock);
-            return seg->segid;
-        }
-    }
-
-    read_unlock(&xpmem_my_part->seg_hashtable[index].lock);
-
-    return alias;
 }
 
 /*
@@ -387,3 +350,45 @@ xpmem_debug_printk_procfs_fops = {
     .write = xpmem_debug_printk_procfs_write
 };
 */
+
+pid_t
+xpmem_segid_to_tgid(xpmem_segid_t segid)
+{
+    pid_t tgid;
+
+    DBUG_ON(segid <= 0);
+
+    /* If the segid is greater than XPMEM_MIN_SEGID, it is a regular segid that maps 
+     * directly to a thread group. Else, it is a well-known segid 
+     */
+    if (segid >= XPMEM_MIN_SEGID) {
+        tgid = ((struct xpmem_id *)&segid)->tgid;
+    } else {
+        read_lock(&xpmem_my_part->wk_segid_to_tgid_lock);
+        tgid = xpmem_my_part->wk_segid_to_tgid[segid];
+        read_unlock(&xpmem_my_part->wk_segid_to_tgid_lock);
+    }
+
+    return tgid;
+}
+
+unsigned short
+xpmem_segid_to_uniq(xpmem_segid_t segid)
+{
+    DBUG_ON(segid <= 0);
+    return ((struct xpmem_id *)&segid)->uniq;
+}
+
+pid_t
+xpmem_apid_to_tgid(xpmem_apid_t apid)
+{
+    DBUG_ON(apid <= 0);
+    return ((struct xpmem_id *)&apid)->tgid;
+}
+
+unsigned short
+xpmem_apid_to_uniq(xpmem_apid_t apid)
+{
+    DBUG_ON(apid <= 0);
+    return ((struct xpmem_id *)&apid)->uniq;
+}

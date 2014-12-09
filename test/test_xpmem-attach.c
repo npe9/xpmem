@@ -7,25 +7,27 @@
 #include <unistd.h>
 
 #define PAGE_SIZE sysconf(_SC_PAGESIZE)
+#define DEFAULT_WK_SEGID 1
 
 int main(int argc, char ** argv) {
-    xpmem_segid_t segid, alias;
+    xpmem_segid_t segid = DEFAULT_WK_SEGID;
     xpmem_apid_t apid;
     long num_pages;
 
-    if (argc != 3) {
-        printf("Usage: %s <num_pages> <segid alias>\n", *argv);
+    if (argc < 2 || argc > 3) {
+        printf("Usage: %s <num_pages> [<segid>]\n", *argv);
         return -1;
     }
 
     num_pages = atol(*(++argv));
-    alias     = atoll(*(++argv));
 
-    printf("alias: %lli, num_pages: %lu\n", alias, num_pages);
+    if (argc == 3) {
+        segid = atoll(*(++argv));
+    }
 
-    /* Use XPMEM_ALIAS_MODE */
-    apid = xpmem_get(alias, XPMEM_RDWR, XPMEM_ALIAS_MODE, NULL);
-//    apid = xpmem_get(alias, XPMEM_RDWR, XPMEM_PERMIT_MODE, NULL);
+    printf("segid: %lli, num_pages: %lu\n", segid, num_pages);
+
+    apid = xpmem_get(segid, XPMEM_RDWR, XPMEM_PERMIT_MODE, NULL);
     printf("apid: %lli\n", apid);
 
     if (apid <= 0) {

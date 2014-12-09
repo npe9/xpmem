@@ -9,18 +9,18 @@
 
 int main(int argc, char ** argv) {
     int * addr;
-    xpmem_segid_t segid, alias = 0;
+    xpmem_segid_t segid = 0;
     long num_pages;
 
     if (argc < 2 || argc > 3) {
-        printf("Usage: %s <num_pages> [<segid alias>]\n", *argv);
+        printf("Usage: %s <num_pages> [<well-known segid>]\n", *argv);
         return -1;
     }
 
     num_pages = atol(*(++argv));
 
     if (argc == 3) {
-        alias = atoll(*(++argv));
+        segid = atoll(*(++argv));
     }
 
     if (posix_memalign((void **)&addr, PAGE_SIZE, PAGE_SIZE * num_pages) != 0) {
@@ -28,8 +28,8 @@ int main(int argc, char ** argv) {
         return -1;
     }
 
-    if (alias > 0) {
-        segid = xpmem_make((void *)addr, PAGE_SIZE * num_pages, XPMEM_ALIAS_MODE, (void *)alias);
+    if (segid > 0) {
+        segid = xpmem_make((void *)addr, PAGE_SIZE * num_pages, XPMEM_REQUEST_MODE, (void *)segid);
     } else {
         segid = xpmem_make((void *)addr, PAGE_SIZE * num_pages, XPMEM_PERMIT_MODE, (void *)0600);
     }

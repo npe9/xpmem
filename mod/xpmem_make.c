@@ -20,33 +20,25 @@
  * Create a new and unique segid.
  */
 static xpmem_segid_t
-xpmem_make_segid(struct xpmem_thread_group *seg_tg, xpmem_segid_t alias)
+xpmem_make_segid(struct xpmem_thread_group *seg_tg, xpmem_segid_t request)
 {
     struct xpmem_id segid;
     xpmem_segid_t *segid_p = (xpmem_segid_t *)&segid;
-    int uniq;
 
     DBUG_ON(sizeof(struct xpmem_id) != sizeof(xpmem_segid_t));
 
-    uniq = atomic_inc_return(&seg_tg->uniq_segid);
-    if (uniq > XPMEM_MAX_UNIQ_ID) {
-        atomic_dec(&seg_tg->uniq_segid);
-        return -EBUSY;
+    *segid_p = 0;
+
+    /* If there's no explicit request, the tgid is encoded directly in the segid */
+    if (request == 0) {
+        segid.tgid = seg_tg->tgid;
     }
 
-    *segid_p = 0;
-    segid.tgid = seg_tg->tgid;
-    segid.uniq = (unsigned short)uniq;
+    /* Allocate a segid from the nameserver */
+    xpmem_make_remote(&(xpmem_my_part->part_state), request, segid_p);
 
-    /* Register with the nameserver, which will almost certainly change the uniq
-     * value assigned here
-     */
-    xpmem_make_remote(&(xpmem_my_part->part_state), alias, segid_p);
-
-    //DBUG_ON(*segid_p <= 0);
     return *segid_p;
 }
-
 
 int
 xpmem_make_segment(u64                         vaddr,
@@ -54,11 +46,9 @@ xpmem_make_segment(u64                         vaddr,
                    int                         permit_type,
                    void                      * permit_value,
                    struct xpmem_thread_group * seg_tg,
-                   xpmem_segid_t               segid,
-                   xpmem_segid_t               alias)
+                   xpmem_segid_t               segid)
 {
     struct xpmem_segment *seg;
-    int index;
 
     /* create a new struct xpmem_segment structure with a unique segid */
     seg = kzalloc(sizeof(struct xpmem_segment), GFP_KERNEL);
@@ -70,7 +60,6 @@ xpmem_make_segment(u64                         vaddr,
     seg->lock = __SPIN_LOCK_UNLOCKED(seg->lock);
     init_rwsem(&seg->sema);
     seg->segid = segid;
-    seg->alias = alias;
     seg->vaddr = vaddr;
     seg->size = size;
     seg->permit_type = permit_type;
@@ -79,7 +68,6 @@ xpmem_make_segment(u64                         vaddr,
     seg->tg = seg_tg;
     INIT_LIST_HEAD(&seg->ap_list);
     INIT_LIST_HEAD(&seg->seg_node);
-    INIT_LIST_HEAD(&seg->seg_hashnode);
 
     if (seg->vaddr == 0) {
         seg->flags = XPMEM_SEG_REMOTE;
@@ -92,13 +80,11 @@ xpmem_make_segment(u64                         vaddr,
     list_add_tail(&seg->seg_node, &seg_tg->seg_list);
     write_unlock(&seg_tg->seg_list_lock);
 
-    /* add seg to global hash list of aliases */
-    if (seg->alias > 0) {
-        index = xpmem_seg_hashtable_index(seg->alias);
-        write_lock(&xpmem_my_part->seg_hashtable[index].lock);
-        list_add_tail(&seg->seg_hashnode,
-                  &xpmem_my_part->seg_hashtable[index].list);
-        write_unlock(&xpmem_my_part->seg_hashtable[index].lock);
+    /* add seg to global hash list of well-known segids, if necessary */
+    if (segid < XPMEM_MIN_SEGID) {
+        write_lock(&xpmem_my_part->wk_segid_to_tgid_lock);
+        xpmem_my_part->wk_segid_to_tgid[segid] = seg_tg->tgid;
+        write_unlock(&xpmem_my_part->wk_segid_to_tgid_lock);
     }
 
     xpmem_tg_deref(seg_tg);
@@ -112,12 +98,17 @@ xpmem_make_segment(u64                         vaddr,
 int
 xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, xpmem_segid_t *segid_p)
 {
-    xpmem_segid_t segid, alias = 0;
+    xpmem_segid_t segid, request = 0;
     struct xpmem_thread_group *seg_tg;
     int status;
 
-    if (permit_type == XPMEM_ALIAS_MODE) {
-        alias = (xpmem_segid_t)permit_value;
+    if (permit_type == XPMEM_REQUEST_MODE) {
+        request = (xpmem_segid_t)permit_value;
+
+        if (request < 0 || request >= XPMEM_MIN_SEGID) {
+            return -EINVAL;
+        }
+
     } else if (permit_type != XPMEM_PERMIT_MODE ||
         ((u64)permit_value & ~00777) || size == 0) {
         return -EINVAL;
@@ -146,13 +137,13 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, xpmem_se
         return -EINVAL;
     }
 
-    segid = xpmem_make_segid(seg_tg, alias);
+    segid = xpmem_make_segid(seg_tg, request);
     if (segid <= 0) {
         xpmem_tg_deref(seg_tg);
         return segid;
     }
 
-    status = xpmem_make_segment(vaddr, size, permit_type, permit_value, seg_tg, segid, alias);
+    status = xpmem_make_segment(vaddr, size, permit_type, permit_value, seg_tg, segid);
 
     if (status == 0) {
         *segid_p = segid;
@@ -167,8 +158,6 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, xpmem_se
 int
 xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
 {
-    int index;
-
     DBUG_ON(atomic_read(&seg->refcnt) <= 0);
 
     /* see if the requesting thread is the segment's owner */
@@ -203,12 +192,11 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
     list_del_init(&seg->seg_node);
     write_unlock(&seg_tg->seg_list_lock);
 
-    /* Remove segment structure from global list of segs */
-    if (seg->alias > 0) {
-        index = xpmem_seg_hashtable_index(seg->alias);
-        write_lock(&xpmem_my_part->seg_hashtable[index].lock);
-        list_del_init(&seg->seg_hashnode);
-        write_unlock(&xpmem_my_part->seg_hashtable[index].lock);
+    /* Remove segment structure from global list of well-known segids */
+    if (seg->segid < XPMEM_MIN_SEGID) {
+        write_lock(&xpmem_my_part->wk_segid_to_tgid_lock);
+        xpmem_my_part->wk_segid_to_tgid[seg->segid] = 0;
+        write_unlock(&xpmem_my_part->wk_segid_to_tgid_lock);
     }
 
     xpmem_seg_up_write(seg);

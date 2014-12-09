@@ -72,11 +72,11 @@ xpmem_open(struct inode *inode, struct file *file)
     tg->tgid = current->tgid;
     tg->uid = current->cred->uid;
     tg->gid = current->cred->gid;
-    atomic_set(&tg->uniq_segid, 0);
+    //atomic_set(&tg->uniq_segid, 0);
     atomic_set(&tg->uniq_apid, 0);
     atomic_set(&tg->n_pinned, 0);
     tg->addr_limit = TASK_SIZE;
-    tg->seg_list_lock = __RW_LOCK_UNLOCKED(tg->seg_list_lock);
+    rwlock_init(&(tg->seg_list_lock));
     INIT_LIST_HEAD(&tg->seg_list);
     INIT_LIST_HEAD(&tg->tg_hashnode);
     atomic_set(&tg->n_recall_PFNs, 0);
@@ -102,7 +102,7 @@ xpmem_open(struct inode *inode, struct file *file)
         return -ENOMEM;
     }
     for (index = 0; index < XPMEM_AP_HASHTABLE_SIZE; index++) {
-        tg->ap_hashtable[index].lock = __RW_LOCK_UNLOCKED(tg->ap_hashtable[index].lock);
+        rwlock_init(&(tg->ap_hashtable[index].lock));
         INIT_LIST_HEAD(&tg->ap_hashtable[index].list);
     }
 
@@ -163,10 +163,12 @@ xpmem_flush_tg(struct xpmem_thread_group * tg)
     }
 
     /* Remove tg structure from its hash list */
-    index = xpmem_tg_hashtable_index(tg->tgid);
-    write_lock(&xpmem_my_part->tg_hashtable[index].lock);
-    list_del_init(&tg->tg_hashnode);
-    write_unlock(&xpmem_my_part->tg_hashtable[index].lock);
+    if (tg->tgid != XPMEM_REMOTE_TG_TGID) {
+        index = xpmem_tg_hashtable_index(tg->tgid);
+        write_lock(&xpmem_my_part->tg_hashtable[index].lock);
+        list_del_init(&tg->tg_hashnode);
+        write_unlock(&xpmem_my_part->tg_hashtable[index].lock);
+    }
 
     xpmem_tg_destroyable(tg);
     xpmem_tg_deref(tg);
@@ -352,11 +354,11 @@ xpmem_create_remote_thread_group(void)
     tg->uid.val = XPMEM_REMOTE_TG_UID;
     tg->gid.val = XPMEM_REMOTE_TG_GID;
 #endif
-    atomic_set(&tg->uniq_segid, 0);
+    //atomic_set(&tg->uniq_segid, 0);
     atomic_set(&tg->uniq_apid, 0);
     atomic_set(&tg->n_pinned, 0);
     tg->addr_limit = TASK_SIZE;
-    tg->seg_list_lock = __RW_LOCK_UNLOCKED(tg->seg_list_lock);
+    rwlock_init(&(tg->seg_list_lock));
     INIT_LIST_HEAD(&tg->seg_list);
     INIT_LIST_HEAD(&tg->tg_hashnode);
     tg->mm = NULL;
@@ -370,23 +372,12 @@ xpmem_create_remote_thread_group(void)
         return -ENOMEM;
     }
     for (index = 0; index < XPMEM_AP_HASHTABLE_SIZE; index++) {
-        tg->ap_hashtable[index].lock = __RW_LOCK_UNLOCKED(tg->ap_hashtable[index].lock);
+        rwlock_init(&(tg->ap_hashtable[index].lock));
         INIT_LIST_HEAD(&tg->ap_hashtable[index].list);
     }
 
-    tg->flags |= XPMEM_FLAG_CREATING_REMOTE;
-
     xpmem_tg_not_destroyable(tg);
     xpmem_tg_ref(tg);
-
-    tg->flags &= ~XPMEM_FLAG_CREATING_REMOTE;
-
-    /* add tg to its hash list */
-    index = xpmem_tg_hashtable_index(tg->tgid);
-    write_lock(&xpmem_my_part->tg_hashtable[index].lock);
-    list_add_tail(&tg->tg_hashnode,
-              &xpmem_my_part->tg_hashtable[index].list);
-    write_unlock(&xpmem_my_part->tg_hashtable[index].lock);
 
     xpmem_my_part->tg_remote = tg;
 
@@ -429,22 +420,11 @@ xpmem_init(void)
     }
 
     for (i = 0; i < XPMEM_TG_HASHTABLE_SIZE; i++) {
-        xpmem_my_part->tg_hashtable[i].lock = __RW_LOCK_UNLOCKED(xpmem_my_part->tg_hashtable[i].lock);
+        rwlock_init(&(xpmem_my_part->tg_hashtable[i].lock));
         INIT_LIST_HEAD(&xpmem_my_part->tg_hashtable[i].list);
     }
 
-    xpmem_my_part->seg_hashtable = kzalloc(sizeof(struct xpmem_hashlist) *
-                    XPMEM_SEG_HASHTABLE_SIZE, GFP_KERNEL);
-    if (xpmem_my_part->seg_hashtable == NULL) {
-        kfree(xpmem_my_part->tg_hashtable);
-        kfree(xpmem_my_part);
-        return -ENOMEM;
-    }
-
-    for (i = 0; i < XPMEM_SEG_HASHTABLE_SIZE; i++) {
-        xpmem_my_part->seg_hashtable[i].lock = __RW_LOCK_UNLOCKED(xpmem_my_part->seg_hashtable[i].lock);
-        INIT_LIST_HEAD(&xpmem_my_part->seg_hashtable[i].list);
-    }
+    rwlock_init(&(xpmem_my_part->wk_segid_to_tgid_lock));
 
     /* create the /proc interface directory (/proc/xpmem) */
     xpmem_proc_dir = proc_mkdir(XPMEM_MODULE_NAME, NULL);
@@ -492,7 +472,6 @@ xpmem_exit(void)
     xpmem_partition_deinit(&(xpmem_my_part->part_state));
 
     kfree(xpmem_my_part->tg_hashtable);
-    kfree(xpmem_my_part->seg_hashtable);
     kfree(xpmem_my_part);
 
     misc_deregister(&xpmem_dev_handle);

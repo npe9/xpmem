@@ -59,10 +59,9 @@ struct xpmem_domain_state {
 static int32_t
 alloc_request_id(struct xpmem_domain_state * state)
 {
-    int32_t       id    = -1;
-    unsigned long flags = 0;
+    int32_t id = -1;
 
-    spin_lock_irqsave(&(state->lock), flags);
+    spin_lock(&(state->lock));
     {
         int i = 0;
         for (i = 0; i < MAX_UNIQ_REQ; i++) {
@@ -78,7 +77,7 @@ alloc_request_id(struct xpmem_domain_state * state)
             }
         }
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
+    spin_unlock(&(state->lock));
 
     return id;
 }
@@ -87,14 +86,12 @@ static void
 free_request_id(struct xpmem_domain_state * state,
                 uint32_t                    reqid)
 {
-    unsigned long flags = 0;
-
-    spin_lock_irqsave(&(state->lock), flags);
+    spin_lock(&(state->lock));
     {
         state->requests[reqid].allocated = 0;
         state->requests[reqid].cmd       = NULL;
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
+    spin_unlock(&(state->lock));
 }
 
 static void 
@@ -132,13 +129,12 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
         (XPMEM_RDONLY | XPMEM_RDWR))
         return -EINVAL;
 
-    if (permit_type != XPMEM_PERMIT_MODE || permit_value != NULL)
+    if (permit_value != NULL || permit_type != XPMEM_PERMIT_MODE)
         return -EINVAL;
 
     seg_tg = xpmem_tg_ref_by_segid(segid);
-    if (IS_ERR(seg_tg)) {
+    if (IS_ERR(seg_tg))
         return PTR_ERR(seg_tg);
-    }   
 
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);
     if (IS_ERR(seg)) {
@@ -147,14 +143,16 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
     }
 
     /* assuming XPMEM_PERMIT_MODE, do the appropriate permission check */
-    if (xpmem_check_permit_mode(flags, seg) != 0) {
+    if ((seg->permit_type == XPMEM_PERMIT_MODE) && 
+        (xpmem_check_permit_mode(flags, seg) != 0)) {
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
         return -EACCES;
     }
 
     /* find accessor's thread group structure by using the remote thread group */
-    ap_tg = xpmem_tg_ref_by_tgid(XPMEM_REMOTE_TG_TGID);
+    xpmem_tg_ref(xpmem_my_part->tg_remote);
+    ap_tg = xpmem_my_part->tg_remote;
     if (IS_ERR(ap_tg)) {
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
@@ -178,7 +176,6 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
 
     return 0;
 }
-
 static int 
 xpmem_release_domain(struct xpmem_cmd_release_ex * release_ex)
 {
@@ -189,7 +186,9 @@ xpmem_release_domain(struct xpmem_cmd_release_ex * release_ex)
     if (apid <= 0)
         return -EINVAL;
 
-    ap_tg = xpmem_tg_ref_by_apid(apid);
+    /* find accessor's thread group structure by using the remote thread group */
+    xpmem_tg_ref(xpmem_my_part->tg_remote);
+    ap_tg = xpmem_my_part->tg_remote;
     if (IS_ERR(ap_tg))
         return PTR_ERR(ap_tg);
 
@@ -335,7 +334,9 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     if (offset_in_page(size) != 0)  
         size += PAGE_SIZE - offset_in_page(size);
 
-    ap_tg = xpmem_tg_ref_by_apid(apid);
+    /* find accessor's thread group structure by using the remote thread group */
+    xpmem_tg_ref(xpmem_my_part->tg_remote);
+    ap_tg = xpmem_my_part->tg_remote;
     if (IS_ERR(ap_tg))
         return PTR_ERR(ap_tg);
 
@@ -382,7 +383,7 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     xpmem_att_not_destroyable(att);
     xpmem_att_ref(att);
 
-    /* link attach structure to its access permit'a att list */
+    /* link attach structure to its access permit's att list */
     spin_lock(&ap->lock);
     list_add_tail(&att->att_node, &ap->att_list);
     if (ap->flags & XPMEM_FLAG_DESTROYING) {
@@ -651,7 +652,7 @@ xpmem_domain_deinit(struct xpmem_partition_state * part)
  */
 int
 xpmem_make_remote(struct xpmem_partition_state * part,
-                  xpmem_segid_t                  alias,
+                  xpmem_segid_t                  request,
                   xpmem_segid_t                * segid)
 {
     struct xpmem_domain_state * state  = (struct xpmem_domain_state *)part->domain_priv;
@@ -672,11 +673,11 @@ xpmem_make_remote(struct xpmem_partition_state * part,
 
     /* Setup command */
     memset(&cmd, 0, sizeof(struct xpmem_cmd_ex));
-    cmd.type       = XPMEM_MAKE;
-    cmd.reqid      = reqid;
+    cmd.type         = XPMEM_MAKE;
+    cmd.reqid        = reqid;
 
-    cmd.make.alias = alias;
-    cmd.make.segid = *segid;
+    cmd.make.request = request;
+    cmd.make.segid   = *segid;
 
     /* Deliver command */
     status = xpmem_cmd_deliver(state->part, state->link, &cmd);
@@ -756,7 +757,7 @@ xpmem_get_remote(struct xpmem_partition_state * part,
                  xpmem_segid_t                  segid,
                  int                            flags,
                  int                            permit_type,
-                 u64                            permit_value,
+                 s64                            permit_value,
                  xpmem_apid_t                 * apid,
                  u64                          * size)
 {

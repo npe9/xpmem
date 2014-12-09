@@ -221,15 +221,8 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         (XPMEM_RDONLY | XPMEM_RDWR))
         return -EINVAL;
 
-    if (permit_value != NULL)
+    if (permit_type != XPMEM_PERMIT_MODE || permit_value != NULL) 
         return -EINVAL;
-
-    if (permit_type == XPMEM_ALIAS_MODE) { 
-        /* Convert alias'd segid */
-        segid = xpmem_alias_to_segid(segid);
-    } else if (permit_type != XPMEM_PERMIT_MODE) {
-        return -EINVAL;
-    }
 
     seg_tg = xpmem_tg_ref_by_segid(segid);
     if (IS_ERR(seg_tg)) {
@@ -242,11 +235,12 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
          * was created locally by using the xpmem remote thread group to create
          * a "shadow" segment
          */
-        (void)xpmem_tg_ref_by_tgid(XPMEM_REMOTE_TG_TGID);
-        xpmem_make_segment(0, remote_size, permit_type, permit_value, xpmem_my_part->tg_remote, segid, 0);
+        xpmem_tg_ref(xpmem_my_part->tg_remote);
+        xpmem_make_segment(0, remote_size, permit_type, permit_value, xpmem_my_part->tg_remote, segid);
 
         /* Now, try the ref again */
-        seg_tg = xpmem_tg_ref_by_tgid(xpmem_my_part->tg_remote->tgid);
+        xpmem_tg_ref(xpmem_my_part->tg_remote);
+        seg_tg = xpmem_my_part->tg_remote;
         if (IS_ERR(seg_tg)) {
             return PTR_ERR(seg_tg);
         }

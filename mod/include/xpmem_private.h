@@ -187,6 +187,8 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
 #define XPMEM_REMOTE_TG_UID     1 
 #define XPMEM_REMOTE_TG_GID     1 
 
+#define XPMEM_MIN_SEGID         32
+
 /*
  * general internal driver structures
  */
@@ -228,9 +230,8 @@ struct xpmem_thread_group {
 
     atomic_t                        refcnt;                 /* references to tg */
     atomic_t                        n_pinned;               /* #of pages pinned by this tg */
-    atomic_t                        uniq_segid;             /* uniq segid generation for this thread group */
+    //atomic_t                        uniq_segid;             /* uniq segid generation for this thread group */
     atomic_t                        uniq_apid;              /* uniq apid generation for this thread group */
-    atomic_t                        uniq_attid;             /* uniq atid geneation for this thread group */
 
     /* Synchronization */
     spinlock_t                      lock;                   /* tg lock */
@@ -245,7 +246,6 @@ struct xpmem_segment {
 
     /* This segment's exported region */
     xpmem_segid_t                   segid;                  /* unique segid */
-    xpmem_segid_t                   alias;                  /* segid's alias */
     u64                             vaddr;                  /* starting address */
     size_t                          size;                   /* size of seg */
     int                             permit_type;            /* permission scheme */
@@ -263,7 +263,6 @@ struct xpmem_segment {
 
     /* List embeddings */
     struct list_head                seg_node;               /* tg's list of segs */
-    struct list_head                seg_hashnode;           /* seg linked to global hash list */
 };
 
 
@@ -320,7 +319,9 @@ struct xpmem_partition {
     struct xpmem_hashlist         * tg_hashtable;           /* locks + tg hash lists */
     struct xpmem_thread_group     * tg_remote;              /* the special remote thread group */
 
-    struct xpmem_hashlist         * seg_hashtable;          /* global hashtable of segids indexed by alias*/
+    /* well-known segid->tgid mapping */
+    pid_t                           wk_segid_to_tgid[XPMEM_MIN_SEGID];
+    rwlock_t                        wk_segid_to_tgid_lock;
 
     /* procfs debugging */
     atomic_t                        n_pinned;               /* # of pages pinned xpmem */
@@ -340,12 +341,13 @@ struct xpmem_partition {
  * An ID is never less than or equal to zero.
  */
 struct xpmem_id {
-    pid_t tgid;             /* thread group that owns ID */
     unsigned short uniq;  /* this value makes the ID unique */
+    pid_t          tgid;  /* thread group that owns ID */
 };
 
 #define XPMEM_MAX_UNIQ_ID       ((1 << (sizeof(short) * 8)) - 1)
 
+/*
 static inline pid_t
 xpmem_segid_to_tgid(xpmem_segid_t segid)
 {
@@ -373,7 +375,11 @@ xpmem_apid_to_uniq(xpmem_segid_t apid)
     DBUG_ON(apid <= 0);
     return ((struct xpmem_id *)&apid)->uniq;
 }
-
+*/
+extern pid_t xpmem_segid_to_tgid(xpmem_segid_t);
+extern unsigned short xpmem_segid_to_uniq(xpmem_segid_t);
+extern pid_t xpmem_apid_to_tgid(xpmem_segid_t);
+extern unsigned short xpmem_apid_to_uniq(xpmem_segid_t);
 /*
  * Attribute and state flags for various xpmem structures. Some values
  * are defined in xpmem.h, so we reserved space here via XPMEM_DONT_USE_X
@@ -416,7 +422,7 @@ xpmem_vaddr_to_PFN(struct mm_struct *mm, u64 vaddr)
 #define XPMEM_CPUS_OFFLINE      -2
 
 /* found in xpmem_make.c */
-extern int xpmem_make_segment(u64, size_t, int, void *, struct xpmem_thread_group *, xpmem_segid_t, xpmem_segid_t);
+extern int xpmem_make_segment(u64, size_t, int, void *, struct xpmem_thread_group *, xpmem_segid_t);
 extern int xpmem_make(u64, size_t, int, void *, xpmem_segid_t *);
 extern void xpmem_remove_segs_of_tg(struct xpmem_thread_group *);
 extern int xpmem_remove_seg(struct xpmem_thread_group *, struct xpmem_segment *);
@@ -465,7 +471,6 @@ extern struct file_operations xpmem_unpin_procfs_fops;
 extern struct xpmem_partition *xpmem_my_part;
 
 /* found in xpmem_misc.c */
-extern xpmem_segid_t xpmem_alias_to_segid(xpmem_segid_t);
 extern struct xpmem_thread_group *xpmem_tg_ref_by_tgid(pid_t);
 extern struct xpmem_thread_group *xpmem_tg_ref_by_segid(xpmem_segid_t);
 extern struct xpmem_thread_group *xpmem_tg_ref_by_apid(xpmem_apid_t);
@@ -645,7 +650,6 @@ struct xpmem_hashlist {
 
 #define XPMEM_TG_HASHTABLE_SIZE 8
 #define XPMEM_AP_HASHTABLE_SIZE 8
-#define XPMEM_SEG_HASHTABLE_SIZE 8
 
 static inline int
 xpmem_tg_hashtable_index(pid_t tgid)
@@ -657,14 +661,7 @@ static inline int
 xpmem_ap_hashtable_index(xpmem_apid_t apid)
 {
     DBUG_ON(apid <= 0);
-    return (((struct xpmem_id *)&apid)->uniq % XPMEM_AP_HASHTABLE_SIZE);
-}
-
-static inline int
-xpmem_seg_hashtable_index(xpmem_segid_t segid)
-{
-    DBUG_ON(segid <= 0);
-    return (((struct xpmem_id *)&segid)->uniq % XPMEM_SEG_HASHTABLE_SIZE);
+    return xpmem_apid_to_uniq(apid) % XPMEM_AP_HASHTABLE_SIZE;
 }
 
 #endif /* _XPMEM_PRIVATE_H */

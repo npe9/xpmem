@@ -9,8 +9,8 @@
 #include <xpmem_iface.h>
 
 struct xpmem_cmd_make_ex {
+    xpmem_segid_t request;
     xpmem_segid_t segid;
-    xpmem_segid_t alias;
 };
 
 struct xpmem_cmd_remove_ex {
@@ -21,7 +21,7 @@ struct xpmem_cmd_get_ex {
     xpmem_segid_t segid;
     uint32_t      flags;
     uint32_t      permit_type;
-    uint64_t      permit_value;
+    int64_t       permit_value;
     xpmem_apid_t  apid;
     uint64_t      size;
 };
@@ -100,19 +100,19 @@ struct xpmem_partition_state;
  * service layer*/
 int 
 xpmem_make_remote(struct xpmem_partition_state * part, 
-                  xpmem_segid_t                  alias,
+                  xpmem_segid_t                  request,
                   xpmem_segid_t                * segid);
 
 int
 xpmem_remove_remote(struct xpmem_partition_state * part,
-                    xpmem_segid_t                 segid);
+                    xpmem_segid_t                  segid);
 
 int
 xpmem_get_remote(struct xpmem_partition_state * part,
                  xpmem_segid_t                  segid,
                  int                            flags, 
                  int                            permit_type, 
-                 u64                            permit_value, 
+                 s64                            permit_value, 
                  xpmem_apid_t                 * apid,
                  u64                          * size);
 

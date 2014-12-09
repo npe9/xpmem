@@ -154,16 +154,15 @@ xpmem_add_domid(struct xpmem_partition_state * state,
                 xpmem_domid_t                  domid,
                 xpmem_link_t                   link)
 {
-    unsigned long flags  = 0;
-    int           status = 0;
+    int status = 0;
 
-    spin_lock_irqsave(&(state->lock), flags);
+    spin_lock(&(state->lock));
     {
         status = htable_insert(state->domid_map,
                     (uintptr_t)domid,
                     (uintptr_t)link);
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
+    spin_unlock(&(state->lock));
 
     return status;
 }
@@ -173,10 +172,9 @@ xpmem_search_or_remove_domid(struct xpmem_partition_state * state,
                              xpmem_domid_t                  domid,
                              int                            remove)
 {
-    unsigned long flags  = 0;
-    xpmem_link_t  result = 0;
+    xpmem_link_t result = 0;
 
-    spin_lock_irqsave(&(state->lock), flags);
+    spin_lock(&(state->lock));
     {
         if (remove) {
             result = (xpmem_link_t)htable_remove(state->domid_map,
@@ -187,7 +185,7 @@ xpmem_search_or_remove_domid(struct xpmem_partition_state * state,
                         (uintptr_t)domid);
         }
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
+    spin_unlock(&(state->lock));
 
     return result;
 }
@@ -213,16 +211,15 @@ xpmem_add_link(struct xpmem_partition_state * state,
                xpmem_link_t                   link,
                struct xpmem_link_connection * conn)
 {
-    unsigned long flags  = 0;
-    int           status = 0;
+    int status = 0;
 
-    spin_lock_irqsave(&(state->lock), flags);
+    spin_lock(&(state->lock));
     {
         status = htable_insert(state->link_map,
                     (uintptr_t)link,
                     (uintptr_t)conn);
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
+    spin_unlock(&(state->lock));
 
     return status;
 }
@@ -232,10 +229,9 @@ xpmem_search_or_remove_link(struct xpmem_partition_state * state,
                             xpmem_link_t                   link,
                             int                            remove)
 {
-    unsigned long                  flags  = 0;
     struct xpmem_link_connection * result = NULL;
 
-    spin_lock_irqsave(&(state->lock), flags);
+    spin_lock(&(state->lock));
     {
         if (remove) {
             result = (struct xpmem_link_connection *)htable_remove(state->link_map,
@@ -246,7 +242,7 @@ xpmem_search_or_remove_link(struct xpmem_partition_state * state,
                         (uintptr_t)link);
         }
     }
-    spin_unlock_irqrestore(&(state->lock), flags);
+    spin_unlock(&(state->lock));
 
     return result;
 }
