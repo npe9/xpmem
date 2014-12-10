@@ -307,7 +307,6 @@ htable_insert(struct xpmem_hashtable * htable,
     {
         expand            = 1;
         htable->expanding = 1;
-        new_size = primes[++(htable->prime_index)];
     }
 
     /* Increment entry count */
