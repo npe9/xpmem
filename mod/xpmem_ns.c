@@ -146,20 +146,12 @@ xpmem_ht_add(struct xpmem_ns_state  * ns_state,
              uintptr_t                key,
              uintptr_t                val)
 {
-    int status = 0;
-
-    spin_lock(&(ns_state->lock));
-    {
-        /* Search for duplicate first */
-        if (htable_search(ht, key) != 0) {
-            status = 0;
-        } else {
-            status = htable_insert(ht, key, val);
-        }
+    /* Search for duplicate first */
+    if (htable_search(ht, key) != 0) {
+        return 0;
+    } else {
+        return htable_insert(ht, key, val);
     }
-    spin_unlock(&(ns_state->lock));
-
-    return status;
 }
 
 static uintptr_t
@@ -168,19 +160,11 @@ xpmem_ht_search_or_remove(struct xpmem_ns_state  * ns_state,
                           uintptr_t                search_key,
                           int                      remove)
 {
-    uintptr_t val = 0;
-
-    spin_lock(&(ns_state->lock));
-    {
-        if (remove) {
-            val = htable_remove(ht, search_key, 1);
-        } else {
-            val = htable_search(ht, search_key);
-        }
+    if (remove) {
+        return htable_remove(ht, search_key, 1);
+    } else {
+        return htable_search(ht, search_key);
     }
-    spin_unlock(&(ns_state->lock));
-
-    return val;
 }
 
 static uintptr_t

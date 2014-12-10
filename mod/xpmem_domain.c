@@ -17,7 +17,6 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
-#include <xpmem_hashtable.h>
 #include <xpmem_iface.h>
 
 

@@ -154,17 +154,9 @@ xpmem_add_domid(struct xpmem_partition_state * state,
                 xpmem_domid_t                  domid,
                 xpmem_link_t                   link)
 {
-    int status = 0;
-
-    spin_lock(&(state->lock));
-    {
-        status = htable_insert(state->domid_map,
-                    (uintptr_t)domid,
-                    (uintptr_t)link);
-    }
-    spin_unlock(&(state->lock));
-
-    return status;
+    return htable_insert(state->domid_map,
+                (uintptr_t)domid,
+                (uintptr_t)link);
 }
 
 static xpmem_link_t
@@ -172,22 +164,14 @@ xpmem_search_or_remove_domid(struct xpmem_partition_state * state,
                              xpmem_domid_t                  domid,
                              int                            remove)
 {
-    xpmem_link_t result = 0;
-
-    spin_lock(&(state->lock));
-    {
-        if (remove) {
-            result = (xpmem_link_t)htable_remove(state->domid_map,
-                        (uintptr_t)domid,
-                        0);
-        } else {
-            result = (xpmem_link_t)htable_search(state->domid_map,
-                        (uintptr_t)domid);
-        }
+    if (remove) {
+        return (xpmem_link_t)htable_remove(state->domid_map,
+                    (uintptr_t)domid,
+                    0);
+    } else {
+        return (xpmem_link_t)htable_search(state->domid_map,
+                    (uintptr_t)domid);
     }
-    spin_unlock(&(state->lock));
-
-    return result;
 }
 
 xpmem_link_t
@@ -211,17 +195,9 @@ xpmem_add_link(struct xpmem_partition_state * state,
                xpmem_link_t                   link,
                struct xpmem_link_connection * conn)
 {
-    int status = 0;
-
-    spin_lock(&(state->lock));
-    {
-        status = htable_insert(state->link_map,
-                    (uintptr_t)link,
-                    (uintptr_t)conn);
-    }
-    spin_unlock(&(state->lock));
-
-    return status;
+    return htable_insert(state->link_map,
+                (uintptr_t)link,
+                (uintptr_t)conn);
 }
 
 static struct xpmem_link_connection *
@@ -229,22 +205,14 @@ xpmem_search_or_remove_link(struct xpmem_partition_state * state,
                             xpmem_link_t                   link,
                             int                            remove)
 {
-    struct xpmem_link_connection * result = NULL;
-
-    spin_lock(&(state->lock));
-    {
-        if (remove) {
-            result = (struct xpmem_link_connection *)htable_remove(state->link_map,
-                        (uintptr_t)link,
-                        0);
-        } else {
-            result = (struct xpmem_link_connection *)htable_search(state->link_map,
-                        (uintptr_t)link);
-        }
+    if (remove) {
+        return (struct xpmem_link_connection *)htable_remove(state->link_map,
+                    (uintptr_t)link,
+                    0);
+    } else {
+        return (struct xpmem_link_connection *)htable_search(state->link_map,
+                    (uintptr_t)link);
     }
-    spin_unlock(&(state->lock));
-
-    return result;
 }
 
 struct xpmem_link_connection *

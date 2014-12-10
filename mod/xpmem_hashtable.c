@@ -29,6 +29,8 @@
  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+ Brian Kocoloski <briankoco@cs.pitt.edu> : Added internal locking
  */
 
 #include <linux/string.h>
@@ -43,34 +45,31 @@
 
 
 struct hash_entry {
-    uintptr_t key;
-    uintptr_t value;
-    u32 hash;
+    uintptr_t          key;
+    uintptr_t          value;
+    u32                hash;
     struct hash_entry * next;
 };
 
 struct xpmem_hashtable {
-    u32 table_length;
     struct hash_entry ** table;
-    u32 entry_count;
-    u32 load_limit;
-    u32 prime_index;
+    u32                  table_length;
+    u32                  entry_count;
+    u32                  load_limit;
+    u32                  prime_index;
     u32 (*hash_fn) (uintptr_t key);
     int (*eq_fn) (uintptr_t key1, uintptr_t key2);
-};
 
-static void * hash_alloc(size_t bytes)
-{
-    if (in_atomic()) {
-        return kmalloc(bytes, GFP_ATOMIC);
-    } else {
-        return kmalloc(bytes, GFP_KERNEL);
-    }
-}
+    spinlock_t           lock;
+    int                  expanding;
+};
 
 /* HASH FUNCTIONS */
 
-static inline u32 do_hash(struct xpmem_hashtable * htable, uintptr_t key) {
+static inline u32 
+do_hash(struct xpmem_hashtable * htable, 
+        uintptr_t                key)
+{
     /* Aim to protect against poor hash functions by adding logic here
      * - logic taken from java 1.4 hashtable source */
     u32 i = htable->hash_fn(key);
@@ -93,7 +92,9 @@ static inline u32 do_hash(struct xpmem_hashtable * htable, uintptr_t key) {
 #define GOLDEN_RATIO_PRIME 0x9e370001UL
 #endif
 
-u32 hash_long(uintptr_t val) {
+u32 
+hash_long(uintptr_t val)
+{
     uintptr_t hash = val;
 
 #ifdef __64BIT__
@@ -123,7 +124,10 @@ u32 hash_long(uintptr_t val) {
 
 /* HASH GENERIC MEMORY BUFFER */
 /* ELF HEADER HASH FUNCTION */
-u32 hash_buffer(u8 * msg, u32 length) {
+u32 
+hash_buffer(u8 * msg, 
+            u32  length) 
+{
     u32 hash = 0;
     u32 temp = 0;
     u32 i = 0;
@@ -139,25 +143,14 @@ u32 hash_buffer(u8 * msg, u32 length) {
 }
 
 /* indexFor */
-static inline u32 indexFor(u32 table_length, u32 hash_value) {
+static inline u32 
+indexFor(u32 table_length, 
+         u32 hash_value)
+{
     return (hash_value % table_length);
 };
 
 #define freekey(X) kfree(X)
-
-
-static void * tmp_realloc(void * old_ptr, u32 old_size, u32 new_size) {
-    void * new_buf = hash_alloc(new_size);
-
-    if (new_buf == NULL) {
-        return NULL;
-    }
-
-    memcpy(new_buf, old_ptr, old_size);
-    kfree(old_ptr);
-
-    return new_buf;
-}
 
 
 /*
@@ -165,31 +158,40 @@ static void * tmp_realloc(void * old_ptr, u32 old_size, u32 new_size) {
 http://br.endernet.org/~akrowne/
 http://planetmath.org/encyclopedia/GoodHashTablePrimes.html
 */
-static const u32 primes[] = { 
+static const u32 
+primes[] =
+{ 
     53, 97, 193, 389,
     769, 1543, 3079, 6151,
     12289, 24593, 49157, 98317,
     196613, 393241, 786433, 1572869,
     3145739, 6291469, 12582917, 25165843,
     50331653, 100663319, 201326611, 402653189,
-    805306457, 1610612741 };
+    805306457, 1610612741
+};
 
 
 // this assumes that the max load factor is .65
-static const u32 load_factors[] = {
+static const u32 
+load_factors[] =
+{
     35, 64, 126, 253,
     500, 1003, 2002, 3999,
     7988, 15986, 31953, 63907,
     127799, 255607, 511182, 1022365,
     2044731, 4089455, 8178897, 16357798,
     32715575, 65431158, 130862298, 261724573,
-    523449198, 1046898282 };
+    523449198, 1046898282
+};
 
-const u32 prime_table_len = sizeof(primes) / sizeof(primes[0]);
+static const u32 prime_table_len = sizeof(primes) / sizeof(primes[0]);
 
-struct xpmem_hashtable * create_htable(u32 min_size,
-        u32 (*hash_fn) (uintptr_t),
-        int (*eq_fn) (uintptr_t, uintptr_t)) {
+
+struct xpmem_hashtable * 
+create_htable(u32 min_size,
+              u32 (*hash_fn) (uintptr_t),
+              int (*eq_fn) (uintptr_t, uintptr_t))
+{
     struct xpmem_hashtable * htable = NULL;
     u32 prime_index = 0;
     u32 size = primes[0];
@@ -207,13 +209,13 @@ struct xpmem_hashtable * create_htable(u32 min_size,
         }
     }
 
-    htable = (struct xpmem_hashtable *)hash_alloc(sizeof(struct xpmem_hashtable));
+    htable = (struct xpmem_hashtable *)kmalloc(sizeof(struct xpmem_hashtable), GFP_KERNEL);
 
     if (htable == NULL) {
         return NULL; /*oom*/
     }
 
-    htable->table = (struct hash_entry **)hash_alloc(sizeof(struct hash_entry*) * size);
+    htable->table = (struct hash_entry **)kmalloc(sizeof(struct hash_entry*) * size, GFP_KERNEL);
 
     if (htable->table == NULL) { 
         kfree(htable); 
@@ -228,114 +230,125 @@ struct xpmem_hashtable * create_htable(u32 min_size,
     htable->hash_fn       = hash_fn;
     htable->eq_fn         = eq_fn;
     htable->load_limit    = load_factors[prime_index];
+    htable->expanding     = 0;
+
+    spin_lock_init(&(htable->lock));
 
     return htable;
 }
 
 
-static int hashtable_expand(struct xpmem_hashtable * htable) {
+static int 
+hashtable_expand(struct xpmem_hashtable * htable,
+                 struct hash_entry     ** new_table,
+                 u32                      new_size) 
+{
     /* Double the size of the table to accomodate more entries */
-    struct hash_entry ** new_table = NULL;
     struct hash_entry * tmp_entry = NULL;
-    struct hash_entry ** entry_ptr = NULL;
-    u32 new_size = 0;
     u32 i = 0;
     u32 index = 0;
 
-    /* Check we're not hitting max capacity */
-    if (htable->prime_index == (prime_table_len - 1)) {
-        return 0;
-    }
+    memset(new_table, 0, new_size * sizeof(struct hash_entry *));
+    /* This algorithm is not 'stable'. ie. it reverses the list
+     * when it transfers entries between the tables */
 
-    new_size = primes[++(htable->prime_index)];
+    for (i = 0; i < htable->table_length; i++) {
 
-    new_table = (struct hash_entry **)hash_alloc(sizeof(struct hash_entry*) * new_size);
+        while ((tmp_entry = htable->table[i]) != NULL) {
+            htable->table[i] = tmp_entry->next;
 
-    if (new_table != NULL) {
-        memset(new_table, 0, new_size * sizeof(struct hash_entry *));
-        /* This algorithm is not 'stable'. ie. it reverses the list
-         * when it transfers entries between the tables */
+            index = indexFor(new_size, tmp_entry->hash);
 
-        for (i = 0; i < htable->table_length; i++) {
+            tmp_entry->next = new_table[index];
 
-            while ((tmp_entry = htable->table[i]) != NULL) {
-                htable->table[i] = tmp_entry->next;
-
-                index = indexFor(new_size, tmp_entry->hash);
-
-                tmp_entry->next = new_table[index];
-
-                new_table[index] = tmp_entry;
-            }
-        }
-
-        kfree(htable->table);
-
-        htable->table = new_table;
-    } else {
-        /* Plan B: realloc instead */
-
-        //new_table = (struct hash_entry **)realloc(htable->table, new_size * sizeof(struct hash_entry *));
-        new_table = (struct hash_entry **)tmp_realloc(htable->table, primes[htable->prime_index - 1], 
-                new_size * sizeof(struct hash_entry *));
-
-        if (new_table == NULL) {
-            (htable->prime_index)--;
-            return 0;
-        }
-
-        htable->table = new_table;
-
-        memset(new_table[htable->table_length], 0, new_size - htable->table_length);
-
-        for (i = 0; i < htable->table_length; i++) {
-
-            for (entry_ptr = &(new_table[i]), tmp_entry = *entry_ptr; 
-                    tmp_entry != NULL; 
-                    tmp_entry = *entry_ptr) {
-
-                index = indexFor(new_size, tmp_entry->hash);
-
-                if (i == index) {
-                    entry_ptr = &(tmp_entry->next);
-                } else {
-                    *entry_ptr = tmp_entry->next;
-                    tmp_entry->next = new_table[index];
-                    new_table[index] = tmp_entry;
-                }
-            }
+            new_table[index] = tmp_entry;
         }
     }
 
+    kfree(htable->table);
+
+    htable->table        = new_table;
     htable->table_length = new_size;
-
     htable->load_limit   = load_factors[htable->prime_index];
 
     return -1;
 }
 
-u32 htable_count(struct xpmem_hashtable * htable) {
+u32 
+htable_count(struct xpmem_hashtable * htable)
+{
     return htable->entry_count;
 }
 
-int htable_insert(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t value) {
+int 
+htable_insert(struct xpmem_hashtable * htable, 
+              uintptr_t                key, 
+              uintptr_t value)
+{
     /* This method allows duplicate keys - but they shouldn't be used */
     u32 index = 0;
+    struct hash_entry ** new_table = NULL;
     struct hash_entry * new_entry = NULL;
+    u32 new_size;
+    int expand = 0;
 
-    if (++(htable->entry_count) > htable->load_limit) {
+    /* Allocate new entry */
+    new_entry = (struct hash_entry *)kmalloc(sizeof(struct hash_entry), GFP_KERNEL);
+    if (new_entry == NULL) {
+        return 0; /* oom */
+    }
+
+    /* Lock htable */
+    spin_lock(&(htable->lock));
+
+    /* Determine if table needs expanding */
+    if ((htable->expanding        == 0) &&
+        (htable->entry_count + 1) > htable->load_limit)
+    {
+        expand            = 1;
+        htable->expanding = 1;
+        new_size = primes[++(htable->prime_index)];
+    }
+
+    /* Increment entry count */
+    ++(htable->entry_count);
+
+    if (expand) {
+        /* Check we're not hitting max capacity */
+        if (htable->prime_index == (prime_table_len - 1)) {
+            kfree(new_entry);
+            spin_unlock(&(htable->lock));
+            return 0;
+        }
+
+        new_size = primes[++(htable->prime_index)];
+
+        /* Drop lock just to allocate memory. There's a race between re-acquiring the lock
+         * after allocation and another process skipping over the expansion block and
+         * inserting, but expansion is not strictly required for insertion so the race is
+         * inconsequential
+         */
+        spin_unlock(&(htable->lock));
+        new_table = (struct hash_entry **)kmalloc(sizeof(struct hash_entry *) * new_size,
+                        GFP_KERNEL);
+
+        spin_lock(&(htable->lock));
+
+        if (new_table == NULL) {
+            (htable->prime_index)--;
+            kfree(new_entry);
+            spin_unlock(&(htable->lock));
+            return 0; /* oom */
+        }
+
         /* Ignore the return value. If expand fails, we should
          * still try cramming just this value into the existing table
          * -- we may not have memory for a larger table, but one more
          * element may be ok. Next time we insert, we'll try expanding again.*/
-        hashtable_expand(htable);
-    }
+        hashtable_expand(htable, new_table, new_size);
 
-    new_entry = (struct hash_entry *)hash_alloc(sizeof(struct hash_entry));
-
-    if (new_entry == NULL) { 
-        (htable->entry_count)--; 
-        return 0; /*oom*/
+        /* No longer expanding */
+        htable->expanding = 0;
     }
 
     new_entry->hash = do_hash(htable, key);
@@ -349,11 +362,19 @@ int htable_insert(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t valu
 
     htable->table[index] = new_entry;
 
+    /* Unlock htable */
+    spin_unlock(&(htable->lock));
+
     return -1;
 }
 
 
-int htable_change(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t value, int free_value) {
+static int
+__htable_change(struct xpmem_hashtable * htable, 
+                uintptr_t                key, 
+                uintptr_t                value, 
+                int                      free_value)
+{
     struct hash_entry * tmp_entry = NULL;
     u32 hash_value = 0;
     u32 index = 0;
@@ -380,9 +401,30 @@ int htable_change(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t valu
     return 0;
 }
 
+int 
+htable_change(struct xpmem_hashtable * htable, 
+              uintptr_t                key, 
+              uintptr_t                value, 
+              int                      free_value)
+{
+    int ret = 0;
+
+    spin_lock(&(htable->lock));
+    {
+        ret = __htable_change(htable, key, value, free_value);
+    }
+    spin_unlock(&(htable->lock));
+
+    return ret;
+}
 
 
-int htable_inc(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t value) {
+
+static int 
+__htable_inc(struct xpmem_hashtable * htable, 
+             uintptr_t                key, 
+             uintptr_t                value)
+{
     struct hash_entry * tmp_entry = NULL;
     u32 hash_value = 0;
     u32 index = 0;
@@ -405,8 +447,29 @@ int htable_inc(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t value) 
     return 0;
 }
 
+int
+htable_inc(struct xpmem_hashtable * htable, 
+           uintptr_t                key, 
+           uintptr_t                value)
+{
+    int ret = 0;
 
-int htable_dec(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t value) {
+    spin_lock(&(htable->lock));
+    {
+        ret = __htable_inc(htable, key, value);
+    }
+    spin_unlock(&(htable->lock));
+
+    return ret;
+}
+
+
+
+static int 
+__htable_dec(struct xpmem_hashtable * htable, 
+             uintptr_t                key, 
+             uintptr_t                value)
+{
     struct hash_entry * tmp_entry = NULL;
     u32 hash_value = 0;
     u32 index = 0;
@@ -429,9 +492,28 @@ int htable_dec(struct xpmem_hashtable * htable, uintptr_t key, uintptr_t value) 
     return 0;
 }
 
+int 
+htable_dec(struct xpmem_hashtable * htable, 
+           uintptr_t                key, 
+           uintptr_t                value)
+{
+    int ret = 0;
+
+    spin_lock(&(htable->lock));
+    {
+        ret = __htable_dec(htable, key, value);
+    }
+    spin_unlock(&(htable->lock));
+
+    return ret;
+}
+
 
 /* returns value associated with key */
-uintptr_t htable_search(struct xpmem_hashtable * htable, uintptr_t key) {
+static uintptr_t 
+__htable_search(struct xpmem_hashtable * htable, 
+                uintptr_t                key)
+{
     struct hash_entry * cursor = NULL;
     u32 hash_value = 0;
     u32 index = 0;
@@ -455,9 +537,28 @@ uintptr_t htable_search(struct xpmem_hashtable * htable, uintptr_t key) {
     return (uintptr_t)NULL;
 }
 
+uintptr_t 
+htable_search(struct xpmem_hashtable * htable, 
+              uintptr_t                key)
+{
+    uintptr_t ret = 0;
+
+    spin_lock(&(htable->lock));
+    {
+        ret = __htable_search(htable, key);
+    }
+    spin_unlock(&(htable->lock));
+
+    return ret;
+}
+
 
 /* returns value associated with key */
-uintptr_t htable_remove(struct xpmem_hashtable * htable, uintptr_t key, int free_key) {
+static uintptr_t 
+__htable_remove(struct xpmem_hashtable * htable, 
+                uintptr_t                key, 
+                int                      free_key)
+{
     /* TODO: consider compacting the table when the load factor drops enough,
      *       or provide a 'compact' method. */
 
@@ -497,9 +598,28 @@ uintptr_t htable_remove(struct xpmem_hashtable * htable, uintptr_t key, int free
     return (uintptr_t)NULL;
 }
 
+uintptr_t 
+htable_remove(struct xpmem_hashtable * htable, 
+              uintptr_t                key, 
+              int                      free_key)
+{
+    uintptr_t ret = 0;
+
+    spin_lock(&(htable->lock));
+    {
+        ret = __htable_remove(htable, key, free_key);
+    }
+    spin_unlock(&(htable->lock));
+
+    return ret;
+}
 
 /* destroy */
-void free_htable(struct xpmem_hashtable * htable, int free_values, int free_keys) {
+static void 
+__free_htable(struct xpmem_hashtable * htable, 
+              int                      free_values, 
+              int                      free_keys)
+{
     u32 i;
     struct hash_entry * cursor = NULL;
     struct hash_entry * tmp = NULL;
@@ -542,3 +662,15 @@ void free_htable(struct xpmem_hashtable * htable, int free_values, int free_keys
     kfree(htable);
 }
 
+
+void 
+free_htable(struct xpmem_hashtable * htable, 
+            int                      free_values, 
+            int                      free_keys)
+{
+    spin_lock(&(htable->lock));
+    {
+        __free_htable(htable, free_values, free_keys);
+    }
+    spin_unlock(&(htable->lock));
+}
