@@ -142,8 +142,9 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
         return PTR_ERR(seg);
     }
 
-    /* assuming XPMEM_PERMIT_MODE, do the appropriate permission check */
-    if (xpmem_check_permit_mode(flags, seg) != 0) {
+    /* do the appropriate permission check */
+    if ((seg->permit_type == XPMEM_PERMIT_MODE) &&
+        (xpmem_check_permit_mode(flags, seg) != 0)) {
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
         return -EACCES;
