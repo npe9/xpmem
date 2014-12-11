@@ -480,6 +480,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     at_vaddr = vm_mmap(file, vaddr, size, prot_flags, flags, offset);
     if (IS_ERR((void *)at_vaddr)) {
         ret = at_vaddr;
+        down_write(&current->mm->mmap_sem);
         goto out_3;
     }
 
@@ -489,6 +490,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
         if (xpmem_try_attach_remote(seg->segid, ap->remote_apid, offset, size, at_vaddr) != 0) {
             vm_munmap(at_vaddr, size);
             ret = -EFAULT;
+            down_write(&current->mm->mmap_sem);
             goto out_3;
         }
     }
