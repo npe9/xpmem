@@ -27,6 +27,9 @@ struct xpmem_cmd_ex;
 
 struct xpmem_partition_state *
 xpmem_get_partition(void);
+
+xpmem_domid_t
+xpmem_get_domid(void);
  
 
 xpmem_link_t

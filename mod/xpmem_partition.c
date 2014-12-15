@@ -259,6 +259,15 @@ xpmem_get_partition(void)
 
 EXPORT_SYMBOL(xpmem_get_partition);
 
+xpmem_domid_t
+xpmem_get_domid(void)
+{
+    extern struct xpmem_partition * xpmem_my_part;
+    return xpmem_my_part->part_state.domid;
+}
+
+EXPORT_SYMBOL(xpmem_get_domid);
+
 
 xpmem_link_t
 xpmem_add_connection(struct xpmem_partition_state * part_state,
