@@ -316,6 +316,7 @@ htable_insert(struct xpmem_hashtable * htable,
         /* Check we're not hitting max capacity */
         if (htable->prime_index == (prime_table_len - 1)) {
             kfree(new_entry);
+            htable->expanding = 0;
             spin_unlock(&(htable->lock));
             return 0;
         }
@@ -336,6 +337,7 @@ htable_insert(struct xpmem_hashtable * htable,
         if (new_table == NULL) {
             (htable->prime_index)--;
             kfree(new_entry);
+            htable->expanding = 0;
             spin_unlock(&(htable->lock));
             return 0; /* oom */
         }
