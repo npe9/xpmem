@@ -55,10 +55,10 @@ xpmem_invalidate_range(struct mmu_notifier *mn, struct mm_struct *mm,
 {
     struct xpmem_thread_group *seg_tg;
     struct vm_area_struct *vma;
-    //struct mmu_gather *tlb;
+    struct mmu_gather *tlb;
     //struct mm_struct *tlb_mm;
     //unsigned int tlb_fullmm;
-    struct mmu_gather tlb;
+    //struct mmu_gather tlb;
 
     seg_tg = container_of(mn, struct xpmem_thread_group, mmu_not);
 
@@ -86,10 +86,15 @@ xpmem_invalidate_range(struct mmu_notifier *mn, struct mm_struct *mm,
     //tlb = &get_cpu_var(mmu_gathers);
     //tlb_mm = tlb->mm;
     //tlb_fullmm = tlb->fullmm;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
-    tlb_gather_mmu(&tlb, mm, 1);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
+    tlb = tlb_gather_mmu(mm, 1);
 #else
-    tlb_gather_mmu(&tlb, mm, start, end);
+    tlb = kmalloc(sizeof(struct mmu_gather), GFP_KERNEL);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
+    tlb_gather_mmu(tlb, mm, 1);
+#else
+    tlb_gather_mmu(tlb, mm, start, end);
+#endif
 #endif
 
     /*
@@ -101,9 +106,12 @@ xpmem_invalidate_range(struct mmu_notifier *mn, struct mm_struct *mm,
      */
     //if (tlb->need_flush)
     //  tlb_flush_mmu(tlb, start, end);
-    if (tlb.need_flush)
-        tlb_flush_mmu(&tlb);
-        //tlb_flush_mmu(&tlb, start, end);
+    if (tlb->need_flush)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
+        tlb_flush_mmu(tlb, start, end);
+#else
+        tlb_flush_mmu(tlb);
+#endif
 
     vma = find_vma_intersection(mm, start, end);
     if (vma == NULL) {
@@ -141,7 +149,10 @@ out:
     /* restore the mmu state */
     //(void) tlb_gather_mmu(tlb_mm, tlb_fullmm);
     //put_cpu_var(mmu_gathers);
-    tlb_finish_mmu(&tlb, start, end);
+    tlb_finish_mmu(tlb, start, end);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
+    kfree(tlb);
+#endif
 }
 
 /*

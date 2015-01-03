@@ -14,6 +14,7 @@
 #include <linux/mm.h>
 #include <linux/mman.h>
 #include <linux/file.h>
+#include <linux/version.h>
 
 #include <xpmem.h>
 #include <xpmem_private.h>
@@ -356,6 +357,46 @@ xpmem_try_attach_remote(xpmem_segid_t segid,
 }
 
 
+static unsigned long
+do_xpmem_mmap(struct file * file, 
+              unsigned long addr, 
+              unsigned long len, 
+              unsigned long prot,
+              unsigned long flags,
+              unsigned long offset)
+{
+    unsigned long vaddr = 0;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
+    vaddr = do_mmap(file, addr, len, prot, flags, offset);
+#else
+    up_write(&current->mm->mmap_sem);
+    vaddr = vm_mmap(file, addr, len, prot, flags, offset);
+    down_write(&current->mm->mmap_sem);
+#endif
+
+    return vaddr;
+}
+
+static int
+do_xpmem_munmap(struct mm_struct * mm,
+                unsigned long      addr,
+                unsigned long      size)
+{
+    int ret = 0;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
+    ret = do_munmap(mm, addr, size);
+#else
+    up_write(&current->mm->mmap_sem);
+    ret = vm_munmap(addr, size);
+    down_write(&current->mm->mmap_sem);
+#endif
+
+    return ret;
+}
+
+
 /*
  * Attach a XPMEM address segment.
  */
@@ -476,11 +517,9 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
         }
     }
 
-    up_write(&current->mm->mmap_sem);
-    at_vaddr = vm_mmap(file, vaddr, size, prot_flags, flags, offset);
+    at_vaddr = do_xpmem_mmap(file, vaddr, size, prot_flags, flags, offset);
     if (IS_ERR((void *)at_vaddr)) {
         ret = at_vaddr;
-        down_write(&current->mm->mmap_sem);
         goto out_3;
     }
 
@@ -488,13 +527,11 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     if (ap->flags & XPMEM_AP_REMOTE) {
         DBUG_ON(ap->remote_apid <= 0);
         if (xpmem_try_attach_remote(seg->segid, ap->remote_apid, offset, size, at_vaddr) != 0) {
-            vm_munmap(at_vaddr, size);
+            do_xpmem_munmap(current->mm, at_vaddr, size);
             ret = -EFAULT;
-            down_write(&current->mm->mmap_sem);
             goto out_3;
         }
     }
-    down_write(&current->mm->mmap_sem);
 
     att->at_vaddr = at_vaddr;
 
@@ -602,14 +639,7 @@ xpmem_detach(u64 at_vaddr)
 
     vma->vm_private_data = NULL;
 
-
-    //ret = do_munmap(current->mm, vma->vm_start, att->at_size);
-    up_write(&(current->mm->mmap_sem));
-    {
-        ret = vm_munmap(vma->vm_start, att->at_size);
-    }
-    down_write(&(current->mm->mmap_sem));
-
+    ret = do_xpmem_munmap(current->mm, vma->vm_start, att->at_size);
     DBUG_ON(ret != 0);
 
     att->flags &= ~XPMEM_FLAG_VALIDPTEs;
@@ -702,11 +732,7 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
     //ret = do_munmap(att->mm, vma->vm_start, att->at_size);
     if (att->mm == current->mm)
     {
-        up_write(&(current->mm->mmap_sem));
-        {
-            ret = vm_munmap(vma->vm_start, att->at_size);
-        }
-        down_write(&(current->mm->mmap_sem));
+        ret = do_xpmem_munmap(att->mm, vma->vm_start, att->at_size);
     }
 
     DBUG_ON(ret != 0);

@@ -502,8 +502,8 @@ free_xpmem_segid(struct xpmem_ns_state * ns_state,
                  struct xpmem_domain   * domain,
                  xpmem_segid_t           segid)
 {
-    struct xpmem_id_val   * val        = NULL;
-    struct xpmem_id_key     search_key;
+    struct xpmem_id_key   search_key;
+    struct xpmem_id_val * val = NULL;
 
     search_key.segid = segid;
     search_key.apid  = -1;
@@ -594,8 +594,8 @@ remove_xpmem_apid(struct xpmem_ns_state * ns_state,
                   xpmem_segid_t           segid,
                   xpmem_apid_t            apid)
 {
-    struct xpmem_id_val * val        = NULL;
     struct xpmem_id_key   search_key;
+    struct xpmem_id_val * val = NULL;
 
     search_key.segid = segid;
     search_key.apid  = apid;
@@ -605,6 +605,9 @@ remove_xpmem_apid(struct xpmem_ns_state * ns_state,
 
     /* Remove from domain list */
     domain_remove_xpmem_apid(domain, val);
+
+    /* Free htable value */
+    kfree(val);
 
     return 0;
 }
@@ -735,12 +738,8 @@ free_xpmem_domain(struct xpmem_ns_state * ns_state,
             domain->domid, domain->num_segids);
 
         list_for_each_entry_safe(iter, next, &(domain->segid_list), node) {
-            list_del(&(iter->node)); 
-
             /* Free the segid */
             free_xpmem_segid(ns_state, domain, iter->segid); 
-
-            kfree(iter);
         }
     }
 
@@ -749,12 +748,8 @@ free_xpmem_domain(struct xpmem_ns_state * ns_state,
             domain->domid, domain->num_apids);
 
         list_for_each_entry_safe(iter, next, &(domain->apid_list), node) {
-            list_del(&(iter->node)); 
-
             /* Free the apid */
             remove_xpmem_apid(ns_state, domain, iter->segid, iter->apid); 
-
-            kfree(iter);
         }
     }
 
@@ -1366,14 +1361,14 @@ xpmem_ns_deinit(struct xpmem_partition_state * part_state)
         return 0;
     }
 
+    /* Free any remaining domains */
+    free_all_xpmem_domains(ns_state);
+
     /* Free segid map */
     free_htable(ns_state->segid_map, 1, 1);
 
     /* Free apid map */
     free_htable(ns_state->apid_map, 1, 1);
-
-    /* Free any remaining domains */
-    free_all_xpmem_domains(ns_state);
 
     /* Free segid list */
     {
