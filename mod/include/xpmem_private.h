@@ -98,9 +98,11 @@ xpmem_hugetlb_pte(struct mm_struct *mm, u64 vaddr, u64 *offset, int is_pmd, pmd_
         struct hstate *hs = hstate_vma(vma);
         hps = huge_page_size(hs);
         address = vaddr & huge_page_mask(hs);
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
     } else if (is_pmd && pmd_trans_huge(*pmd)) {
         hps = PMD_SIZE;
         address = vaddr & PMD_MASK;
+#endif
     } else {
         /*
          * We should never enter this area since xpmem_hugetlb_pte() is only
