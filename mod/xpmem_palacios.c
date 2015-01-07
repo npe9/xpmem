@@ -186,10 +186,11 @@ read_bar(void __iomem * xpmem_bar,
 void
 __xpmem_work_fn(struct xpmem_palacios_state * state)
 {
-    struct xpmem_cmd_ex         * cmd      = NULL;
-    u64                           cmd_size = 0;
-    u64                           pfn_size = 0;
-    void                        * pfn_buf  = NULL;
+    u64   cmd_size = 0;
+    u64   pfn_size = 0;
+    u32 * pfn_buf  = NULL;
+
+    struct xpmem_cmd_ex cmd;
 
     /* Read BAR header */
     read_bar(state->xpmem_bar, 
@@ -205,15 +206,9 @@ __xpmem_work_fn(struct xpmem_palacios_state * state)
         return;
     }
 
-    cmd = kmalloc(sizeof(struct xpmem_cmd_ex), GFP_KERNEL);
-    if (!cmd) {
-        return;
-    }
-
     if (pfn_size > 0) {
         pfn_buf = kmalloc(pfn_size, GFP_KERNEL);
         if (!pfn_buf) {
-            kfree(cmd);
             return;
         }
     }
@@ -221,37 +216,18 @@ __xpmem_work_fn(struct xpmem_palacios_state * state)
     /* Read command from BAR */
     xpmem_read_cmd_hcall(
         state->bar_state.xpmem_read_cmd_hcall_id, 
-        (u64)(void *)cmd,
-        (u64)pfn_buf
+        (u64)(void *)&cmd,
+        (u64)__pa(pfn_buf)
     );
 
-    /* Save the pfn list */
-    if (pfn_size > 0) {
-        cmd->attach.pfns = kmalloc(pfn_size, GFP_KERNEL);
-        if (!cmd->attach.pfns) {
-            kfree(pfn_buf);
-            kfree(cmd);
-            return;
-        }
-
-        memcpy(cmd->attach.pfns, pfn_buf, pfn_size);
-        kfree(pfn_buf);
-
-    }
+    /* Save pointer to pfn list */
+    cmd.attach.pfn_pa = (u64)__pa(pfn_buf);
 
     /* Clear device interrupt flag */
     xpmem_irq_clear_hcall(state->bar_state.xpmem_irq_clear_hcall_id);
 
     /* Deliver the command */
-    xpmem_cmd_deliver(state->part, state->link, cmd);
-
-    /* Free up */
-    kfree(cmd);
-
-    if (pfn_size > 0) {
-        kfree(cmd->attach.pfns);
-    }
-
+    xpmem_cmd_deliver(state->part, state->link, &cmd);
 }
 
 void 
@@ -294,6 +270,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
              void                * priv_data)
 {
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)priv_data;
+    u32                         * pfns  = NULL;
 
     if (!state->connected) {
         return -1;
@@ -304,6 +281,14 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         cmd
     );
 
+    /* Free list allocated on attachment interrupt */
+    if (cmd->type == XPMEM_ATTACH_COMPLETE) {
+        pfns = __va(cmd->attach.pfn_pa);
+        kfree(pfns);
+    }
+
+    return 0;
+}
     return 0;
 }
 

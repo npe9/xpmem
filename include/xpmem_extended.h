@@ -37,7 +37,7 @@ struct xpmem_cmd_attach_ex {
     uint64_t        off;
     uint64_t        size;
     uint64_t        num_pfns;
-    uint64_t      * pfns;
+    uint64_t        pfn_pa;
 };
 
 struct xpmem_cmd_detach_ex {

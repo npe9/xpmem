@@ -229,8 +229,6 @@ xpmem_remove_link(struct xpmem_partition_state * state,
     return xpmem_search_or_remove_link(state, link, 1);
 }
 
-
-
 /* Send a command along a connection link */
 int
 xpmem_send_cmd_link(struct xpmem_partition_state * state,
@@ -238,17 +236,19 @@ xpmem_send_cmd_link(struct xpmem_partition_state * state,
                     struct xpmem_cmd_ex          * cmd)
 {
     struct xpmem_link_connection * conn = xpmem_search_link(state, link);
-
     if (conn == NULL) {
         XPMEM_ERR("NULL connection for link %lli", link);
         return -1;
     }
 
+    if (conn->in_cmd_fn == NULL) {
+        XPMEM_ERR("No CMD callback on link %lli", link);
+        return -1;
+    }
+
     return conn->in_cmd_fn(cmd, conn->priv_data);
+
 }
-
-
-
 
 struct xpmem_partition_state *
 xpmem_get_partition(void)
@@ -258,15 +258,6 @@ xpmem_get_partition(void)
 }
 
 EXPORT_SYMBOL(xpmem_get_partition);
-
-xpmem_domid_t
-xpmem_get_domid(void)
-{
-    extern struct xpmem_partition * xpmem_my_part;
-    return xpmem_my_part->part_state.domid;
-}
-
-EXPORT_SYMBOL(xpmem_get_domid);
 
 
 xpmem_link_t
@@ -326,6 +317,10 @@ xpmem_remove_connection(struct xpmem_partition_state * part_state,
                         xpmem_link_t                   link)
 {
     struct xpmem_link_connection * conn  = NULL;
+
+    if (!part_state || !part_state->initialized) {
+        return -1;
+    }
 
     conn = xpmem_remove_link(part_state, link);
 
