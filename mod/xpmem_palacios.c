@@ -289,8 +289,6 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
 
     return 0;
 }
-    return 0;
-}
 
 
 
