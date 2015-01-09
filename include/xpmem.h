@@ -81,6 +81,7 @@ struct xpmem_addr {
 struct xpmem_cmd_make {
     __u64 vaddr;
     size_t size;
+    int flags;
     int permit_type;
     __s64 permit_value;
     xpmem_segid_t segid;    /* returned on success */
