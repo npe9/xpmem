@@ -106,6 +106,7 @@ xpmem_segid_t xpmem_make(void *vaddr, size_t size, int permit_type,
 
 	make_info.vaddr = (__u64)vaddr;
 	make_info.size  = size;
+    make_info.flags = 0;
 	make_info.permit_type  = permit_type;
 	make_info.permit_value = (__s64)permit_value;
 	if (xpmem_ioctl(XPMEM_CMD_MAKE, &make_info) == -1 || !make_info.segid)
