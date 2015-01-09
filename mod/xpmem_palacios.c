@@ -221,7 +221,9 @@ __xpmem_work_fn(struct xpmem_palacios_state * state)
     );
 
     /* Save pointer to pfn list */
-    cmd.attach.pfn_pa = (u64)__pa(pfn_buf);
+    if (pfn_size > 0) {
+        cmd.attach.pfn_pa = (u64)__pa(pfn_buf);
+    }
 
     /* Clear device interrupt flag */
     xpmem_irq_clear_hcall(state->bar_state.xpmem_irq_clear_hcall_id);
