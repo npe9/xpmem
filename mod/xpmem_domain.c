@@ -172,6 +172,7 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
 
     return 0;
 }
+
 static int 
 xpmem_release_domain(struct xpmem_cmd_release_ex * release_ex)
 {

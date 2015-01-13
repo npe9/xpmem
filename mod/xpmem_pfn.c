@@ -111,10 +111,10 @@ xpmem_unpin_pages(struct xpmem_segment *seg, struct mm_struct *mm,
                     pfn, vaddr, n_pgs);
 
             /* Don't unpin remote segment memory */
-            if (seg->vaddr > 0) {
+            //if (seg->vaddr > 0) {
                 page = virt_to_page(__va(pfn << PAGE_SHIFT));
                 page_cache_release(page);
-            }
+            //}
 
             n_pgs_unpinned++;
         }

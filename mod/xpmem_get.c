@@ -312,6 +312,7 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
         xpmem_att_ref(att);
         spin_unlock(&ap->lock);
         xpmem_detach_att(ap, att);
+
         if (!(att->flags & XPMEM_ATT_REMOTE)) {
             DBUG_ON(atomic_read(&att->mm->mm_users) <= 0);
             DBUG_ON(atomic_read(&att->mm->mm_count) <= 0);
@@ -319,6 +320,7 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
         xpmem_att_deref(att);
         spin_lock(&ap->lock);
     }
+
     ap->flags |= XPMEM_FLAG_DESTROYED;
     spin_unlock(&ap->lock);
 
@@ -344,9 +346,6 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     list_del_init(&ap->ap_node);
     spin_unlock(&seg->lock);
     
-    xpmem_seg_deref(seg);   /* deref of xpmem_get()'s ref */
-    xpmem_tg_deref(seg_tg); /* deref of xpmem_get()'s ref */
-
     /* Release remote apid */
     if (ap->flags & XPMEM_AP_REMOTE) {
 
@@ -358,6 +357,9 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
             xpmem_remove_seg(seg_tg, seg);
         }
     }
+
+    xpmem_seg_deref(seg);   /* deref of xpmem_get()'s ref */
+    xpmem_tg_deref(seg_tg); /* deref of xpmem_get()'s ref */
 
     xpmem_ap_destroyable(ap);
 }

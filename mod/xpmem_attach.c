@@ -665,22 +665,45 @@ xpmem_detach(u64 at_vaddr)
 static void
 xpmem_detach_remote_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
 {
+    struct xpmem_segment *seg;
+    struct xpmem_thread_group* seg_tg;
+
+    seg = ap->seg;
+    xpmem_seg_ref(seg);
+    seg_tg = seg->tg;
+    xpmem_tg_ref(seg_tg);
+
+    down_write(&seg_tg->mm->mmap_sem);
     mutex_lock(&att->mutex);
 
     if (att->flags & XPMEM_FLAG_DESTROYING) {
+        xpmem_seg_deref(seg);
+        xpmem_tg_deref(seg_tg);
         mutex_unlock(&att->mutex);
+        up_write(&att->mm->mmap_sem);
         return;
     }
 
     att->flags |= XPMEM_FLAG_DESTROYING;
+
+    /* We unpin from the source address space. This basically does a put_page on each
+     * page from att->vaddr (which is set to the source vaddr) for at_size length, which
+     * is exactly what we want
+     */
+
+    xpmem_unpin_pages(seg, seg_tg->mm, att->vaddr, att->at_size);
+
+    xpmem_seg_deref(seg);
+    xpmem_tg_deref(seg_tg);
+
+    att->flags &= ~XPMEM_FLAG_VALIDPTEs;
 
     spin_lock(&ap->lock);
     list_del_init(&att->att_node);
     spin_unlock(&ap->lock);
 
     mutex_unlock(&att->mutex);
-
-    att->flags &= ~XPMEM_FLAG_VALIDPTEs;
+    up_write(&seg_tg->mm->mmap_sem);
 
     xpmem_att_destroyable(att);
 }
@@ -723,10 +746,7 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
     DBUG_ON((vma->vm_end - vma->vm_start) != att->at_size);
     DBUG_ON(vma->vm_private_data != att);
 
-    if (att->mm != NULL) {
-        xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
-    }
-
+    xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
     vma->vm_private_data = NULL;
 
     //ret = do_munmap(att->mm, vma->vm_start, att->at_size);
