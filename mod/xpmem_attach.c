@@ -622,10 +622,6 @@ xpmem_detach(u64 at_vaddr)
     ap = att->ap;
     xpmem_ap_ref(ap);
 
-    if (ap->flags & XPMEM_AP_REMOTE) {
-        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->remote_apid, at_vaddr);
-    }
-
     if (current->tgid != ap->tg->tgid) {
         att->flags &= ~XPMEM_FLAG_DESTROYING;
         xpmem_ap_deref(ap);
@@ -635,7 +631,25 @@ xpmem_detach(u64 at_vaddr)
         return -EACCES;
     }
 
-    xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
+    /* NOTE: ATT_REMOTE is not possible here, because ATT_REMOTE attachments are only for
+     * remote processes attaching local memory 
+     */
+
+    if (ap->flags & XPMEM_AP_REMOTE) {
+        u64 pa = 0;
+
+        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->remote_apid, at_vaddr);
+
+        /* Free from Palacios, if we're in a VM */ 
+        pa = xpmem_vaddr_to_PFN(att->mm, at_vaddr) << PAGE_SHIFT;
+        if (pa == 0) {
+            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)at_vaddr);
+        } else {
+            xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pa);
+        }
+    } else {
+        xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
+    }
 
     vma->vm_private_data = NULL;
 
@@ -746,7 +760,22 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
     DBUG_ON((vma->vm_end - vma->vm_start) != att->at_size);
     DBUG_ON(vma->vm_private_data != att);
 
-    xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
+    if (ap->flags & XPMEM_AP_REMOTE) {
+        u64 pa = 0;
+
+        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->remote_apid, att->at_vaddr);
+
+        /* Free from Palacios, if we're in a VM */ 
+        pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
+        if (pa == 0) {
+            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)att->at_vaddr);
+        } else {
+            xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pa);
+        }
+    } else {
+        xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
+    }
+
     vma->vm_private_data = NULL;
 
     //ret = do_munmap(att->mm, vma->vm_start, att->at_size);

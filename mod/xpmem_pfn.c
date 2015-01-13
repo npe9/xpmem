@@ -110,11 +110,8 @@ xpmem_unpin_pages(struct xpmem_segment *seg, struct mm_struct *mm,
             XPMEM_DEBUG("pfn=%llx, vaddr=%llx, n_pgs=%d",
                     pfn, vaddr, n_pgs);
 
-            /* Don't unpin remote segment memory */
-            //if (seg->vaddr > 0) {
-                page = virt_to_page(__va(pfn << PAGE_SHIFT));
-                page_cache_release(page);
-            //}
+            page = virt_to_page(__va(pfn << PAGE_SHIFT));
+            page_cache_release(page);
 
             n_pgs_unpinned++;
         }
@@ -122,9 +119,6 @@ xpmem_unpin_pages(struct xpmem_segment *seg, struct mm_struct *mm,
         vaddr += PAGE_SIZE;
         n_pgs--;
     }
-
-    /* Free from Palacios, if we're in a VM */
-    xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pfn_start << PAGE_SHIFT);
 
     atomic_sub(n_pgs_unpinned, &seg->tg->n_pinned);
     atomic_add(n_pgs_unpinned, &xpmem_my_part->n_unpinned);
