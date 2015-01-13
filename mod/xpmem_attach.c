@@ -648,7 +648,7 @@ xpmem_detach(u64 at_vaddr)
             xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pa);
         }
     } else {
-        xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
+        xpmem_unpin_pages(ap->seg, current->mm, at_vaddr, att->at_size);
     }
 
     vma->vm_private_data = NULL;
