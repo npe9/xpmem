@@ -199,12 +199,11 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
         write_unlock(&xpmem_my_part->wk_segid_to_tgid_lock);
     }
 
-    xpmem_seg_up_write(seg);
-
     if (!(seg->flags & XPMEM_SEG_REMOTE)) {
         xpmem_remove_remote(&(xpmem_my_part->part_state), seg->segid);
     }
 
+    xpmem_seg_up_write(seg);
     xpmem_seg_destroyable(seg);
 
     return 0;

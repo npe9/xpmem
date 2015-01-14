@@ -45,7 +45,7 @@ int main(int argc, char ** argv) {
 
     printf("segid=%lli,MB=%d\n", segid, mb);
 
-    sleep(100);
+    sleep(10000);
 
     xpmem_remove(segid);
 

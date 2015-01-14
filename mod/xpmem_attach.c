@@ -603,12 +603,14 @@ xpmem_detach(u64 at_vaddr)
     xpmem_att_ref(att);
 
     xpmem_block_nonfatal_signals(&oldset);
+    
     if (mutex_lock_interruptible(&att->mutex)) {
         xpmem_unblock_nonfatal_signals(&oldset);
         xpmem_att_deref(att);
         up_write(&current->mm->mmap_sem);
         return -EINTR;
     }
+    
     xpmem_unblock_nonfatal_signals(&oldset);
 
     if (att->flags & XPMEM_FLAG_DESTROYING) {
@@ -638,17 +640,17 @@ xpmem_detach(u64 at_vaddr)
     if (ap->flags & XPMEM_AP_REMOTE) {
         u64 pa = 0;
 
-        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->remote_apid, at_vaddr);
+        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->remote_apid, att->at_vaddr);
 
         /* Free from Palacios, if we're in a VM */ 
-        pa = xpmem_vaddr_to_PFN(att->mm, at_vaddr) << PAGE_SHIFT;
+        pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
         if (pa == 0) {
-            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)at_vaddr);
+            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)att->at_vaddr);
         } else {
             xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pa);
         }
     } else {
-        xpmem_unpin_pages(ap->seg, current->mm, at_vaddr, att->at_size);
+        xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
     }
 
     vma->vm_private_data = NULL;
@@ -694,7 +696,7 @@ xpmem_detach_remote_att(struct xpmem_access_permit *ap, struct xpmem_attachment 
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
         mutex_unlock(&att->mutex);
-        up_write(&att->mm->mmap_sem);
+        up_write(&seg_tg->mm->mmap_sem);
         return;
     }
 
@@ -782,9 +784,9 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
     if (att->mm == current->mm)
     {
         ret = do_xpmem_munmap(att->mm, vma->vm_start, att->at_size);
+        DBUG_ON(ret != 0);
     }
 
-    DBUG_ON(ret != 0);
     att->flags &= ~XPMEM_FLAG_VALIDPTEs;
 
     spin_lock(&ap->lock);
