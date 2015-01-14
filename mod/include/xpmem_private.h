@@ -390,8 +390,21 @@ extern unsigned short xpmem_apid_to_uniq(xpmem_segid_t);
 #define XPMEM_FLAG_DESTROYING       0x00010 /* being destroyed */
 #define XPMEM_FLAG_DESTROYED        0x00020 /* 'being destroyed' finished */
 #define XPMEM_FLAG_CREATING_REMOTE  0x00040 /* being created */
-#define XPMEM_SEG_REMOTE            0x00080 /* remote access permit */
+
+
+/* Remote segments are those that created by the remote thread group and do not map to
+ * any physical memory from this domain
+ */
+#define XPMEM_SEG_REMOTE            0x00080 
+
+/* Remote access permits are allocated to allow local processes to access remote segments.
+ * AP_REMOTE means you have access to remote memory
+ */
 #define XPMEM_AP_REMOTE             0x00100 /* remote access permit */
+
+/* A remote attachment signifies an attachment to local physical memory by a remote
+ * process
+ */
 #define XPMEM_ATT_REMOTE            0x00200 /* remote attachment struct */
 
 #define XPMEM_FLAG_VALIDPTEs        0x00400 /* valid PTEs exist */
