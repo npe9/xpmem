@@ -140,17 +140,28 @@ xpmem_seg_ref_by_segid(struct xpmem_thread_group *seg_tg, xpmem_segid_t segid)
 void
 xpmem_seg_deref(struct xpmem_segment *seg)
 {
+    int refs;
     DBUG_ON(atomic_read(&seg->refcnt) <= 0);
-    if (atomic_dec_return(&seg->refcnt) != 0)
+
+    refs = atomic_dec_return(&seg->refcnt);
+
+    if (refs == 0) {
+        /*
+         * Segment has been removed from lookup lists and is no
+         * longer being referenced so it is safe to free it.
+         */
+        DBUG_ON(!(seg->flags & XPMEM_FLAG_DESTROYING));
+
+        kfree(seg);
+    }
+    
+    else if ((refs == 1) && 
+             (seg->flags & XPMEM_SEG_REMOTE))
+    {
+        /* Only 1 ref for a remote segment -> delete it */
+        xpmem_remove_seg(xpmem_my_part->tg_remote, seg);
         return;
-
-    /*
-     * Segment has been removed from lookup lists and is no
-     * longer being referenced so it is safe to free it.
-     */
-    DBUG_ON(!(seg->flags & XPMEM_FLAG_DESTROYING));
-
-    kfree(seg);
+    }
 }
 
 /*

@@ -350,7 +350,6 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     if (ap->flags & XPMEM_AP_REMOTE) {
         DBUG_ON(ap->remote_apid <= 0);
         xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
-        xpmem_remove_seg(seg_tg, seg);
     }
 
     xpmem_seg_deref(seg);   /* deref of xpmem_get()'s ref */

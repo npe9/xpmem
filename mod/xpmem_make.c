@@ -178,9 +178,7 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
     xpmem_seg_down_write(seg);
 
     /* unpin pages and clear PTEs for each attachment to this segment */
-    if (seg->tg->tgid != XPMEM_REMOTE_TG_TGID) {
-        xpmem_clear_PTEs(seg);
-    }
+    xpmem_clear_PTEs(seg);
 
     /* indicate that the segment has been destroyed */
     spin_lock(&seg->lock);
