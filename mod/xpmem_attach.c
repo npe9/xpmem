@@ -707,7 +707,7 @@ xpmem_detach_remote_att(struct xpmem_access_permit *ap, struct xpmem_attachment 
      * is exactly what we want
      */
 
-    xpmem_unpin_pages(seg, seg_tg->mm, att->vaddr, att->at_size);
+//    xpmem_unpin_pages(seg, seg_tg->mm, att->vaddr, att->at_size);
 
     xpmem_seg_deref(seg);
     xpmem_tg_deref(seg_tg);
@@ -886,9 +886,11 @@ xpmem_clear_PTEs_of_att(struct xpmem_attachment *att, u64 start, u64 end,
         XPMEM_DEBUG("unpin_at = %llx, invalidate_len = %llx\n",
                 unpin_at, invalidate_len);
 
-        /* Unpin the pages */
-        xpmem_unpin_pages(att->ap->seg, att->mm, unpin_at,
-                invalidate_len);
+        /* Unpin the pages if the access permit is local */
+        if (!(att->ap->flags & XPMEM_AP_REMOTE)) {
+            xpmem_unpin_pages(att->ap->seg, att->mm, unpin_at,
+                    invalidate_len);
+        }
 
         /*
          * Clear the PTEs, using the vma out of the att if we
