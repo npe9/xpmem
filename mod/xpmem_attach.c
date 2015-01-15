@@ -707,7 +707,7 @@ xpmem_detach_remote_att(struct xpmem_access_permit *ap, struct xpmem_attachment 
      * is exactly what we want
      */
 
-//    xpmem_unpin_pages(seg, seg_tg->mm, att->vaddr, att->at_size);
+    xpmem_unpin_pages(seg, seg_tg->mm, att->vaddr, att->at_size);
 
     xpmem_seg_deref(seg);
     xpmem_tg_deref(seg_tg);
