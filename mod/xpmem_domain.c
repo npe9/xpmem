@@ -404,6 +404,13 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     att->flags    = XPMEM_FLAG_REMOTE;
     INIT_LIST_HEAD(&att->att_node);
 
+    att->pfns = kmalloc(sizeof(u32) * attach_ex->num_pfns, GFP_KERNEL);
+    if (att->pfns == NULL) {
+        ret = -ENOMEM;
+        kfree(att);
+        goto out_2;
+    }
+
     xpmem_att_not_destroyable(att);
     xpmem_att_ref(att);
 

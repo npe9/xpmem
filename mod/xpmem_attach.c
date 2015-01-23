@@ -722,7 +722,7 @@ xpmem_detach_local_att(struct xpmem_access_permit * ap,
 
     vma->vm_private_data = NULL;
 
-    DBUG_ON (do_xpmem_munmap(att->mm, vma->vm_start, att->at_size) != 0);
+    DBUG_ON(do_xpmem_munmap(att->mm, vma->vm_start, att->at_size) != 0);
 }
 
 /* There's no vma or address space to manipulate here. Just need to put each page that was
@@ -735,6 +735,8 @@ xpmem_detach_remote_att(struct xpmem_access_permit * ap,
     struct page *page;
     long i;
     u32 pfn, num_pfns;
+
+    DBUG_ON(att->pfns == NULL);
 
     num_pfns = att->at_size / PAGE_SIZE;
 
