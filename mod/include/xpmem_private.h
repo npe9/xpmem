@@ -68,7 +68,7 @@
 #ifdef USE_DBUG_ON
 #define DBUG_ON(condition)      BUG_ON(condition)
 #else
-#define DBUG_ON(condition)
+#define DBUG_ON(condition)      { if(condition) printk("BUG (%s:%d)\n", __FILE__, __LINE__); }
 #endif
 
 extern uint32_t xpmem_debug_on;
@@ -185,9 +185,9 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
 
 
 
-#define XPMEM_REMOTE_TG_TGID    1 
-#define XPMEM_REMOTE_TG_UID     1 
-#define XPMEM_REMOTE_TG_GID     1 
+//#define XPMEM_REMOTE_TG_TGID    1 
+//#define XPMEM_REMOTE_TG_UID     1 
+//#define XPMEM_REMOTE_TG_GID     1 
 
 #define XPMEM_MIN_SEGID         32
 
@@ -304,6 +304,10 @@ struct xpmem_attachment {
     u64                             at_vaddr;               /* address where seg is attached */
     size_t                          at_size;                /* size of seg attachment */
 
+    u32                           * pfns;                   /* list of pfns that we need to keep track of if
+                                                               this attachment is remote
+                                                            */
+
     /* Other misc */
     volatile int                    flags;                  /* att attributes and state */
     atomic_t                        refcnt;                 /* references to att */
@@ -319,7 +323,6 @@ struct xpmem_attachment {
 
 struct xpmem_partition {
     struct xpmem_hashlist         * tg_hashtable;           /* locks + tg hash lists */
-    struct xpmem_thread_group     * tg_remote;              /* the special remote thread group */
 
     /* well-known segid->tgid mapping */
     pid_t                           wk_segid_to_tgid[XPMEM_MIN_SEGID];
@@ -389,26 +392,17 @@ extern unsigned short xpmem_apid_to_uniq(xpmem_segid_t);
  */
 #define XPMEM_FLAG_DESTROYING       0x00010 /* being destroyed */
 #define XPMEM_FLAG_DESTROYED        0x00020 /* 'being destroyed' finished */
-#define XPMEM_FLAG_CREATING_REMOTE  0x00040 /* being created */
 
 
-/* Remote segments are those that created by the remote thread group and do not map to
- * any physical memory from this domain
+/* Shadow segments are created by processes that attach to remote segids. Shadow
+ * attachments are created when processes attach to shadow access segments. Memory mapped
+ * for these attachments comes from remote domains 
  */
-#define XPMEM_SEG_REMOTE            0x00080 
+#define XPMEM_FLAG_SHADOW           0x00100 
+#define XPMEM_FLAG_REMOTE           0x00200 
 
-/* Remote access permits are allocated to allow local processes to access remote segments.
- * AP_REMOTE means you have access to remote memory
- */
-#define XPMEM_AP_REMOTE             0x00100 /* remote access permit */
-
-/* A remote attachment signifies an attachment to local physical memory by a remote
- * process
- */
-#define XPMEM_ATT_REMOTE            0x00200 /* remote attachment struct */
-
-#define XPMEM_FLAG_VALIDPTEs        0x00400 /* valid PTEs exist */
-#define XPMEM_FLAG_RECALLINGPFNS    0x00800 /* recalling PFNs */
+#define XPMEM_FLAG_VALIDPTEs        0x01000 /* valid PTEs exist */
+#define XPMEM_FLAG_RECALLINGPFNS    0x02000 /* recalling PFNs */
 
 #define XPMEM_DONT_USE_1        0x10000
 #define XPMEM_DONT_USE_2        0x20000

@@ -146,9 +146,6 @@ xpmem_get_segment(int                         flags,
     /* create a new xpmem_access_permit structure with a unique apid */
     ap = kzalloc(sizeof(struct xpmem_access_permit), GFP_KERNEL);
     if (ap == NULL) {
-        xpmem_tg_deref(ap_tg);
-        xpmem_seg_deref(seg);
-        xpmem_tg_deref(seg_tg);
         return -ENOMEM;
     }
 
@@ -162,10 +159,6 @@ xpmem_get_segment(int                         flags,
     INIT_LIST_HEAD(&ap->ap_node);
     INIT_LIST_HEAD(&ap->ap_hashnode);
 
-    if (ap->remote_apid > 0) {
-        ap->flags = XPMEM_AP_REMOTE;
-    }
-
     xpmem_ap_not_destroyable(ap);
 
     /* add ap to its seg's access permit list */
@@ -178,22 +171,6 @@ xpmem_get_segment(int                         flags,
     write_lock(&ap_tg->ap_hashtable[index].lock);
     list_add_tail(&ap->ap_hashnode, &ap_tg->ap_hashtable[index].list);
     write_unlock(&ap_tg->ap_hashtable[index].lock);
-
-    xpmem_tg_deref(ap_tg);
-
-    /*
-     * The following two derefs
-     *
-     *      xpmem_seg_deref(seg);
-     *      xpmem_tg_deref(seg_tg);
-     *
-     * aren't being done at this time in order to prevent the seg
-     * and seg_tg structures from being prematurely kfree'd as long as the
-     * potential for them to be referenced via this ap structure exists.
-     *
-     * These two derefs will be done by xpmem_release_ap() at the time
-     * this ap structure is destroyed.
-     */
 
     return 0;
 }
@@ -232,18 +209,10 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         }
 
         /* We've been given a remote apid. The strategy is to fake like the segid
-         * was created locally by using the xpmem remote thread group to create
-         * a "shadow" segment
+         * was created locally by creating a "shadow" segment ourselves
          */
-        xpmem_tg_ref(xpmem_my_part->tg_remote);
-        xpmem_make_segment(0, remote_size, permit_type, permit_value, xpmem_my_part->tg_remote, segid);
-
-        /* Now, try the ref again */
-        xpmem_tg_ref(xpmem_my_part->tg_remote);
-        seg_tg = xpmem_my_part->tg_remote;
-        if (IS_ERR(seg_tg)) {
-            return PTR_ERR(seg_tg);
-        }
+        seg_tg = xpmem_tg_ref_by_tgid(current->tgid);
+        xpmem_make_segment(0, remote_size, permit_type, permit_value, seg_tg, segid);
     }
 
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);
@@ -281,10 +250,31 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 
     if (status == 0) {
         *apid_p = apid;
+    } else {
+        xpmem_seg_deref(seg);
+        xpmem_tg_deref(seg_tg);
     }
+
+    xpmem_tg_deref(ap_tg);
+
+    /*
+     * The following two derefs
+     *
+     *      xpmem_seg_deref(seg);
+     *      xpmem_tg_deref(seg_tg);
+     *
+     * aren't being done at this time in order to prevent the seg
+     * and seg_tg structures from being prematurely kfree'd as long as the
+     * potential for them to be referenced via this ap structure exists.
+     *
+     * These two derefs will be done by xpmem_release_ap() at the time
+     * this ap structure is destroyed.
+     */
 
     return status;
 }
+
+#include <linux/delay.h>
 
 /*
  * Release an access permit and detach all associated attaches.
@@ -311,12 +301,12 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
                  att_node);
         xpmem_att_ref(att);
         spin_unlock(&ap->lock);
+
         xpmem_detach_att(ap, att);
 
-        if (!(att->flags & XPMEM_ATT_REMOTE)) {
-            DBUG_ON(atomic_read(&att->mm->mm_users) <= 0);
-            DBUG_ON(atomic_read(&att->mm->mm_count) <= 0);
-        }
+        DBUG_ON(atomic_read(&att->mm->mm_users) <= 0);
+        DBUG_ON(atomic_read(&att->mm->mm_count) <= 0);
+
         xpmem_att_deref(att);
         spin_lock(&ap->lock);
     }
@@ -347,8 +337,7 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     spin_unlock(&seg->lock);
     
     /* Release remote apid */
-    if (ap->flags & XPMEM_AP_REMOTE) {
-        DBUG_ON(ap->remote_apid <= 0);
+    if (ap->remote_apid > 0) {
         xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
     }
 
@@ -402,9 +391,8 @@ xpmem_release(xpmem_apid_t apid)
         return -EINVAL;
 
     ap_tg = xpmem_tg_ref_by_apid(apid);
-    if (IS_ERR(ap_tg)) {
+    if (IS_ERR(ap_tg))
         return PTR_ERR(ap_tg);
-    }
 
     if (current->tgid != ap_tg->tgid) {
         xpmem_tg_deref(ap_tg);

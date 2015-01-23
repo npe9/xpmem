@@ -146,14 +146,14 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
         return -EACCES;
     }
 
-    /* find accessor's thread group structure by using the remote thread group */
-    xpmem_tg_ref(xpmem_my_part->tg_remote);
-    ap_tg = xpmem_my_part->tg_remote;
+    /* find accessor's thread group structure by using the seg group */
+    ap_tg = seg_tg;
     if (IS_ERR(ap_tg)) {
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
         return -XPMEM_ERRNO_NOPROC;
     }
+    xpmem_tg_ref(ap_tg);
 
     apid = xpmem_make_apid(ap_tg);
     if (apid < 0) {
@@ -168,24 +168,43 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
     if (status == 0) { 
         get_ex->apid = apid;
         get_ex->size = seg->size;
+    } else {
+        xpmem_seg_deref(seg);
+        xpmem_tg_deref(seg_tg);
     }
 
-    return 0;
+    xpmem_tg_deref(ap_tg);
+
+    /*
+     * The following two derefs
+     *
+     *      xpmem_seg_deref(seg);
+     *      xpmem_tg_deref(seg_tg);
+     *
+     * aren't being done at this time in order to prevent the seg
+     * and seg_tg structures from being prematurely kfree'd as long as the
+     * potential for them to be referenced via this ap structure exists.
+     *
+     * These two derefs will be done by xpmem_release_ap() at the time
+     * this ap structure is destroyed.
+     */
+
+    return status;
 }
 
 static int 
 xpmem_release_domain(struct xpmem_cmd_release_ex * release_ex)
 {
-    struct xpmem_thread_group *ap_tg;
+    struct xpmem_thread_group *ap_tg, *seg_tg;
     struct xpmem_access_permit *ap;
+    struct xpmem_segment *seg;
+
     xpmem_apid_t apid = release_ex->apid;
 
     if (apid <= 0)
         return -EINVAL;
 
-    /* find accessor's thread group structure by using the remote thread group */
-    xpmem_tg_ref(xpmem_my_part->tg_remote);
-    ap_tg = xpmem_my_part->tg_remote;
+    ap_tg = xpmem_tg_ref_by_apid(apid);
     if (IS_ERR(ap_tg))
         return PTR_ERR(ap_tg);
 
@@ -196,9 +215,23 @@ xpmem_release_domain(struct xpmem_cmd_release_ex * release_ex)
     }   
     DBUG_ON(ap->tg != ap_tg);
 
-    xpmem_release_ap(ap_tg, ap);
+    seg = ap->seg;
+    xpmem_seg_ref(seg);
+    seg_tg = seg->tg;
+    xpmem_tg_ref(seg_tg);
+
+    /* Before releasing, check that the seg is still up so we don't access dead data
+     * structures in xpmem_release_ap
+     */
+    if (xpmem_seg_down_read(seg_tg, seg, 0, 1) == 0) {
+        xpmem_release_ap(ap_tg, ap);
+        xpmem_seg_up_read(seg_tg, seg, 0);
+    }
+
     xpmem_ap_deref(ap);
     xpmem_tg_deref(ap_tg);
+    xpmem_seg_deref(seg);
+    xpmem_tg_deref(seg_tg);
 
     return 0;
 }
@@ -257,12 +290,8 @@ xpmem_fault_pages(struct xpmem_attachment * att,
     down_read(&(seg_tg->mm->mmap_sem));
     atomic_inc(&(seg_tg->mm->mm_users));
 
-    /* Fault in the pages */
+    /* Fault the pages into the seg */
     ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, att->at_size, 1);
-
-    /* Release the mmap sem */
-    up_read(&(seg_tg->mm->mmap_sem));
-    atomic_dec(&(seg_tg->mm->mm_users));
 
     if (ret != 0) {
         goto out_2;
@@ -285,13 +314,19 @@ xpmem_fault_pages(struct xpmem_attachment * att,
             goto out_2;
         }
 
-        pfns[i] = pfn;
+        pfns[i]      = pfn;
+        att->pfns[i] = pfn;
     }
+
  
 out_2:
     mutex_unlock(&(att->mutex));
-    xpmem_seg_up_read(seg_tg, seg, 1);
 
+    /* Release the mmap sem */
+    up_read(&(seg_tg->mm->mmap_sem));
+    atomic_dec(&(seg_tg->mm->mm_users));
+
+    xpmem_seg_up_read(seg_tg, seg, 1);
 out:
     xpmem_att_deref(att);
     xpmem_ap_deref(ap);
@@ -309,7 +344,8 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     struct xpmem_thread_group *ap_tg, *seg_tg;
     struct xpmem_access_permit *ap;
     struct xpmem_segment *seg;
-    struct xpmem_attachment * att;
+    struct xpmem_attachment *att;
+    struct vm_area_struct *vma;
 
     xpmem_apid_t apid = attach_ex->apid;
     off_t offset = attach_ex->off;
@@ -326,9 +362,7 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     if (offset_in_page(size) != 0)  
         size += PAGE_SIZE - offset_in_page(size);
 
-    /* find accessor's thread group structure by using the remote thread group */
-    xpmem_tg_ref(xpmem_my_part->tg_remote);
-    ap_tg = xpmem_my_part->tg_remote;
+    ap_tg = xpmem_tg_ref_by_apid(apid);
     if (IS_ERR(ap_tg))
         return PTR_ERR(ap_tg);
 
@@ -354,8 +388,6 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     /* size needs to reflect page offset to start of segment */
     size += offset_in_page(seg_vaddr);
 
-    seg = ap->seg;
-
     /* create new attach structure */
     att = kzalloc(sizeof(struct xpmem_attachment), GFP_KERNEL);
     if (att == NULL) {
@@ -364,18 +396,21 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     }
 
     mutex_init(&att->mutex);
-    att->vaddr   = seg_vaddr;
-    att->at_size = size;
-    att->ap = ap;
-    att->mm = NULL;
-    att->at_vaddr = 0;
-    att->flags |= XPMEM_ATT_REMOTE;
+    att->vaddr    = seg_vaddr;
+    att->at_size  = size;
+    att->ap       = ap;
+    att->mm       = seg_tg->mm;
+    att->at_vaddr = seg_vaddr;
+    att->flags    = XPMEM_FLAG_REMOTE;
     INIT_LIST_HEAD(&att->att_node);
 
     xpmem_att_not_destroyable(att);
     xpmem_att_ref(att);
 
-    /* link attach structure to its access permit's att list */
+    vma = find_vma(att->mm, att->at_vaddr);
+    att->at_vma = vma;
+
+    /* link attach structure to its access permit's remote att list */
     spin_lock(&ap->lock);
     list_add_tail(&att->att_node, &ap->att_list);
     if (ap->flags & XPMEM_FLAG_DESTROYING) {

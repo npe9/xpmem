@@ -53,7 +53,6 @@ xpmem_make_segment(u64                         vaddr,
     /* create a new struct xpmem_segment structure with a unique segid */
     seg = kzalloc(sizeof(struct xpmem_segment), GFP_KERNEL);
     if (seg == NULL) {
-        xpmem_tg_deref(seg_tg);
         return -ENOMEM;
     }
 
@@ -70,7 +69,7 @@ xpmem_make_segment(u64                         vaddr,
     INIT_LIST_HEAD(&seg->seg_node);
 
     if (seg->vaddr == 0) {
-        seg->flags = XPMEM_SEG_REMOTE;
+        seg->flags = XPMEM_FLAG_SHADOW;
     }
 
     xpmem_seg_not_destroyable(seg);
@@ -86,8 +85,6 @@ xpmem_make_segment(u64                         vaddr,
         xpmem_my_part->wk_segid_to_tgid[segid] = seg_tg->tgid;
         write_unlock(&xpmem_my_part->wk_segid_to_tgid_lock);
     }
-
-    xpmem_tg_deref(seg_tg);
 
     return 0;
 }
@@ -149,6 +146,8 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, xpmem_se
         *segid_p = segid;
     }
 
+    xpmem_tg_deref(seg_tg);
+
     return status;
 }
 
@@ -161,11 +160,8 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
     DBUG_ON(atomic_read(&seg->refcnt) <= 0);
 
     /* see if the requesting thread is the segment's owner */
-    if ((current->tgid != seg_tg->tgid) &&
-         (seg_tg->tgid != XPMEM_REMOTE_TG_TGID)) 
-    {
+    if (current->tgid != seg_tg->tgid)
         return -EACCES;
-    }
 
     spin_lock(&seg->lock);
     if (seg->flags & XPMEM_FLAG_DESTROYING) {
@@ -197,7 +193,8 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
         write_unlock(&xpmem_my_part->wk_segid_to_tgid_lock);
     }
 
-    if (!(seg->flags & XPMEM_SEG_REMOTE)) {
+    /* Nameserver does not know about shadow segments, so don't remove them */
+    if (!(seg->flags & XPMEM_FLAG_SHADOW)) {
         xpmem_remove_remote(&(xpmem_my_part->part_state), seg->segid);
     }
 
@@ -215,10 +212,7 @@ xpmem_remove_segs_of_tg(struct xpmem_thread_group *seg_tg)
 {
     struct xpmem_segment *seg;
 
-    DBUG_ON
-        (   (current->tgid != seg_tg->tgid) &&
-            (seg_tg->tgid != XPMEM_REMOTE_TG_TGID)
-        );
+    DBUG_ON(current->tgid != seg_tg->tgid);
 
     read_lock(&seg_tg->seg_list_lock);
 

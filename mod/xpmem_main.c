@@ -163,12 +163,10 @@ xpmem_flush_tg(struct xpmem_thread_group * tg)
     }
 
     /* Remove tg structure from its hash list */
-    if (tg->tgid != XPMEM_REMOTE_TG_TGID) {
-        index = xpmem_tg_hashtable_index(tg->tgid);
-        write_lock(&xpmem_my_part->tg_hashtable[index].lock);
-        list_del_init(&tg->tg_hashnode);
-        write_unlock(&xpmem_my_part->tg_hashtable[index].lock);
-    }
+    index = xpmem_tg_hashtable_index(tg->tgid);
+    write_lock(&xpmem_my_part->tg_hashtable[index].lock);
+    list_del_init(&tg->tg_hashnode);
+    write_unlock(&xpmem_my_part->tg_hashtable[index].lock);
 
     xpmem_tg_destroyable(tg);
     xpmem_tg_deref(tg);
@@ -332,71 +330,6 @@ static struct miscdevice xpmem_dev_handle = {
 };
 
 
-
-static int
-xpmem_create_remote_thread_group(void)
-{
-    struct xpmem_thread_group *tg;
-    int index;
-
-    /* create tg */
-    tg = kzalloc(sizeof(struct xpmem_thread_group), GFP_KERNEL);
-    if (tg == NULL) {
-        return -ENOMEM;
-    }
-
-    tg->lock = __SPIN_LOCK_UNLOCKED(tg->lock);
-    tg->tgid = XPMEM_REMOTE_TG_TGID;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
-    tg->uid = XPMEM_REMOTE_TG_UID;
-    tg->gid = XPMEM_REMOTE_TG_GID;
-#else
-    tg->uid.val = XPMEM_REMOTE_TG_UID;
-    tg->gid.val = XPMEM_REMOTE_TG_GID;
-#endif
-    //atomic_set(&tg->uniq_segid, 0);
-    atomic_set(&tg->uniq_apid, 0);
-    atomic_set(&tg->n_pinned, 0);
-    tg->addr_limit = TASK_SIZE;
-    rwlock_init(&(tg->seg_list_lock));
-    INIT_LIST_HEAD(&tg->seg_list);
-    INIT_LIST_HEAD(&tg->tg_hashnode);
-    tg->mm = NULL;
-
-    /* create and initialize struct xpmem_access_permit hashtable */
-    tg->ap_hashtable = kzalloc(sizeof(struct xpmem_hashlist) *
-                     XPMEM_AP_HASHTABLE_SIZE, GFP_KERNEL);
-    if (tg->ap_hashtable == NULL) {
-        xpmem_mmu_notifier_unlink(tg);
-        kfree(tg);
-        return -ENOMEM;
-    }
-    for (index = 0; index < XPMEM_AP_HASHTABLE_SIZE; index++) {
-        rwlock_init(&(tg->ap_hashtable[index].lock));
-        INIT_LIST_HEAD(&tg->ap_hashtable[index].list);
-    }
-
-    xpmem_tg_not_destroyable(tg);
-    xpmem_tg_ref(tg);
-
-    xpmem_my_part->tg_remote = tg;
-
-    return 0;
-}
-
-static int
-xpmem_remove_remote_thread_group(void)
-{
-    if (xpmem_my_part->tg_remote != NULL) {
-        xpmem_flush_tg(xpmem_my_part->tg_remote);
-        xpmem_my_part->tg_remote = NULL;
-    }
-
-    return 0;
-}
-
-
-
 /*
  * Initialize the XPMEM driver.
  */
@@ -441,8 +374,8 @@ xpmem_init(void)
     /* Symbol lookups */
     xpmem_linux_symbol_init();
 
-    /* Create remote thread group */
-    xpmem_create_remote_thread_group();
+//    /* Create remote thread group */
+//    xpmem_create_remote_thread_group();
 
     printk("SGI XPMEM kernel module v%s loaded\n",
            XPMEM_CURRENT_VERSION_STRING);
@@ -466,7 +399,7 @@ void __exit
 xpmem_exit(void)
 {
     /* Remove the remote_tg, if it was created */
-    xpmem_remove_remote_thread_group();
+//    xpmem_remove_remote_thread_group();
 
     /* Free partition resources */
     xpmem_partition_deinit(&(xpmem_my_part->part_state));

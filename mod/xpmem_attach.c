@@ -176,18 +176,20 @@ xpmem_fault_handler(struct vm_area_struct *vma, struct vm_fault *vmf)
         return VM_FAULT_SIGBUS;
     }
 
-    if (ap->flags & XPMEM_AP_REMOTE) {
-        xpmem_att_deref(att);
-        xpmem_ap_deref(ap);
-        xpmem_tg_deref(ap_tg);
-        return VM_FAULT_SIGBUS;
-    }
-
     DBUG_ON(current->tgid != ap_tg->tgid);
     DBUG_ON(ap->mode != XPMEM_RDWR);
 
     seg = ap->seg;
     xpmem_seg_ref(seg);
+
+    if (seg->flags & XPMEM_FLAG_SHADOW) {
+        xpmem_att_deref(att);
+        xpmem_ap_deref(ap);
+        xpmem_tg_deref(ap_tg);
+        xpmem_seg_deref(seg);
+        return VM_FAULT_SIGBUS;
+    }
+
     seg_tg = seg->tg;
     xpmem_tg_ref(seg_tg);
 
@@ -388,9 +390,11 @@ do_xpmem_munmap(struct mm_struct * mm,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
     ret = do_munmap(mm, addr, size);
 #else
-    up_write(&current->mm->mmap_sem);
-    ret = vm_munmap(addr, size);
-    down_write(&current->mm->mmap_sem);
+    if (mm == current->mm) {
+        up_write(&current->mm->mmap_sem);
+        ret = vm_munmap(addr, size);
+        down_write(&current->mm->mmap_sem);
+    }
 #endif
 
     return ret;
@@ -459,7 +463,6 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
      * of itself (i.e. ensure the destination vaddr range doesn't overlap
      * the source vaddr range).
      */
-    seg = ap->seg;
     if (current->tgid == seg_tg->tgid && vaddr) {
         if ((vaddr + size > seg_vaddr) && (vaddr < seg_vaddr + size)) {
             ret = -EINVAL;
@@ -524,7 +527,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     }
 
     /* if remote, load pfns in now */
-    if (ap->flags & XPMEM_AP_REMOTE) {
+    if (seg->flags & XPMEM_FLAG_SHADOW) {
         DBUG_ON(ap->remote_apid <= 0);
         if (xpmem_try_attach_remote(seg->segid, ap->remote_apid, offset, size, at_vaddr) != 0) {
             do_xpmem_munmap(current->mm, at_vaddr, size);
@@ -580,7 +583,7 @@ out_1:
 int
 xpmem_detach(u64 at_vaddr)
 {
-    int ret;
+    struct xpmem_segment *seg;
     struct xpmem_access_permit *ap;
     struct xpmem_attachment *att;
     struct vm_area_struct *vma;
@@ -633,14 +636,13 @@ xpmem_detach(u64 at_vaddr)
         return -EACCES;
     }
 
-    /* NOTE: ATT_REMOTE is not possible here, because ATT_REMOTE attachments are only for
-     * remote processes attaching local memory 
-     */
+    seg = ap->seg;
+    xpmem_seg_ref(seg);
 
-    if (ap->flags & XPMEM_AP_REMOTE) {
+    if (seg->flags & XPMEM_FLAG_SHADOW) {
         u64 pa = 0;
 
-        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->remote_apid, att->at_vaddr);
+        xpmem_detach_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid, att->at_vaddr);
 
         /* Free from Palacios, if we're in a VM */ 
         pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
@@ -650,13 +652,14 @@ xpmem_detach(u64 at_vaddr)
             xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pa);
         }
     } else {
-        xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
+        xpmem_unpin_pages(seg, current->mm, att->at_vaddr, att->at_size);
     }
+
+    xpmem_seg_deref(seg);
 
     vma->vm_private_data = NULL;
 
-    ret = do_xpmem_munmap(current->mm, vma->vm_start, att->at_size);
-    DBUG_ON(ret != 0);
+    DBUG_ON(do_xpmem_munmap(current->mm, vma->vm_start, att->at_size) != 0);
 
     att->flags &= ~XPMEM_FLAG_VALIDPTEs;
 
@@ -675,53 +678,76 @@ xpmem_detach(u64 at_vaddr)
     return 0;
 }
 
-/*
- * Detach a remote attached XPMEM address segment. 
- */
+
 static void
-xpmem_detach_remote_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
+xpmem_detach_local_att(struct xpmem_access_permit * ap,
+                       struct xpmem_attachment    * att)
 {
-    struct xpmem_segment *seg;
-    struct xpmem_thread_group* seg_tg;
+    struct vm_area_struct * vma;
+    struct xpmem_segment  * seg;
 
-    seg = ap->seg;
-    xpmem_seg_ref(seg);
-    seg_tg = seg->tg;
-    xpmem_tg_ref(seg_tg);
-
-    down_write(&seg_tg->mm->mmap_sem);
-    mutex_lock(&att->mutex);
-
-    if (att->flags & XPMEM_FLAG_DESTROYING) {
-        xpmem_seg_deref(seg);
-        xpmem_tg_deref(seg_tg);
+    /* find the corresponding vma */
+    vma = find_vma(att->mm, att->at_vaddr);
+    if (!vma || vma->vm_start > att->at_vaddr) {
+        DBUG_ON(1);
         mutex_unlock(&att->mutex);
-        up_write(&seg_tg->mm->mmap_sem);
+        up_write(&att->mm->mmap_sem);
         return;
     }
 
-    att->flags |= XPMEM_FLAG_DESTROYING;
+    DBUG_ON(!xpmem_is_vm_ops_set(vma));
+    DBUG_ON((vma->vm_end - vma->vm_start) != att->at_size);
+    DBUG_ON(vma->vm_private_data != att);
 
-    /* We unpin from the source address space. This basically does a put_page on each
-     * page from att->vaddr (which is set to the source vaddr) for at_size length, which
-     * is exactly what we want
-     */
+    seg = ap->seg;
+    xpmem_seg_ref(seg);
 
-    xpmem_unpin_pages(seg, seg_tg->mm, att->vaddr, att->at_size);
+    if (seg->flags & XPMEM_FLAG_SHADOW) {
+        u64 pa = 0;
+
+        xpmem_detach_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid, att->at_vaddr);
+
+        /* Free from Palacios, if we're in a VM */ 
+        pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
+        if (pa == 0) {
+            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)att->at_vaddr);
+        } else {
+            xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pa);
+        }
+    } else {
+        xpmem_unpin_pages(seg, att->mm, att->at_vaddr, att->at_size);
+    }
 
     xpmem_seg_deref(seg);
-    xpmem_tg_deref(seg_tg);
 
-    att->flags &= ~XPMEM_FLAG_VALIDPTEs;
+    vma->vm_private_data = NULL;
 
-    spin_lock(&ap->lock);
-    list_del_init(&att->att_node);
-    spin_unlock(&ap->lock);
+    DBUG_ON (do_xpmem_munmap(att->mm, vma->vm_start, att->at_size) != 0);
+}
 
-    mutex_unlock(&att->mutex);
-    up_write(&seg_tg->mm->mmap_sem);
+/* There's no vma or address space to manipulate here. Just need to put each page that was
+ * pinned on the attachment
+ */
+static void
+xpmem_detach_remote_att(struct xpmem_access_permit * ap,
+                        struct xpmem_attachment    * att)
+{
+    struct page *page;
+    long i;
+    u32 pfn, num_pfns;
 
-    xpmem_att_destroyable(att);
+    num_pfns = att->at_size / PAGE_SIZE;
+
+    for (i =  0; i < num_pfns; i++) {
+        pfn  = att->pfns[i];
+        page = virt_to_page(__va(pfn << PAGE_SHIFT));
+        page_cache_release(page);
+    }
+
+    kfree(att->pfns);
+
+    atomic_sub(num_pfns, &ap->seg->tg->n_pinned);
+    atomic_add(num_pfns, &xpmem_my_part->n_unpinned);
 }
 
 /*
@@ -731,14 +757,6 @@ xpmem_detach_remote_att(struct xpmem_access_permit *ap, struct xpmem_attachment 
 void
 xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
 {
-    struct vm_area_struct *vma;
-    int ret = 0;
-
-    if (att->flags & XPMEM_ATT_REMOTE) {
-        xpmem_detach_remote_att(ap, att);
-        return;
-    }
-
     /* must lock mmap_sem before att's sema to prevent deadlock */
     down_write(&att->mm->mmap_sem);
     mutex_lock(&att->mutex);
@@ -750,41 +768,10 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
     }
     att->flags |= XPMEM_FLAG_DESTROYING;
 
-    /* find the corresponding vma */
-    vma = find_vma(att->mm, att->at_vaddr);
-    if (!vma || vma->vm_start > att->at_vaddr) {
-        DBUG_ON(1);
-        mutex_unlock(&att->mutex);
-        up_write(&att->mm->mmap_sem);
-        return;
-    }
-    DBUG_ON(!xpmem_is_vm_ops_set(vma));
-    DBUG_ON((vma->vm_end - vma->vm_start) != att->at_size);
-    DBUG_ON(vma->vm_private_data != att);
-
-    if (ap->flags & XPMEM_AP_REMOTE) {
-        u64 pa = 0;
-
-        xpmem_detach_remote(&(xpmem_my_part->part_state), ap->seg->segid, ap->remote_apid, att->at_vaddr);
-
-        /* Free from Palacios, if we're in a VM */ 
-        pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
-        if (pa == 0) {
-            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)att->at_vaddr);
-        } else {
-            xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pa);
-        }
+    if (att->flags & XPMEM_FLAG_REMOTE) {
+        xpmem_detach_remote_att(ap, att);
     } else {
-        xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
-    }
-
-    vma->vm_private_data = NULL;
-
-    //ret = do_munmap(att->mm, vma->vm_start, att->at_size);
-    if (att->mm == current->mm)
-    {
-        ret = do_xpmem_munmap(att->mm, vma->vm_start, att->at_size);
-        DBUG_ON(ret != 0);
+        xpmem_detach_local_att(ap, att);
     }
 
     att->flags &= ~XPMEM_FLAG_VALIDPTEs;
@@ -798,6 +785,7 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
 
     xpmem_att_destroyable(att);
 }
+
 
 /*
  * Clear all of the PTEs associated with the specified attachment within the
@@ -886,10 +874,20 @@ xpmem_clear_PTEs_of_att(struct xpmem_attachment *att, u64 start, u64 end,
         XPMEM_DEBUG("unpin_at = %llx, invalidate_len = %llx\n",
                 unpin_at, invalidate_len);
 
-        /* Unpin the pages if the access permit is local */
-        if (!(att->ap->flags & XPMEM_AP_REMOTE)) {
-            xpmem_unpin_pages(att->ap->seg, att->mm, unpin_at,
-                    invalidate_len);
+        /* Unpin the pages if the attachment is real */
+        if (!(att->flags & XPMEM_FLAG_SHADOW)) {
+            struct xpmem_segment *seg;
+            struct xpmem_access_permit *ap;
+            
+            ap = att->ap;
+            xpmem_ap_ref(ap);
+            seg = ap->seg;
+            xpmem_seg_ref(seg);
+
+            xpmem_unpin_pages(seg, att->mm, unpin_at, invalidate_len);
+
+            xpmem_seg_deref(seg);
+            xpmem_ap_deref(ap);
         }
 
         /*
