@@ -470,14 +470,11 @@ extern int xpmem_fork_end(void);
 extern int xpmem_palacios_detach_paddr(struct xpmem_partition_state *, u64);
 #define XPMEM_TGID_STRING_LEN   11
 extern spinlock_t xpmem_unpin_procfs_lock;
-extern struct proc_dir_entry *xpmem_unpin_procfs_dir;
 extern struct file_operations xpmem_unpin_procfs_fops;
-//extern int xpmem_unpin_procfs_write(struct file *, const char *,
-//                      unsigned long, void *);
-//extern int xpmem_unpin_procfs_read(char *, char **, off_t, int, int *, void *);
 
 /* found in xpmem_main.c */
 extern struct xpmem_partition *xpmem_my_part;
+extern struct proc_dir_entry  *xpmem_proc_dir;
 
 /* found in xpmem_misc.c */
 extern struct xpmem_thread_group *xpmem_tg_ref_by_tgid(pid_t);
@@ -498,11 +495,7 @@ extern int xpmem_validate_access(struct xpmem_thread_group *, struct xpmem_acces
                  int, u64 *);
 extern void xpmem_block_nonfatal_signals(sigset_t *);
 extern void xpmem_unblock_nonfatal_signals(sigset_t *);
-//extern int xpmem_debug_printk_procfs_write(struct file *, const char *,
-//                      unsigned long, void *);
-//extern int xpmem_debug_printk_procfs_read(char *, char **, off_t, int, int *,
-//                      void *);
-extern struct file_operations xpmem_debug_printk_procfs_fops;
+//extern struct file_operations xpmem_debug_printk_procfs_fops;
 /* found in xpmem_mmu_notifier.c */
 extern int xpmem_mmu_notifier_init(struct xpmem_thread_group *);
 extern void xpmem_mmu_notifier_unlink(struct xpmem_thread_group *);

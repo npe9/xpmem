@@ -190,12 +190,8 @@ enclave_segid_show(struct seq_file     * file,
 {
     struct xpmem_id_val * val = NULL;
 
-    seq_printf(file, "Domain %lli has the following %lu segids\n", 
-        domain->domid,
-        domain->num_segids);
-
     list_for_each_entry(val, &(domain->segid_list), node) {
-        seq_printf(file, "  %lli\n", 
+        seq_printf(file, "%lli\n", 
             val->segid);
     }
 }
@@ -206,12 +202,8 @@ enclave_apid_show(struct seq_file     * file,
 {
     struct xpmem_id_val * val = NULL;
 
-    seq_printf(file, "Domain %lli has allocated the following %lu remote apids\n", 
-        domain->domid,
-        domain->num_apids);
-
     list_for_each_entry(val, &(domain->apid_list), node) {
-        seq_printf(file, "  %lli (segid=%llu), for domid %lli\n", 
+        seq_printf(file, "%lli (segid=%llu), for domid %lli\n", 
             val->apid,
             val->segid,
             val->dst_domid);

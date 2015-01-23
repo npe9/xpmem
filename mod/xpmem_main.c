@@ -54,6 +54,8 @@ xpmem_open(struct inode *inode, struct file *file)
 {
     struct xpmem_thread_group *tg;
     int index;
+    struct proc_dir_entry *unpin_entry;
+    char tgid_string[XPMEM_TGID_STRING_LEN];
 
     /* if this has already been done, just return silently */
     tg = xpmem_tg_ref_by_tgid(current->tgid);
@@ -92,6 +94,27 @@ xpmem_open(struct inode *inode, struct file *file)
         kfree(tg);
         return -EFAULT;
     }
+
+    snprintf(tgid_string, XPMEM_TGID_STRING_LEN, "%d", current->tgid);
+    spin_lock(&xpmem_unpin_procfs_lock);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
+    unpin_entry = create_proc_entry(tgid_string, 0444, xpmem_proc_dir);
+    if (unpin_entry) {
+        unpin_entry->proc_fops = &xpmem_unpin_procfs_fops;
+        unpin_entry->data      = (void *)(unsigned long)current->tgid;
+    }
+#else
+    unpin_entry = proc_create_data(tgid_string, 0444, xpmem_proc_dir, &xpmem_unpin_procfs_fops, (void *)(unsigned long)current->tgid);
+#endif
+
+    spin_unlock(&xpmem_unpin_procfs_lock);
+    if (unpin_entry == NULL) {
+        xpmem_mmu_notifier_unlink(tg);
+        kfree(tg);
+        return -EBUSY;
+    }
+
     
     /* create and initialize struct xpmem_access_permit hashtable */
     tg->ap_hashtable = kzalloc(sizeof(struct xpmem_hashlist) *
@@ -337,8 +360,7 @@ int __init
 xpmem_init(void)
 {
     int i, ret;
-    //struct proc_dir_entry *global_pages_entry;
-    //struct proc_dir_entry *debug_printk_entry;
+    struct proc_dir_entry *global_pages_entry;
 
     /* create and initialize struct xpmem_partition array */
     xpmem_my_part = kzalloc(sizeof(struct xpmem_partition), GFP_KERNEL);
@@ -367,24 +389,37 @@ xpmem_init(void)
     if (ret != 0)
         goto out_1;
 
-    if (xpmem_partition_init(&(xpmem_my_part->part_state), ns) != 0) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
+    global_pages_entry = create_proc_entry("global_pages", 0444, xpmem_proc_dir);
+    if (global_pages_entry) {
+        global_pages_entry->proc_fops = &xpmem_unpin_procfs_fops;
+        global_pages_entry->data      = 0;
+    }
+#else
+    global_pages_entry = proc_create_data("global_pages", 0444, xpmem_proc_dir, &xpmem_unpin_procfs_fops, 0);
+#endif
+    if (global_pages_entry == NULL) {
+        ret = -EBUSY;
         goto out_2;
     }
 
+    ret = xpmem_partition_init(&(xpmem_my_part->part_state), ns);
+    if (ret != 0) 
+        goto out_3;
+
     /* Symbol lookups */
     xpmem_linux_symbol_init();
-
-//    /* Create remote thread group */
-//    xpmem_create_remote_thread_group();
 
     printk("SGI XPMEM kernel module v%s loaded\n",
            XPMEM_CURRENT_VERSION_STRING);
     return 0;
 
+out_3:
+    remove_proc_entry("global_pages", xpmem_proc_dir);
 out_2:
     misc_deregister(&xpmem_dev_handle);
-
 out_1:
+    remove_proc_entry(XPMEM_MODULE_NAME, NULL);
     kfree(xpmem_my_part->tg_hashtable);
     kfree(xpmem_my_part);
     return ret;
@@ -398,9 +433,6 @@ out_1:
 void __exit
 xpmem_exit(void)
 {
-    /* Remove the remote_tg, if it was created */
-//    xpmem_remove_remote_thread_group();
-
     /* Free partition resources */
     xpmem_partition_deinit(&(xpmem_my_part->part_state));
 
@@ -408,9 +440,8 @@ xpmem_exit(void)
     kfree(xpmem_my_part);
 
     misc_deregister(&xpmem_dev_handle);
-    //remove_proc_entry("global_pages", xpmem_unpin_procfs_dir);
-    //remove_proc_entry("debug_printk", xpmem_unpin_procfs_dir);
     
+    remove_proc_entry("global_pages", xpmem_proc_dir);
     remove_proc_entry(XPMEM_MODULE_NAME, NULL);
 
     printk("SGI XPMEM kernel module v%s unloaded\n",
@@ -420,6 +451,7 @@ xpmem_exit(void)
 #ifdef EXPORT_NO_SYMBOLS
 EXPORT_NO_SYMBOLS;
 #endif
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Silicon Graphics, Inc.");
 MODULE_INFO(supported, "external");

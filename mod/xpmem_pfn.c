@@ -390,87 +390,66 @@ xpmem_fork_end(void)
     return 0;
 }
 
-/*
-spinlock_t xpmem_unpin_procfs_lock = __SPIN_LOCK_UNLOCKED(xpmem_unpin_procfs_lock);
-struct proc_dir_entry *xpmem_unpin_procfs_dir;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
+spinlock_t xpmem_unpin_procfs_lock = SPIN_LOCK_UNLOCKED;
+#else
+DEFINE_SPINLOCK(xpmem_unpin_procfs_lock);
+#endif
 
 static int
-xpmem_is_thread_group_stopped(struct xpmem_thread_group *tg)
+xpmem_unpin_procfs_show(struct seq_file * file,
+                        void            * private_data)
 {
-    struct task_struct *task = tg->group_leader;
-
-    rcu_read_lock();
-    do {
-        if (!(task->flags & PF_EXITING) &&
-            task->state != TASK_STOPPED) {
-            rcu_read_unlock();
-            return 0;
-        }
-        task = next_thread(task);
-    } while (task != tg->group_leader);
-    rcu_read_unlock();
-    return 1;
-}
-
-int
-xpmem_unpin_procfs_write(struct file *file, const char *buffer,
-                unsigned long count, void *_tgid)
-{
-    pid_t tgid = (unsigned long)_tgid;
-    struct xpmem_thread_group *tg;
-
-    tg = xpmem_tg_ref_by_tgid(tgid);
-    if (IS_ERR(tg))
-        return -ESRCH;
-
-    if (!xpmem_is_thread_group_stopped(tg)) {
-        xpmem_tg_deref(tg);
-        return -EPERM;
-    }
-
-    xpmem_disallow_blocking_recall_PFNs(tg);
-
-    mutex_lock(&tg->recall_PFNs_mutex);
-    xpmem_recall_PFNs_of_tg(tg);
-    mutex_unlock(&tg->recall_PFNs_mutex);
-
-    xpmem_allow_blocking_recall_PFNs(tg);
-
-    xpmem_tg_deref(tg);
-    return count;
-}
-
-int
-xpmem_unpin_procfs_read(char *page, char **start, off_t off, int count,
-            int *eof, void *_tgid)
-{
-    pid_t tgid = (unsigned long)_tgid;
-    struct xpmem_thread_group *tg;
-    int len = 0;
+    pid_t tgid = (pid_t)(unsigned long)file->private;
 
     if (tgid == 0) {
-        len = snprintf(page, count,
+        seq_printf(file,
             "all pages pinned by XPMEM: %d\n"
             "all pages unpinned by XPMEM: %d\n",
             atomic_read(&xpmem_my_part->n_pinned),
             atomic_read(&xpmem_my_part->n_unpinned));
     } else {
+        struct xpmem_thread_group *tg;
         tg = xpmem_tg_ref_by_tgid(tgid);
         if (!IS_ERR(tg)) {
-            len = snprintf(page, count,
+            seq_printf(file,
                 "pages pinned by XPMEM: %d\n",
                 atomic_read(&tg->n_pinned));
             xpmem_tg_deref(tg);
         }
     }
 
-    return len;
+    return 0;
+}
+
+static int
+xpmem_unpin_procfs_open(struct inode * inode,
+                        struct file  * filp)
+{
+    pid_t tgid;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
+    tgid = (unsigned long)PDE(inode)->data;
+#else
+    tgid = (unsigned long)PDE_DATA(inode);
+#endif
+
+    return single_open(filp, xpmem_unpin_procfs_show, (void *)(unsigned long)tgid);
+}
+
+static int
+xpmem_unpin_procfs_release(struct inode * inode,
+                           struct file  * filp)
+{
+    return single_release(inode, filp);
 }
 
 
 struct file_operations
 xpmem_unpin_procfs_fops = { 
-    .read = xpmem_unpin_procfs_read,
-    .write = xpmem_unpin_procfs_write,
+    .owner   = THIS_MODULE,
+    .open    = xpmem_unpin_procfs_open,
+    .read    = seq_read,
+    .llseek  = seq_lseek,
+    .release = xpmem_unpin_procfs_release
 };
-*/
