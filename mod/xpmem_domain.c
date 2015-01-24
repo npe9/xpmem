@@ -308,8 +308,6 @@ xpmem_fault_pages(struct xpmem_attachment * att,
 
         if (!pfn_valid(pfn) || pfn <= 0) {
             XPMEM_ERR("Invalid PFN");
-            kfree(pfns);
-
             ret = -EFAULT;
             goto out_2;
         }
@@ -436,6 +434,7 @@ out_3:
         spin_lock(&ap->lock);
         list_del_init(&att->att_node);
         spin_unlock(&ap->lock);
+        kfree(att->pfns);
         xpmem_att_destroyable(att);
     }
     xpmem_att_deref(att);
@@ -928,10 +927,10 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
         status = -1;
     }
 
+out:
     /* Free pfn list */
     kfree(pfns);
 
-out:
     free_request_id(state, reqid);
     return status;
 }
