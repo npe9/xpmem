@@ -35,7 +35,9 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg, xpmem_segid_t request)
     }
 
     /* Allocate a segid from the nameserver */
-    xpmem_make_remote(&(xpmem_my_part->part_state), request, segid_p);
+    if (xpmem_make_remote(&(xpmem_my_part->part_state), request, segid_p) != 0) {
+        return -1;
+    }
 
     return *segid_p;
 }
