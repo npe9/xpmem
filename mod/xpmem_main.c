@@ -339,7 +339,7 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 }
 
 static struct file_operations xpmem_fops = {
-    //.owner = THIS_MODULE,
+    .owner = THIS_MODULE,
     .open = xpmem_open,
     .flush = xpmem_flush,
     .unlocked_ioctl = xpmem_ioctl,

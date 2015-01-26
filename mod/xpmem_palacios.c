@@ -14,8 +14,7 @@
 #include <linux/wait.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
-#include <linux/delay.h>
-#include <linux/memory_hotplug.h>
+#include <linux/kref.h>
 
 #include <xpmem.h>
 #include <xpmem_private.h>
@@ -63,9 +62,7 @@ struct xpmem_palacios_state {
 
     unsigned int                   irq;         /* device irq number */
     struct work_struct             work;        /* work struct */
-
-    int                            connected;   /* device connectivity */
-    atomic_t                       num_cmds;    /* number of cmd deliveries being processed */ 
+    struct kref                    refcnt;      /* number of references to the state */ 
 
     /* XPMEM kernel interface */
     xpmem_link_t                   link;        /* XPMEM connection link */
@@ -75,6 +72,11 @@ struct xpmem_palacios_state {
 
 static struct xpmem_palacios_state palacios_devs[MAX_DEVICES];
 atomic_t dev_off = ATOMIC_INIT(0);
+
+
+static int  palacios_get(struct xpmem_palacios_state *);
+static void palacios_put(struct xpmem_palacios_state *);
+
 
 
 
@@ -240,8 +242,8 @@ xpmem_work_fn(struct work_struct * work)
     state = container_of(work, struct xpmem_palacios_state, work);
 
     __xpmem_work_fn(state);
-    
-    atomic_dec(&(state->num_cmds));
+
+    palacios_put(state);
 }
 
 
@@ -254,11 +256,11 @@ irq_handler(int    irq,
 {
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)data;
 
-    if (state->connected) {
-        /* Schedule work */
-        atomic_inc(&(state->num_cmds));
-        schedule_work(&(state->work));
-    }
+    if (palacios_get(state) == 0)
+        return IRQ_NONE;
+
+    /* Schedule work */
+    schedule_work(&(state->work));
 
     return IRQ_HANDLED;
 }
@@ -274,7 +276,7 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)priv_data;
     u32                         * pfns  = NULL;
 
-    if (!state->connected) {
+    if (palacios_get(state) == 0) {
         return -1;
     }
 
@@ -288,6 +290,8 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
         pfns = __va(cmd->attach.pfn_pa);
         kfree(pfns);
     }
+
+    palacios_put(state);
 
     return 0;
 }
@@ -310,13 +314,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
     unsigned long bar_size = 0;
     int           dev_no   = 0;
 
-    /* Index into global list */
-    dev_no = atomic_read(&dev_off);
-
-    /* Remember the state with the driver's private data field */
-    palacios_state = &(palacios_devs[dev_no]);
-    pci_set_drvdata(dev, (void *)palacios_state);
-
     if (dev->vendor != XPMEM_VENDOR_ID) {
         return -1;
     }
@@ -324,6 +321,13 @@ xpmem_probe_driver(struct pci_dev             * dev,
     if (dev->device != XPMEM_DEVICE_ID) {
         return -1;
     }
+
+    /* Index into global list */
+    dev_no         = atomic_read(&dev_off);
+    palacios_state = &(palacios_devs[dev_no]);
+
+    /* Remember the state with the driver's private data field */
+    pci_set_drvdata(dev, (void *)palacios_state);
 
     /* Enable PCI device */
     if (pci_enable_device(dev)) {
@@ -374,11 +378,9 @@ xpmem_probe_driver(struct pci_dev             * dev,
     }
 
     /* Initialize the rest of the state */
-    atomic_set(&(palacios_state->num_cmds), 0);
     INIT_WORK(&(palacios_state->work), xpmem_work_fn);
-
+    kref_init(&(palacios_state->refcnt));
     atomic_inc(&dev_off);
-    palacios_state->connected = 1;
 
     /* Add connection to name/forwarding service */
     palacios_state->link = xpmem_add_connection(
@@ -433,25 +435,11 @@ xpmem_remove_driver(struct pci_dev * dev)
     /* Get the index with the driver's private data field */
     state = (struct xpmem_palacios_state *)pci_get_drvdata(dev);
 
-    /* No longer connected */
-    state->connected = 0;
-
-    /* Wait until all ongoing deliveries finish */
-    while (atomic_read(&(state->num_cmds)) > 0) {
-        schedule();
-        mb();
-    }
-
-    /* Free the irq */
-    free_irq(state->irq, state);
-
     /* Disable the pci device */
     pci_disable_device(dev);
 
-    /* Remove the xpmem connection */
-    xpmem_remove_connection(state->part, state->link);
-
-    printk("XPMEM: Palacios PCI device disabled\n");
+    /* put ref */
+    palacios_put(state);
 }
 
 
@@ -464,6 +452,26 @@ xpmem_driver =
     .remove     = xpmem_remove_driver,
 };
 
+
+
+int
+xpmem_palacios_detach_paddr(struct xpmem_partition_state * part, 
+                            u64                            paddr)
+{
+    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)part->palacios_priv;
+
+    if (palacios_get(state) == 0) {
+        /* If we're not in a VM */
+        return 0;
+    }
+
+    xpmem_detach_hcall(state->bar_state.xpmem_detach_hcall_id, paddr);
+
+    palacios_put(state);
+
+    return 0;
+
+}
 
 
 int
@@ -487,6 +495,7 @@ xpmem_palacios_init(struct xpmem_partition_state * part) {
 
     if (ret != 0) {
         XPMEM_ERR("Failed to register Palacios PCI device driver");
+        palacios_put(state);
     }
 
     return ret;
@@ -495,39 +504,38 @@ xpmem_palacios_init(struct xpmem_partition_state * part) {
 int
 xpmem_palacios_deinit(struct xpmem_partition_state * part)
 {
-    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)part->palacios_priv;
-
-    if (!state) {
-        return 0;
-    }
-
     pci_unregister_driver(&xpmem_driver);
-
     part->palacios_priv = NULL;
 
     return 0;
 }
 
-
-int
-xpmem_palacios_detach_paddr(struct xpmem_partition_state * part, 
-                            u64                            paddr)
+static int
+palacios_get(struct xpmem_palacios_state * state)
 {
-    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)part->palacios_priv;
-
-    if (!state) {
-        return -1;
-    }
-
-    /* If we're not in a VM */
-    if (state->connected == 0) {
-        return 0;
-    }
-
-    xpmem_detach_hcall(state->bar_state.xpmem_detach_hcall_id, paddr);
-
-    return 0;
-
+    return kref_get_unless_zero(&(state->refcnt));
 }
+
+static void
+palacios_last_put(struct kref * kref)
+{
+    struct xpmem_palacios_state * state = container_of(kref, struct xpmem_palacios_state, refcnt);
+
+    /* Free the irq */
+    free_irq(state->irq, state);
+
+    /* Remove the xpmem connection */
+    xpmem_remove_connection(state->part, state->link);
+
+    printk("XPMEM: Palacios PCI device disabled\n");
+}
+
+static void
+palacios_put(struct xpmem_palacios_state * state)
+{
+    kref_put(&(state->refcnt), palacios_last_put);
+}
+
+
 
 MODULE_DEVICE_TABLE(pci, xpmem_ids);
