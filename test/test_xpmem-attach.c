@@ -62,7 +62,7 @@ int main(int argc, char ** argv) {
                 *((int *)vaddr2));
         }
 
-        sleep(3);
+        sleep(15);
 
         xpmem_detach(vaddr);
         xpmem_release(apid);

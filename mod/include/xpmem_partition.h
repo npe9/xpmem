@@ -17,28 +17,48 @@
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
+#include <linux/kref.h>
 
-#define XPMEM_MAX_LINK_ID 128
+#define XPMEM_MAX_LINK  128
+#define XPMEM_MAX_DOMID 128
 
 /* The well-known name server's domid */
 #define XPMEM_NS_DOMID    1
 
 
+
+struct xpmem_link_connection {
+    struct xpmem_partition_state * state;
+    xpmem_link_t                   link;
+    xpmem_connection_t             conn_type;
+    struct kref                    refcnt;
+    int (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data);
+    int (*in_irq_fn)(int                   irq, void * priv_data);
+    void                         * priv_data;
+};
+
+
 struct xpmem_partition_state {
-    int           initialized;   /* partition initialization */
-    spinlock_t    lock;          /* partition lock */
-    xpmem_link_t  local_link;    /* link to our own domain */
-    xpmem_domid_t domid;         /* domid for this partition */
+    /* spinlock for state */
+    spinlock_t    lock;
 
-    atomic_t      uniq_link;     /* unique link id generation */
+    /* refs to the partition */
+    struct kref   refcnt;
 
-    int           is_nameserver; /* are we running the nameserver? */
+    /* link to our own domain */
+    xpmem_link_t  local_link;
 
-    /* map of XPMEM domids to local link ids */
-    struct xpmem_hashtable * domid_map;
+    /* domid for this partition */
+    xpmem_domid_t domid;
 
-    /* map of link ids to connection structs */
-    struct xpmem_hashtable * link_map;
+    /* table mapping link ids to connection structs */
+    struct xpmem_link_connection conn_map[XPMEM_MAX_DOMID];
+
+    /* table mappings domids to link ids */
+    xpmem_link_t                 link_map[XPMEM_MAX_LINK];
+
+    /* are we running the nameserver? */
+    int is_nameserver; 
 
     /* this partition's internal state */
     union {
@@ -52,68 +72,6 @@ struct xpmem_partition_state {
 };
 
 
-struct xpmem_link_connection;
-
-
-u32
-xpmem_hash_fn(uintptr_t key);
-
-int
-xpmem_eq_fn(uintptr_t key1, 
-            uintptr_t key2);
-
-
-char *
-cmd_to_string(xpmem_op_t op);
-
-
-xpmem_link_t
-alloc_xpmem_link(struct xpmem_partition_state * state);
-
-int
-xpmem_add_domid(struct xpmem_partition_state * state,
-                xpmem_domid_t                  domid,
-                xpmem_link_t                   link);
-
-xpmem_link_t
-xpmem_search_domid(struct xpmem_partition_state * state,
-                  xpmem_domid_t                   domid);
-
-xpmem_link_t
-xpmem_remove_domid(struct xpmem_partition_state * state,
-                  xpmem_domid_t                   domid);
-
-int
-xpmem_add_link(struct xpmem_partition_state * state,
-               xpmem_link_t                   link,
-               struct xpmem_link_connection * conn);
-
-struct xpmem_link_connection *
-xpmem_search_link(struct xpmem_partition_state * state,
-                  xpmem_link_t                   link);
-
-struct xpmem_link_connection *
-xpmem_remove_link(struct xpmem_partition_state * state,
-                  xpmem_link_t                   link);
-
-
-int
-xpmem_send_cmd_link(struct xpmem_partition_state * state,
-                    xpmem_link_t                   link,
-                    struct xpmem_cmd_ex          * cmd);
-
-
-
-int
-xpmem_ns_deliver_cmd(struct xpmem_partition_state * state,
-                     xpmem_link_t                   link,
-                     struct xpmem_cmd_ex          * cmd);
-int
-xpmem_fwd_deliver_cmd(struct xpmem_partition_state * state,
-                      xpmem_link_t                   link,
-                      struct xpmem_cmd_ex          * cmd);
-
-
 int
 xpmem_partition_init(struct xpmem_partition_state * state,
                      int                            is_nameserver);
@@ -121,7 +79,34 @@ xpmem_partition_init(struct xpmem_partition_state * state,
 int
 xpmem_partition_deinit(struct xpmem_partition_state * state);
 
+/* Functions used internally by fwd/ns */
+char *
+cmd_to_string(xpmem_op_t op);
 
+int
+xpmem_send_cmd_link(struct xpmem_partition_state * state,
+                    xpmem_link_t                   link,
+                    struct xpmem_cmd_ex          * cmd);
 
+void
+xpmem_add_domid_link(struct xpmem_partition_state * state,
+                     xpmem_domid_t                  domid,
+                     xpmem_link_t                   link);
+
+xpmem_link_t
+xpmem_get_domid_link(struct xpmem_partition_state * state,
+                     xpmem_domid_t                  domid);
+
+void
+xpmem_remove_domid_link(struct xpmem_partition_state * state,
+                        xpmem_domid_t                   domid);
+
+struct xpmem_link_connection *
+xpmem_get_link_conn(struct xpmem_partition_state * state,
+                    xpmem_link_t                   link);
+
+void
+xpmem_put_link_conn(struct xpmem_partition_state * state,
+                    xpmem_link_t                   link);
 
 #endif /* _XPMEM_PARTITION_H */

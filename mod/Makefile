@@ -1,5 +1,6 @@
 #LINUX_KERN=/usr/src/kernels/$(shell uname -r)
 LINUX_KERN=/lib/modules/`uname -r`/build/
+#LINUX_KERN=../../kernel-source-2.6.32.59
 
 EXTRA_CFLAGS  += -DMODULE=1 -D__KERNEL__=1 -DUSE_DBUG_ON
 
@@ -18,7 +19,8 @@ xpmem-y := 	xpmem_main.o \
 		xpmem_hashtable.o \
 		xpmem_syms.o \
 		xpmem_ns.o \
-		xpmem_fwd.o
+		xpmem_fwd.o \
+		xpmem_irq.o
 
 xpmem-objs := $(xpmem-y)
 obj-m := xpmem.o

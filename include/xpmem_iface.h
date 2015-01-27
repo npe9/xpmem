@@ -14,9 +14,11 @@
 
 
 typedef int64_t xpmem_domid_t;
-typedef int64_t xpmem_link_t;
+typedef int16_t xpmem_link_t;
+typedef int64_t xpmem_sigid_t;
 
 typedef enum {
+    XPMEM_CONN_NONE = 0,
     XPMEM_CONN_LOCAL,
     XPMEM_CONN_REMOTE,
 } xpmem_connection_t;
@@ -25,20 +27,18 @@ typedef enum {
 struct xpmem_partition_state;
 struct xpmem_cmd_ex;
 
+
 struct xpmem_partition_state *
 xpmem_get_partition(void);
-
-xpmem_domid_t
-xpmem_get_domid(void);
- 
 
 xpmem_link_t
 xpmem_add_connection(struct xpmem_partition_state * part,
                      xpmem_connection_t             type,
-                     int (*in_cmd_fn) (struct xpmem_cmd_ex *, void * priv_data),
+                     int (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data),
+                     int (*in_irq_fn)(int                   irq, void * priv_data),
                      void                         * priv_data);
 
-int
+void
 xpmem_remove_connection(struct xpmem_partition_state * part,
                         xpmem_link_t                   link);
 
@@ -46,6 +46,20 @@ int
 xpmem_cmd_deliver(struct xpmem_partition_state * part,
                   xpmem_link_t                   link,
                   struct xpmem_cmd_ex          * cmd);
+
+int
+xpmem_request_irq_link(struct xpmem_partition_state * part,
+                       xpmem_link_t                   link);
+
+int
+xpmem_release_irq_link(struct xpmem_partition_state * part,
+                       xpmem_link_t                   link,
+                       int                            irq);
+
+int
+xpmem_irq_deliver(struct xpmem_partition_state * part,
+                  xpmem_domid_t                  domid,
+                  xpmem_sigid_t                  sigid);
 
 #endif
 

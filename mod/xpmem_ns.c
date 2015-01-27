@@ -45,7 +45,6 @@ struct xpmem_ns_state {
 
     /* Domain management */
     struct xpmem_domain          * domain_map[XPMEM_MAX_DOMID];
-
 };
 
 
@@ -802,7 +801,7 @@ xpmem_ns_process_ping_cmd(struct xpmem_partition_state * part_state,
 
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
-        XPMEM_ERR("Cannot send command on link %lli", link);
+        XPMEM_ERR("Cannot send command on link %d", link);
         return -EFAULT;
     }
 
@@ -823,14 +822,12 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
     /* There's no reason not to reuse the input command struct for responses */
     struct xpmem_cmd_ex   * out_cmd  = cmd;
     xpmem_link_t            out_link = link;
+    int                     status   = 0;
 
     switch (cmd->type) {
         case XPMEM_DOMID_REQUEST: {
-            struct xpmem_domain * domain = NULL;
-            int                   status = 0;
-
             /* A domid is requested by someone downstream from us on 'link' */
-            domain = alloc_xpmem_domain(ns_state, -1);
+            struct xpmem_domain * domain = alloc_xpmem_domain(ns_state, -1);
 
             if (domain == NULL) {
                 XPMEM_ERR("Cannot create new domain");
@@ -840,13 +837,8 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
 
             out_cmd->domid_req.domid = domain->domid;
 
-            /* Update domid map */
-            status = xpmem_add_domid(part_state, domain->domid, link);
-
-            if (status == 0) {
-                XPMEM_ERR("Cannot insert domid %lli into hashtable", domain->domid);
-                return -EFAULT;
-            }
+            /* Update link map */
+            xpmem_add_domid_link(part_state, domain->domid, link);
 
             out_domid_req:
             {
@@ -865,24 +857,14 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
 
         case XPMEM_DOMID_RELEASE: {
             /* A domain has gone away - free it and release its domid */
-            int ret = 0;
-
-            ret = free_xpmem_domain(ns_state, req_domain);
-
-            if (ret != 0) {
+            status = free_xpmem_domain(ns_state, req_domain);
+            if (status < 0) {
                 XPMEM_ERR("Cannot free domain");
-                return -EFAULT;
+                return status;
             }
 
-            /* Update domid map */
-            ret = xpmem_remove_domid(part_state, cmd->domid_req.domid);
-
-            if (ret == 0) {
-                XPMEM_ERR("Cannot free domid %lli from hashtable", cmd->domid_req.domid);
-                return -EFAULT;
-            }
-
-            /* No command to send */
+            /* Update link map */
+            xpmem_remove_domid_link(part_state, cmd->domid_req.domid);
             return 0;
         }
         default: {
@@ -892,8 +874,10 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
     }
 
     /* Write the response */
-    if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
-        XPMEM_ERR("Cannot send command on link %lli", link);
+    status = xpmem_send_cmd_link(part_state, out_link, out_cmd);
+
+    if (status < 0) {
+        XPMEM_ERR("Cannot send command on link %d", link);
         return -EFAULT;
     }
 
@@ -960,8 +944,8 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 goto err_get;
             }
 
-            /* Search domid map for link */
-            out_link = xpmem_search_domid(part_state, val->domid);
+            /* Search link map for link */
+            out_link = xpmem_get_domid_link(part_state, val->domid);
 
             if (out_link == 0) {
                 XPMEM_ERR("Cannot find domid %lli in hashtable", val->domid);
@@ -1016,14 +1000,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 goto err_release;
             }
 
-            /* Search domid map for link */
-            out_link = xpmem_search_domid(part_state, val->domid);
-
-            if (out_link == 0) {
-                XPMEM_ERR("Cannot find domid %lli in hashtable", val->domid);
-                goto err_release;
-            }
-
+            out_link         = xpmem_get_domid_link(part_state, val->domid);
             out_cmd->dst_dom = val->domid;
 
             break;
@@ -1061,8 +1038,8 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 goto err_attach;
             }
 
-            /* Search domid map for link */
-            out_link = xpmem_search_domid(part_state, val->domid);
+            /* Search link map for link */
+            out_link = xpmem_get_domid_link(part_state, val->domid);
 
             if (out_link == 0) {
                 XPMEM_ERR("Cannot find domid %lli in hashtable", val->domid);
@@ -1116,7 +1093,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             cmd->dst_dom = cmd->req_dom;
 
             /* Search for the appropriate link */
-            out_link = xpmem_search_domid(part_state, cmd->dst_dom);
+            out_link = xpmem_get_domid_link(part_state, cmd->dst_dom);
 
             if (out_link == 0) {
                 XPMEM_ERR("Cannot find domid %lli in hashtable", cmd->dst_dom);
@@ -1138,7 +1115,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
     /* Write the response */
     if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
-        XPMEM_ERR("Cannot send command on link %lli", link);
+        XPMEM_ERR("Cannot send command on link %d", link);
         return -EFAULT;
     }
 
@@ -1379,4 +1356,14 @@ xpmem_ns_deinit(struct xpmem_partition_state * part_state)
     printk("XPMEM name service deinitialized\n");
 
     return 0;
+}
+
+void
+xpmem_ns_kill_domain(struct xpmem_partition_state * part_state,
+                     xpmem_domid_t                  domid)
+{
+    struct xpmem_ns_state * ns_state = part_state->ns_state;
+    struct xpmem_domain   * domain   = ns_state->domain_map[domid];
+
+    (void)free_xpmem_domain(ns_state, domain);
 }

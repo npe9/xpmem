@@ -50,7 +50,7 @@ int main(int argc, char ** argv) {
         }
     }
 
-    sleep(20);
+    sleep(60);
     xpmem_remove(segid);
 
     return 0;

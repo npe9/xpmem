@@ -22,6 +22,9 @@ void (*tlb_gather_mmu_fn)(struct mmu_gather * tlb, struct mm_struct *, unsigned 
 pte_t * (*huge_pte_offset_fn)(struct mm_struct * mm, unsigned long addr);
 void (*zap_page_range_fn)(struct vm_area_struct *, unsigned long, unsigned long, struct zap_details *); 
 
+int  (*linux_create_irq) (void);
+void (*linux_destroy_irq)(unsigned int);
+
 void tlb_gather_mmu(struct mmu_gather * tlb, 
                     struct mm_struct  * mm,
                     unsigned long       start, 
@@ -57,15 +60,6 @@ void zap_page_range(struct vm_area_struct * vma,
 {
     return zap_page_range_fn(vma, start, end, details);
 }
-
-
-//EXPORT_SYMBOL(tlb_gather_mmu);
-//EXPORT_SYMBOL(tlb_finish_mmu);
-//EXPORT_SYMBOL(tlb_flush_mmu);
-//EXPORT_SYMBOL(huge_pte_offset);
-//EXPORT_SYMBOL(zap_page_range);
-
-
 
 int
 xpmem_linux_symbol_init(void)
@@ -143,6 +137,35 @@ xpmem_linux_symbol_init(void)
         zap_page_range_fn = (void (*)(struct vm_area_struct *, unsigned long, unsigned long, struct zap_details *))symbol_addr;
     }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)
+    /* Symbol:
+     *  --  create_irq
+     */
+    {   
+        symbol_addr = kallsyms_lookup_name("create_irq");
+    
+        if (symbol_addr == 0) {
+            printk(KERN_WARNING "Linux symbol create_irq not found.\n");
+            return -1; 
+        }
+
+        linux_create_irq = (int (*)(void))symbol_addr;
+    }   
+
+    /* Symbol:
+     *  --  destroy_irq
+     */
+    {   
+        symbol_addr = kallsyms_lookup_name("destroy_irq");
+    
+        if (symbol_addr == 0) {
+            printk(KERN_WARNING "Linux symbol destroy_irq not found.\n");
+            return -1; 
+        }
+
+        linux_destroy_irq = (void (*)(unsigned int))symbol_addr;
+    }   
+#endif
 
     return 0;
 }

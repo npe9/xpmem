@@ -13,4 +13,7 @@
 
 int xpmem_linux_symbol_init(void);
 
+extern int  (*linux_create_irq) (void);
+extern void (*linux_destroy_irq)(unsigned int);
+
 #endif /* _XPMEM_SYMS_H */

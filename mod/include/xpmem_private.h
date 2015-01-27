@@ -352,39 +352,27 @@ struct xpmem_id {
 
 #define XPMEM_MAX_UNIQ_ID       ((1 << (sizeof(short) * 8)) - 1)
 
+
 /*
-static inline pid_t
-xpmem_segid_to_tgid(xpmem_segid_t segid)
-{
-    DBUG_ON(segid <= 0);
-    return ((struct xpmem_id *)&segid)->tgid;
-}
+ * xpmem_sigid_t is of type __64 and designed to be opaque to the user. It consists of 
+ * the following underlying fields
+ *
+ * 'apic_id' is the local apic id where the destination process is running
+ * 'vector' is the ipi vector allocated by the destination process
+ * 'irq' is the irq allocated by the destination process, which is only used if the
+ * destination process is running in a local domain
+ */
+struct xpmem_signal {
+    uint16_t apic_id;
+    uint16_t vector;
+    uint32_t irq;
+};
 
-static inline unsigned short
-xpmem_segid_to_uniq(xpmem_segid_t segid)
-{
-    DBUG_ON(segid <= 0);
-    return ((struct xpmem_id *)&segid)->uniq;
-}
-
-static inline pid_t
-xpmem_apid_to_tgid(xpmem_apid_t apid)
-{
-    DBUG_ON(apid <= 0);
-    return ((struct xpmem_id *)&apid)->tgid;
-}
-
-static inline unsigned short
-xpmem_apid_to_uniq(xpmem_segid_t apid)
-{
-    DBUG_ON(apid <= 0);
-    return ((struct xpmem_id *)&apid)->uniq;
-}
-*/
 extern pid_t xpmem_segid_to_tgid(xpmem_segid_t);
 extern unsigned short xpmem_segid_to_uniq(xpmem_segid_t);
 extern pid_t xpmem_apid_to_tgid(xpmem_segid_t);
 extern unsigned short xpmem_apid_to_uniq(xpmem_segid_t);
+
 /*
  * Attribute and state flags for various xpmem structures. Some values
  * are defined in xpmem.h, so we reserved space here via XPMEM_DONT_USE_X
@@ -399,6 +387,10 @@ extern unsigned short xpmem_apid_to_uniq(xpmem_segid_t);
  * for these attachments comes from remote domains 
  */
 #define XPMEM_FLAG_SHADOW           0x00100 
+
+/* Remote attachments are created when a remote process attaches to a local segment.
+ * Memory mapped for these attachments comes from the local domain
+ */
 #define XPMEM_FLAG_REMOTE           0x00200 
 
 #define XPMEM_FLAG_VALIDPTEs        0x01000 /* valid PTEs exist */
@@ -466,8 +458,6 @@ extern void xpmem_unblock_recall_PFNs(struct xpmem_thread_group *);
 extern int xpmem_fork_begin(void);
 extern int xpmem_fork_end(void);
 
-/* found in xpmem_palacios.c */
-extern int xpmem_palacios_detach_paddr(struct xpmem_partition_state *, u64);
 #define XPMEM_TGID_STRING_LEN   11
 extern spinlock_t xpmem_unpin_procfs_lock;
 extern struct file_operations xpmem_unpin_procfs_fops;
@@ -495,10 +485,40 @@ extern int xpmem_validate_access(struct xpmem_thread_group *, struct xpmem_acces
                  int, u64 *);
 extern void xpmem_block_nonfatal_signals(sigset_t *);
 extern void xpmem_unblock_nonfatal_signals(sigset_t *);
-//extern struct file_operations xpmem_debug_printk_procfs_fops;
+
 /* found in xpmem_mmu_notifier.c */
 extern int xpmem_mmu_notifier_init(struct xpmem_thread_group *);
 extern void xpmem_mmu_notifier_unlink(struct xpmem_thread_group *);
+
+/* found in xpmem_domain.c */
+extern int xpmem_domain_init(struct xpmem_partition_state *);
+extern int xpmem_domain_deinit(struct xpmem_partition_state *);
+
+/* found in xpmem_ns.c */
+extern int xpmem_ns_init(struct xpmem_partition_state *);
+extern int xpmem_ns_deinit(struct xpmem_partition_state *);
+extern int xpmem_ns_deliver_cmd(struct xpmem_partition_state *, xpmem_link_t, struct xpmem_cmd_ex *);
+extern void xpmem_ns_kill_domain(struct xpmem_partition_state *, xpmem_domid_t);
+
+/* found in xpmem_fwd.c */
+extern int xpmem_fwd_init(struct xpmem_partition_state *);
+extern int xpmem_fwd_deinit(struct xpmem_partition_state *);
+extern int xpmem_fwd_deliver_cmd(struct xpmem_partition_state *, xpmem_link_t, struct xpmem_cmd_ex *);
+
+/* found in xpmem_palacios.c */
+extern int xpmem_palacios_init(struct xpmem_partition_state *);
+extern int xpmem_palacios_deinit(struct xpmem_partition_state *);
+extern int xpmem_palacios_detach_paddr(struct xpmem_partition_state *, u64);
+extern int xpmem_request_irq(struct xpmem_partition_state *, irqreturn_t (*)(int, void *), void *);
+extern int xpmem_release_irq(struct xpmem_partition_state *, int, void *);
+extern int xpmem_irq_to_vector(struct xpmem_partition_state *, int);
+
+/* found in xpmem_irq.c */
+extern int xpmem_request_local_irq(irqreturn_t (*)(int, void *), void *);
+extern int xpmem_release_local_irq(int, void *);
+extern int xpmem_local_irq_to_vector(int);
+extern void xpmem_send_ipi_to_apic(unsigned int, unsigned int);
+extern void xpmem_send_ipi(unsigned int, unsigned int);
 
 
 

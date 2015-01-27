@@ -13,6 +13,7 @@
 #include <linux/module.h>
 #include <linux/mman.h>
 #include <linux/mm.h>
+#include <linux/kref.h>
 
 #include <xpmem.h>
 #include <xpmem_private.h>
@@ -41,8 +42,8 @@ struct xpmem_domain_state {
     /* Lock for domain state */
     spinlock_t                     lock;
 
-    /* Has domain been successfully initialized? */
-    int                            initialized; 
+    /* Reference count */
+    struct kref                    refcnt;
 
     /* Array of request structs indexed by reqid */
     struct xpmem_request_struct    requests[MAX_UNIQ_REQ];
@@ -53,6 +54,9 @@ struct xpmem_domain_state {
     /* Pointer to XPMEM partition */
     struct xpmem_partition_state * part;
 };
+
+static int  get_domain(struct xpmem_domain_state *);
+static void put_domain(struct xpmem_domain_state *);
 
 
 static int32_t
@@ -525,7 +529,8 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
     struct xpmem_domain_state * state = (struct xpmem_domain_state *)priv_data;
     int                         ret   = 0;
 
-    if (!state->initialized) {
+    /* Take a reference */
+    if (get_domain(state) == 0) {
         return -1;
     }
 
@@ -587,64 +592,12 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
 
         default:
             XPMEM_ERR("Domain given unknown XPMEM command %d", cmd->type);
+            put_domain(state);
             return -1;
 
     }
 
-    return 0;
-}
-
-
-int
-xpmem_domain_init(struct xpmem_partition_state * part)
-{
-    struct xpmem_domain_state * state = kzalloc(sizeof(struct xpmem_domain_state), GFP_KERNEL);
-    if (!state) {
-        return -1;
-    }
-    
-    /* Initialize stuff */
-    spin_lock_init(&(state->lock));
-    init_request_map(state);
-
-    state->link = xpmem_add_connection(
-            part,
-            XPMEM_CONN_LOCAL,
-            xpmem_cmd_fn,
-            (void *)state);
-
-    if (state->link <= 0) {
-        XPMEM_ERR("Failed to register local domain with name/forwarding service");
-        kfree(state);
-        return -1;
-    }
-
-    state->initialized  = 1;
-    state->part         = part;
-    part->domain_priv   = state;
-
-    printk("XPMEM local domain initialized\n");
-
-    return 0;
-}
-
-int
-xpmem_domain_deinit(struct xpmem_partition_state * part)
-{
-    struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
-
-    if (!state) {
-        return 0;
-    }
-    
-    /* Remove domain connection */
-    xpmem_remove_connection(state->part, state->link);
-
-    kfree(state);
-    part->domain_priv = NULL;
-
-    printk("XPMEM local domain deinitialized\n");
-
+    put_domain(state);
     return 0;
 }
 
@@ -664,10 +617,11 @@ xpmem_make_remote(struct xpmem_partition_state * part,
     uint32_t                    reqid  = 0;
     int                         status = 0;
 
-    if (!state->initialized) {
+    /* Take a reference */
+    if (get_domain(state) == 0) {
         return -1;
     }
-    
+
     /* Allocate a request id */
     reqid = alloc_request_id(state);
     if (reqid < 0) {
@@ -702,6 +656,8 @@ xpmem_make_remote(struct xpmem_partition_state * part,
 
 out:
     free_request_id(state, reqid);
+    put_domain(state);
+
     return status;
 }
 
@@ -715,10 +671,11 @@ xpmem_remove_remote(struct xpmem_partition_state * part,
     uint32_t                    reqid = 0;
     int                         status = 0;
 
-    if (!state->initialized) {
+    /* Take a reference */
+    if (get_domain(state) == 0) {
         return -1;
     }
-    
+
     /* Allocate a request id */
     reqid = alloc_request_id(state);
     if (reqid < 0) {
@@ -748,6 +705,8 @@ xpmem_remove_remote(struct xpmem_partition_state * part,
 
 out:
     free_request_id(state, reqid);
+    put_domain(state);
+
     return status;
 }
 
@@ -766,10 +725,11 @@ xpmem_get_remote(struct xpmem_partition_state * part,
     uint32_t                    reqid = 0;
     int                         status = 0;
 
-    if (!state->initialized) {
+    /* Take a reference */
+    if (get_domain(state) == 0) {
         return -1;
     }
-    
+
     /* Allocate a request id */
     reqid = alloc_request_id(state);
     if (reqid < 0) {
@@ -806,6 +766,8 @@ xpmem_get_remote(struct xpmem_partition_state * part,
 
 out:
     free_request_id(state, reqid);
+    put_domain(state);
+
     return status;
 }
 
@@ -820,7 +782,8 @@ xpmem_release_remote(struct xpmem_partition_state * part,
     uint32_t                    reqid = 0;
     int                         status = 0;
 
-    if (!state->initialized) {
+    /* Take a reference */
+    if (get_domain(state) == 0) {
         return -1;
     }
     
@@ -854,6 +817,8 @@ xpmem_release_remote(struct xpmem_partition_state * part,
 
 out:
     free_request_id(state, reqid);
+    put_domain(state);
+
     return status;
 }
 
@@ -872,7 +837,8 @@ xpmem_attach_remote(struct xpmem_partition_state * part,
     int                         status = 0;
     u32                       * pfns   = NULL;
 
-    if (!state->initialized) {
+    /* Take a reference */
+    if (get_domain(state) == 0) {
         return -1;
     }
     
@@ -932,6 +898,8 @@ out:
     kfree(pfns);
 
     free_request_id(state, reqid);
+    put_domain(state);
+
     return status;
 }
 
@@ -949,7 +917,8 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
     uint32_t                    reqid = 0;
     int                         status = 0;
 
-    if (!state->initialized) {
+    /* Take a reference */
+    if (get_domain(state) == 0) {
         return -1;
     }
     
@@ -984,5 +953,80 @@ xpmem_detach_remote(struct xpmem_partition_state * part,
 
 out:
     free_request_id(state, reqid);
+    put_domain(state);
+
     return status;
+}
+
+
+int
+xpmem_domain_init(struct xpmem_partition_state * part)
+{
+    struct xpmem_domain_state * state = kzalloc(sizeof(struct xpmem_domain_state), GFP_KERNEL);
+    if (!state) {
+        return -1;
+    }
+    
+    /* Initialize stuff */
+    spin_lock_init(&(state->lock));
+    init_request_map(state);
+    kref_init(&(state->refcnt));
+
+    state->link = xpmem_add_connection(
+            part,
+            XPMEM_CONN_LOCAL,
+            xpmem_cmd_fn,
+            NULL,
+            (void *)state);
+
+    if (state->link < 0) {
+        XPMEM_ERR("Failed to register local domain with name/forwarding service");
+        kfree(state);
+        return -1;
+    }
+
+    state->part         = part;
+    part->domain_priv   = state;
+
+    printk("XPMEM local domain initialized\n");
+
+    return 0;
+}
+
+int
+xpmem_domain_deinit(struct xpmem_partition_state * part)
+{
+    struct xpmem_domain_state * state = (struct xpmem_domain_state *)part->domain_priv;
+
+    put_domain(state);
+    
+    part->domain_priv = NULL;
+
+    return 0;
+}
+
+
+static int
+get_domain(struct xpmem_domain_state * state)
+{
+    return kref_get_unless_zero(&(state->refcnt));
+}
+
+static void
+domain_last_put(struct kref * kref)
+{
+    struct xpmem_domain_state * state = container_of(kref, struct xpmem_domain_state, refcnt);
+
+    /* Remove domain connection */
+    xpmem_remove_connection(state->part, state->link);
+
+    kfree(state);
+
+    printk("XPMEM local domain deinitialized\n");
+}
+
+static void
+put_domain(struct xpmem_domain_state * state)
+{
+    kref_put(&(state->refcnt), domain_last_put);
 }
