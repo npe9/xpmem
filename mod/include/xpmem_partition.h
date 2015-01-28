@@ -42,9 +42,6 @@ struct xpmem_partition_state {
     /* spinlock for state */
     spinlock_t    lock;
 
-    /* refs to the partition */
-    struct kref   refcnt;
-
     /* link to our own domain */
     xpmem_link_t  local_link;
 

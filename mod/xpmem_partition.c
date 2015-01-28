@@ -431,6 +431,8 @@ xpmem_partition_init(struct xpmem_partition_state * state, int is_ns)
     state->domid         = -1; 
     state->is_nameserver = is_ns;
 
+    spin_lock_init(&(state->lock));
+
     /* Create ns/fwd state */
     if (is_ns) {
         status = xpmem_ns_init(state);
@@ -459,9 +461,6 @@ xpmem_partition_init(struct xpmem_partition_state * state, int is_ns)
         XPMEM_ERR("Could not initialize local domain XPMEM state");
         goto err_domain;
     }
-
-    /* Init refcnts */
-    kref_init(&(state->refcnt));
 
     return 0;
 
