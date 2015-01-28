@@ -99,9 +99,7 @@ xpmem_tg_deref(struct xpmem_thread_group *tg)
     DBUG_ON(!list_empty(&tg->seg_list));
 
     snprintf(tgid_string, XPMEM_TGID_STRING_LEN, "%d", tg->tgid);
-    spin_lock(&xpmem_unpin_procfs_lock);
     remove_proc_entry(tgid_string, xpmem_proc_dir);
-    spin_unlock(&xpmem_unpin_procfs_lock);
     kfree(tg->ap_hashtable);
 
     kfree(tg);

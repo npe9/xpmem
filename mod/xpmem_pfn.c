@@ -390,12 +390,6 @@ xpmem_fork_end(void)
     return 0;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
-spinlock_t xpmem_unpin_procfs_lock = SPIN_LOCK_UNLOCKED;
-#else
-DEFINE_SPINLOCK(xpmem_unpin_procfs_lock);
-#endif
-
 static int
 xpmem_unpin_procfs_show(struct seq_file * file,
                         void            * private_data)

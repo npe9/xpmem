@@ -96,7 +96,6 @@ xpmem_open(struct inode *inode, struct file *file)
     }
 
     snprintf(tgid_string, XPMEM_TGID_STRING_LEN, "%d", current->tgid);
-    spin_lock(&xpmem_unpin_procfs_lock);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
     unpin_entry = create_proc_entry(tgid_string, 0444, xpmem_proc_dir);
@@ -108,7 +107,6 @@ xpmem_open(struct inode *inode, struct file *file)
     unpin_entry = proc_create_data(tgid_string, 0444, xpmem_proc_dir, &xpmem_unpin_procfs_fops, (void *)(unsigned long)current->tgid);
 #endif
 
-    spin_unlock(&xpmem_unpin_procfs_lock);
     if (unpin_entry == NULL) {
         xpmem_mmu_notifier_unlink(tg);
         kfree(tg);

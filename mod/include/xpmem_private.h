@@ -459,7 +459,6 @@ extern int xpmem_fork_begin(void);
 extern int xpmem_fork_end(void);
 
 #define XPMEM_TGID_STRING_LEN   11
-extern spinlock_t xpmem_unpin_procfs_lock;
 extern struct file_operations xpmem_unpin_procfs_fops;
 
 /* found in xpmem_main.c */
