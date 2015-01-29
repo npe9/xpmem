@@ -104,7 +104,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, xpmem_se
     if (permit_type == XPMEM_REQUEST_MODE) {
         request = (xpmem_segid_t)permit_value;
 
-        if (request < 0 || request >= XPMEM_MIN_SEGID) {
+        if (request <= 0 || request >= XPMEM_MIN_SEGID) {
             return -EINVAL;
         }
 
