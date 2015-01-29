@@ -70,7 +70,7 @@ xpmem_open(struct inode *inode, struct file *file)
         return -ENOMEM;
     }
 
-    tg->lock = __SPIN_LOCK_UNLOCKED(tg->lock);
+    spin_lock_init(&(tg->lock));
     tg->tgid = current->tgid;
     tg->uid = current->cred->uid;
     tg->gid = current->cred->gid;

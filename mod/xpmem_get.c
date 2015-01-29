@@ -149,7 +149,7 @@ xpmem_get_segment(int                         flags,
         return -ENOMEM;
     }
 
-    ap->lock = __SPIN_LOCK_UNLOCKED(ap->lock);
+    spin_lock_init(&(ap->lock));
     ap->seg = seg;
     ap->tg = ap_tg;
     ap->apid = apid;

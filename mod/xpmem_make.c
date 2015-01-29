@@ -58,7 +58,7 @@ xpmem_make_segment(u64                         vaddr,
         return -ENOMEM;
     }
 
-    seg->lock = __SPIN_LOCK_UNLOCKED(seg->lock);
+    spin_lock_init(&(seg->lock));
     init_rwsem(&seg->sema);
     seg->segid = segid;
     seg->vaddr = vaddr;
