@@ -82,7 +82,7 @@ xpmem_make_segment(u64                         vaddr,
     write_unlock(&seg_tg->seg_list_lock);
 
     /* add seg to global hash list of well-known segids, if necessary */
-    if (segid < XPMEM_MIN_SEGID) {
+    if (segid <= XPMEM_MAX_WK_SEGID) {
         write_lock(&xpmem_my_part->wk_segid_to_tgid_lock);
         xpmem_my_part->wk_segid_to_tgid[segid] = seg_tg->tgid;
         write_unlock(&xpmem_my_part->wk_segid_to_tgid_lock);
@@ -104,7 +104,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, xpmem_se
     if (permit_type == XPMEM_REQUEST_MODE) {
         request = (xpmem_segid_t)permit_value;
 
-        if (request <= 0 || request >= XPMEM_MIN_SEGID) {
+        if (request <= 0 || request > XPMEM_MAX_WK_SEGID) {
             return -EINVAL;
         }
 
@@ -189,7 +189,7 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
     write_unlock(&seg_tg->seg_list_lock);
 
     /* Remove segment structure from global list of well-known segids */
-    if (seg->segid < XPMEM_MIN_SEGID) {
+    if (seg->segid <= XPMEM_MAX_WK_SEGID) {
         write_lock(&xpmem_my_part->wk_segid_to_tgid_lock);
         xpmem_my_part->wk_segid_to_tgid[seg->segid] = 0;
         write_unlock(&xpmem_my_part->wk_segid_to_tgid_lock);

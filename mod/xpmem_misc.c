@@ -360,10 +360,10 @@ xpmem_segid_to_tgid(xpmem_segid_t segid)
 
     DBUG_ON(segid <= 0);
 
-    /* If the segid is greater than XPMEM_MIN_SEGID, it is a regular segid that maps 
+    /* If the segid is greater than XPMEM_MAX_WK_SEGID, it is a regular segid that maps 
      * directly to a thread group. Else, it is a well-known segid 
      */
-    if (segid >= XPMEM_MIN_SEGID) {
+    if (segid > XPMEM_MAX_WK_SEGID) {
         tgid = ((struct xpmem_id *)&segid)->tgid;
     } else {
         read_lock(&xpmem_my_part->wk_segid_to_tgid_lock);

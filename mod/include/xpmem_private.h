@@ -189,8 +189,6 @@ xpmem_vaddr_to_pte(struct mm_struct *mm, u64 vaddr)
 //#define XPMEM_REMOTE_TG_UID     1 
 //#define XPMEM_REMOTE_TG_GID     1 
 
-#define XPMEM_MIN_SEGID         32
-
 /*
  * general internal driver structures
  */
@@ -325,7 +323,7 @@ struct xpmem_partition {
     struct xpmem_hashlist         * tg_hashtable;           /* locks + tg hash lists */
 
     /* well-known segid->tgid mapping */
-    pid_t                           wk_segid_to_tgid[XPMEM_MIN_SEGID];
+    pid_t                           wk_segid_to_tgid[XPMEM_MAX_WK_SEGID + 1];
     rwlock_t                        wk_segid_to_tgid_lock;
 
     /* procfs debugging */

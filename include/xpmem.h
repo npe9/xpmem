@@ -20,6 +20,7 @@
 #endif
 
 /* Well-known XPMEM segids */
+#define XPMEM_MAX_WK_SEGID   31
 #define XPMEM_GIT_ROOT_SEGID 25
 
 /*

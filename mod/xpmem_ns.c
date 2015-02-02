@@ -400,7 +400,7 @@ free_segid(struct xpmem_ns_state * ns_state,
     struct xpmem_segid_list_node * iter  = NULL;
 
     /* Nothing to do for well-known segids */
-    if (segid < XPMEM_MIN_SEGID) 
+    if (segid <= XPMEM_MAX_WK_SEGID) 
         return;
 
     /* Add segid back to the free list */
@@ -430,9 +430,9 @@ alloc_xpmem_segid(struct xpmem_ns_state * ns_state,
     /* Generate a new segid */
     if (request > 0) {
         /* Explicit request */
-        if (request >= XPMEM_MIN_SEGID) {
+        if (request > XPMEM_MAX_WK_SEGID) {
             XPMEM_ERR("Requested well-known segid %lli is invalid. Valid range is [%d:%d]",
-                 request, 1, XPMEM_MIN_SEGID - 1);
+                 request, 1, XPMEM_MAX_WK_SEGID);
             return -1;
         }
 
@@ -1280,7 +1280,7 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
     part_state->ns_state = ns_state;
 
     /* Populate segid list */
-    for (i = XPMEM_MIN_SEGID; i < XPMEM_MAX_UNIQ_ID; i++) {
+    for (i = XPMEM_MAX_WK_SEGID + 1; i < XPMEM_MAX_UNIQ_ID; i++) {
         iter = kmalloc(sizeof(struct xpmem_segid_list_node), GFP_KERNEL);
 
         if (!iter) {
