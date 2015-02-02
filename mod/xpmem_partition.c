@@ -10,7 +10,6 @@
 
 #include <xpmem_partition.h>
 #include <xpmem_private.h>
-#include <xpmem_hashtable.h>
 
 
 

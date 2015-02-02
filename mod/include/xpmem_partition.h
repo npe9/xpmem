@@ -20,6 +20,7 @@
 #include <linux/kref.h>
 
 #define XPMEM_MAX_LINK  128
+#define XPMEM_MIN_DOMID 32
 #define XPMEM_MAX_DOMID 128
 
 /* The well-known name server's domid */

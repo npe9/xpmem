@@ -23,9 +23,6 @@
 #include <xpmem_private.h>
 #include <xpmem_hashtable.h>
 
-#define XPMEM_MIN_DOMID    32
-#define XPMEM_MAX_DOMID    128
-
 extern struct proc_dir_entry * xpmem_proc_dir;
 
 
@@ -140,10 +137,9 @@ xpmem_apid_hash_fn(uintptr_t key)
 
 /* Hashtable helpers */
 static int
-xpmem_ht_add(struct xpmem_ns_state  * ns_state,
-             struct xpmem_hashtable * ht,
-             uintptr_t                key,
-             uintptr_t                val)
+xpmem_htable_add(struct xpmem_hashtable * ht,
+                 uintptr_t                key,
+                 uintptr_t                val)
 {
     /* Search for duplicate first */
     if (htable_search(ht, key) != 0) {
@@ -152,36 +148,6 @@ xpmem_ht_add(struct xpmem_ns_state  * ns_state,
         return htable_insert(ht, key, val);
     }
 }
-
-static uintptr_t
-xpmem_ht_search_or_remove(struct xpmem_ns_state  * ns_state,
-                          struct xpmem_hashtable * ht,
-                          uintptr_t                search_key,
-                          int                      remove)
-{
-    if (remove) {
-        return htable_remove(ht, search_key, 1);
-    } else {
-        return htable_search(ht, search_key);
-    }
-}
-
-static uintptr_t
-xpmem_ht_search(struct xpmem_ns_state  * ns_state,
-                struct xpmem_hashtable * ht,
-                uintptr_t                search_key)
-{
-    return xpmem_ht_search_or_remove(ns_state, ht, search_key, 0);
-}
-
-static uintptr_t
-xpmem_ht_remove(struct xpmem_ns_state  * ns_state,
-                struct xpmem_hashtable * ht,
-                uintptr_t                search_key)
-{
-    return xpmem_ht_search_or_remove(ns_state, ht, search_key, 1);
-}
-
 
 static void
 enclave_segid_show(struct seq_file     * file,
@@ -473,7 +439,7 @@ alloc_xpmem_segid(struct xpmem_ns_state * ns_state,
     domain_add_xpmem_segid(domain, val);
 
     /* Add to segid map */
-    if (xpmem_ht_add(ns_state, ns_state->segid_map, (uintptr_t)key, (uintptr_t)val) == 0) {
+    if (xpmem_htable_add(ns_state->segid_map, (uintptr_t)key, (uintptr_t)val) == 0) {
         XPMEM_ERR("Cannot add segid %lli to hashtable, probably because it has already been allocated", *segid);
 
         domain_remove_xpmem_segid(domain, val);
@@ -500,7 +466,7 @@ free_xpmem_segid(struct xpmem_ns_state * ns_state,
     search_key.apid  = -1;
 
     /* First, search the hashtable for the domain */
-    val = (struct xpmem_id_val *)xpmem_ht_search(ns_state, ns_state->segid_map, (uintptr_t)&search_key);
+    val = (struct xpmem_id_val *)htable_search(ns_state->segid_map, (uintptr_t)&search_key);
 
     if (val == NULL) {
         XPMEM_ERR("Cannot free segid %lli: cannot find source domain", segid);
@@ -515,7 +481,7 @@ free_xpmem_segid(struct xpmem_ns_state * ns_state,
     }
 
     /* Proceed with the removal */
-    val = (struct xpmem_id_val *)xpmem_ht_remove(ns_state, ns_state->segid_map, (uintptr_t)&search_key);
+    val = (struct xpmem_id_val *)htable_remove(ns_state->segid_map, (uintptr_t)&search_key, 1);
 
     /* Remove from domain list */
     domain_remove_xpmem_segid(domain, val);
@@ -565,7 +531,7 @@ add_xpmem_apid(struct xpmem_ns_state * ns_state,
     domain_add_xpmem_apid(domain, val);
 
     /* Add to apid map */
-    if (xpmem_ht_add(ns_state, ns_state->apid_map, (uintptr_t)key, (uintptr_t)val) == 0) {
+    if (xpmem_htable_add(ns_state->apid_map, (uintptr_t)key, (uintptr_t)val) == 0) {
         XPMEM_ERR("Cannot add apid %lli to hashtable, probably because it is already present", apid);
 
         domain_remove_xpmem_apid(domain, val);
@@ -592,7 +558,7 @@ remove_xpmem_apid(struct xpmem_ns_state * ns_state,
     search_key.apid  = apid;
 
     /* Remove from hashtable */
-    val = (struct xpmem_id_val *)xpmem_ht_remove(ns_state, ns_state->apid_map, (uintptr_t)&search_key);
+    val = (struct xpmem_id_val *)htable_remove(ns_state->apid_map, (uintptr_t)&search_key, 1);
 
     /* Remove from domain list */
     domain_remove_xpmem_apid(domain, val);
@@ -937,7 +903,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             key.segid = cmd->get.segid;
 
             /* Search segid map */
-            val = (struct xpmem_id_val *)xpmem_ht_search(ns_state, ns_state->segid_map, (uintptr_t)&key);
+            val = (struct xpmem_id_val *)htable_search(ns_state->segid_map, (uintptr_t)&key);
 
             if (val == NULL) {
                 XPMEM_ERR("Cannot find segid %lli in hashtable. Cannot complete XPMEM_GET", cmd->get.segid);
@@ -977,7 +943,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             key.apid  = cmd->release.apid;
 
             /* Search apid map */
-            val = (struct xpmem_id_val *)xpmem_ht_search(ns_state, ns_state->apid_map, (uintptr_t)&key);
+            val = (struct xpmem_id_val *)htable_search(ns_state->apid_map, (uintptr_t)&key);
 
             if (val == NULL) {
                 XPMEM_ERR("Cannot find apid %lli in hashtable. Cannot complete XPMEM_RELEASE", cmd->release.apid);
@@ -1024,7 +990,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             key.apid  = cmd->attach.apid;
 
             /* Search apid map */
-            val = (struct xpmem_id_val *)xpmem_ht_search(ns_state, ns_state->apid_map, (uintptr_t)&key);
+            val = (struct xpmem_id_val *)htable_search(ns_state->apid_map, (uintptr_t)&key);
 
             if (val == NULL) {
                 XPMEM_ERR("Cannot find apid %lli in hashtable. Cannot complete XPMEM_ATTACH", cmd->attach.apid);
