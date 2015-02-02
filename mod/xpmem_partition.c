@@ -75,29 +75,34 @@
  *
  *
  */
+struct xpmem_link_connection {
+    struct xpmem_partition_state * state;
+    xpmem_link_t                   link;
+    xpmem_connection_t             conn_type;
+    struct kref                    refcnt;
+    int (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data);
+    int (*in_irq_fn)(int                   irq, void * priv_data);
+    void                         * priv_data;
+};
+
 
 static int  get_conn(struct xpmem_link_connection * conn);
 static void put_conn(struct xpmem_link_connection * conn);
 
-struct xpmem_link_connection *
+static struct xpmem_link_connection *
 xpmem_get_link_conn(struct xpmem_partition_state * state,
                     xpmem_link_t                   link)
 {
-    struct xpmem_link_connection * conn = &(state->conn_map[link]);
+    struct xpmem_link_connection * conn = state->conn_map[link];
+
+    if (conn == NULL) {
+        return NULL;
+    }
 
     if (get_conn(conn))
         return conn;
 
     return NULL;
-}
-
-void
-xpmem_put_link_conn(struct xpmem_partition_state * state,
-                    xpmem_link_t                   link)
-{
-    struct xpmem_link_connection * conn = &(state->conn_map[link]);
-
-    put_conn(conn);
 }
 
 char *
@@ -220,16 +225,16 @@ EXPORT_SYMBOL(xpmem_get_partition);
 
 static xpmem_link_t
 xpmem_get_free_link(struct xpmem_partition_state * state,
-                    xpmem_connection_t             type)
+                    struct xpmem_link_connection * conn)
 {
-    xpmem_link_t i, ret = 0;
+    xpmem_link_t i   = 0;
+    xpmem_link_t ret = 0;
 
     spin_lock(&(state->lock));
     {
         for (i = 1; i < XPMEM_MAX_LINK; i++) {
-            struct xpmem_link_connection * conn = &(state->conn_map[i]);
-            if (conn->conn_type == XPMEM_CONN_NONE) {
-                conn->conn_type = type;
+            if (state->conn_map[i] == NULL) {
+                state->conn_map[i] = conn;
                 ret = i;
                 break;
             }
@@ -247,8 +252,7 @@ xpmem_add_connection(struct xpmem_partition_state * part_state,
                      int (*in_irq_fn)(int                   irq, void * priv_data),
                      void                         * priv_data)
 {
-    struct xpmem_link_connection * conn  = NULL;
-    xpmem_link_t                   link  = 0;
+    struct xpmem_link_connection * conn = NULL;
 
     if ((type != XPMEM_CONN_LOCAL) &&
         (type != XPMEM_CONN_REMOTE))
@@ -256,31 +260,36 @@ xpmem_add_connection(struct xpmem_partition_state * part_state,
         return -EINVAL;
     }
 
-    link = xpmem_get_free_link(part_state, type);
-    if (link < 0) {
-        return -EBUSY;
+    /* Allocate new connection */
+    conn = kmalloc(sizeof(struct xpmem_link_connection), GFP_KERNEL);
+    if (conn == NULL) {
+        return -ENOMEM;
     }
 
-    if (type == XPMEM_CONN_LOCAL) {
-        part_state->local_link = link;
-
-        /* Associate the link with our domid, if we have one */
-        if (part_state->domid > 0) {
-            xpmem_add_domid_link(part_state, part_state->domid, link);
-        }
-    }
-
-    /* Grab conn from the link map */
-    conn = &(part_state->conn_map[link]);
+    /* Set conn fields */
     conn->state     = part_state;
-    conn->link      = link;
     conn->conn_type = type;
     conn->in_cmd_fn = in_cmd_fn;
     conn->in_irq_fn = in_irq_fn;
     conn->priv_data = priv_data;
     kref_init(&(conn->refcnt));
 
-    return link;
+    conn->link = xpmem_get_free_link(part_state, conn);
+    if (conn->link < 0) {
+        kfree(conn);
+        return -EBUSY;
+    }
+
+    if (type == XPMEM_CONN_LOCAL) {
+        part_state->local_link = conn->link;
+
+        /* Associate the link with our domid, if we have one */
+        if (part_state->domid > 0) {
+            xpmem_add_domid_link(part_state, part_state->domid, conn->link);
+        }
+    }
+
+    return conn->link;
 }
 
 EXPORT_SYMBOL(xpmem_add_connection);
@@ -290,7 +299,7 @@ void
 xpmem_remove_connection(struct xpmem_partition_state * part_state,
                         xpmem_link_t                   link)
 {
-    struct xpmem_link_connection * conn = &(part_state->conn_map[link]);
+    struct xpmem_link_connection * conn = part_state->conn_map[link];
     put_conn(conn);
 }
 
@@ -424,11 +433,12 @@ xpmem_partition_init(struct xpmem_partition_state * state, int is_ns)
 {
     int status = 0;
 
-    memset(state, 0, sizeof(struct xpmem_partition_state));
-
     state->local_link    = -1; 
     state->domid         = -1; 
     state->is_nameserver = is_ns;
+
+    memset(state->link_map, 0, sizeof(xpmem_link_t) * XPMEM_MAX_LINK);
+    memset(state->conn_map, 0, sizeof(struct xpmem_link_connection *) * XPMEM_MAX_DOMID);
 
     spin_lock_init(&(state->lock));
 
@@ -488,7 +498,7 @@ xpmem_partition_deinit(struct xpmem_partition_state * state)
     } else {
         xpmem_fwd_deinit(state);
     }
- 
+
     return 0;
 }
 
@@ -504,9 +514,10 @@ put_conn_last(struct kref * kref)
     struct xpmem_link_connection * conn  = container_of(kref, struct xpmem_link_connection, refcnt);
     struct xpmem_partition_state * state = conn->state;
 
-    /* Need to do two things:
+    /* Need to do three things:
      * (1) Remove all domains using this connection link in the link map 
-     * (2) Set the conn to CONN_NONE in the conn map
+     * (2) Set the conn to NULL in the conn map
+     * (3) Free the conn
      */
     spin_lock(&(state->lock));
     {
@@ -514,8 +525,8 @@ put_conn_last(struct kref * kref)
         for (i = 0; i < XPMEM_MAX_DOMID; i++) {
             xpmem_link_t link = state->link_map[i];
             if (link == conn->link) {
-                /* Update name server map */
                 if (state->is_nameserver) {
+                    /* Update name server map */
                     xpmem_ns_kill_domain(state, i); 
                 }
 
@@ -523,9 +534,12 @@ put_conn_last(struct kref * kref)
             }
         }
     }
+
+    state->conn_map[conn->link] = NULL;
+
     spin_unlock(&(state->lock));
 
-    conn->conn_type = XPMEM_CONN_NONE;
+    kfree(conn);
 }
 
 static void

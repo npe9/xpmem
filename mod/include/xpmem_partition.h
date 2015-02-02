@@ -27,18 +27,6 @@
 #define XPMEM_NS_DOMID    1
 
 
-
-struct xpmem_link_connection {
-    struct xpmem_partition_state * state;
-    xpmem_link_t                   link;
-    xpmem_connection_t             conn_type;
-    struct kref                    refcnt;
-    int (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data);
-    int (*in_irq_fn)(int                   irq, void * priv_data);
-    void                         * priv_data;
-};
-
-
 struct xpmem_partition_state {
     /* spinlock for state */
     spinlock_t    lock;
@@ -50,10 +38,10 @@ struct xpmem_partition_state {
     xpmem_domid_t domid;
 
     /* table mapping link ids to connection structs */
-    struct xpmem_link_connection conn_map[XPMEM_MAX_DOMID];
+    struct xpmem_link_connection * conn_map[XPMEM_MAX_DOMID];
 
     /* table mappings domids to link ids */
-    xpmem_link_t                 link_map[XPMEM_MAX_LINK];
+    xpmem_link_t                   link_map[XPMEM_MAX_LINK];
 
     /* are we running the nameserver? */
     int is_nameserver; 
@@ -98,13 +86,5 @@ xpmem_get_domid_link(struct xpmem_partition_state * state,
 void
 xpmem_remove_domid_link(struct xpmem_partition_state * state,
                         xpmem_domid_t                   domid);
-
-struct xpmem_link_connection *
-xpmem_get_link_conn(struct xpmem_partition_state * state,
-                    xpmem_link_t                   link);
-
-void
-xpmem_put_link_conn(struct xpmem_partition_state * state,
-                    xpmem_link_t                   link);
 
 #endif /* _XPMEM_PARTITION_H */

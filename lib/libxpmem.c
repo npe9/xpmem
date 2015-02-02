@@ -34,19 +34,16 @@ int xpmem_init(void)
 {
 	struct stat stb;
 
-/*	if (stat(XPMEM_KITTEN_PATH, &stb) != 0 ||
+/*	if (stat(XPMEM_DEV_PATH, &stb) != 0 ||
 	    !S_ISCHR(stb.st_mode) ||
-	    (xpmem_fd = open(XPMEM_KITTEN_PATH, O_RDWR)) == -1 ||
+	    (xpmem_fd = open(XPMEM_DEV_PATH, O_RDWR)) == -1 ||
 	    fcntl(xpmem_fd, F_SETFD, FD_CLOEXEC) == -1) {
 		return -1;
 	}*/
 
-    xpmem_fd = open(XPMEM_KITTEN_PATH, O_RDWR);
-    if (xpmem_fd == -1) {
-        xpmem_fd = open(XPMEM_DEV_PATH, O_RDWR);
-        if (xpmem_fd == -1)
-            return -1;
-    }
+    xpmem_fd = open(XPMEM_DEV_PATH, O_RDWR);
+    if (xpmem_fd == -1)
+        return -1;
 
     return 0;
 }

@@ -75,9 +75,8 @@ xpmem_ping_ns(struct xpmem_partition_state * part_state,
 
     {
         int i = 0;
-        for (i = 0; i <= XPMEM_MAX_LINK; i++) {
-            xpmem_link_t                   search_id = (xpmem_link_t)i;
-            struct xpmem_link_connection * conn      = NULL;
+        for (i = 0; i < XPMEM_MAX_LINK; i++) {
+            xpmem_link_t search_id = (xpmem_link_t)i;
 
             if (search_id == skip) {
                 continue;
@@ -88,13 +87,7 @@ xpmem_ping_ns(struct xpmem_partition_state * part_state,
                 continue;
             }
 
-            conn = xpmem_get_link_conn(part_state, search_id);
-            if (conn) {
-                if (xpmem_send_cmd_link(part_state, search_id, &ping_cmd)) {
-                    XPMEM_ERR("Cannot send PING on link %d", search_id);
-                }
-                xpmem_put_link_conn(part_state, search_id);
-            }
+            xpmem_send_cmd_link(part_state, search_id, &ping_cmd);
         }
     }
 }
@@ -117,9 +110,8 @@ xpmem_pong_ns(struct xpmem_partition_state * part_state,
 
     {
         int i = 0;
-        for (i = 0; i <= XPMEM_MAX_LINK; i++) {
-            xpmem_link_t                   search_id = (xpmem_link_t)i;
-            struct xpmem_link_connection * conn      = NULL;
+        for (i = 0; i < XPMEM_MAX_LINK; i++) {
+            xpmem_link_t search_id = (xpmem_link_t)i;
 
             if (search_id == skip) {
                 continue;
@@ -130,14 +122,7 @@ xpmem_pong_ns(struct xpmem_partition_state * part_state,
                 continue;
             }
 
-
-            conn = xpmem_get_link_conn(part_state, search_id);
-            if (conn) {
-                if (xpmem_send_cmd_link(part_state, search_id, &pong_cmd)) {
-                    XPMEM_ERR("Cannot send PONG on link %d", search_id);
-                }
-                xpmem_put_link_conn(part_state, search_id);
-            }
+            xpmem_send_cmd_link(part_state, search_id, &pong_cmd);
         }
     }
 }
@@ -328,8 +313,12 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
         }
 
         case XPMEM_DOMID_RELEASE:
-            /* Someone downstream is releasing their domid: simply forward to the
-             * namserver */
+            /* Someone downstream is releasing their domid */ 
+
+            /* Update the domid map to forget this link */
+            xpmem_remove_domid_link(part_state, cmd->domid_req.domid);
+
+             /* Forward to the namserver */
             out_link = xpmem_get_domid_link(part_state, out_cmd->dst_dom);
 
             if (out_link == 0) {

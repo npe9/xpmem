@@ -606,7 +606,11 @@ static void
 free_xpmem_domid(struct xpmem_ns_state * ns_state,
                  xpmem_domid_t           domid)
 {
-    ns_state->domain_map[domid] = NULL;
+    spin_lock(&(ns_state->lock));
+    {
+        ns_state->domain_map[domid] = NULL;
+    }
+    spin_unlock(&(ns_state->lock));
 }
 
 static struct xpmem_domain *
