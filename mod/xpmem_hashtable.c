@@ -660,7 +660,6 @@ __free_htable(struct xpmem_hashtable * htable,
     }
 
     kfree(htable->table);
-    kfree(htable);
 }
 
 
@@ -674,4 +673,6 @@ free_htable(struct xpmem_hashtable * htable,
         __free_htable(htable, free_values, free_keys);
     }
     spin_unlock(&(htable->lock));
+
+    kfree(htable);
 }
