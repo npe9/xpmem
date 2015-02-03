@@ -407,8 +407,10 @@ xpmem_init(void)
 
     /* Register a local domain */
     xpmem_my_part->domain_link = xpmem_domain_init();
-    if (xpmem_my_part->domain_link < 0)
+    if (xpmem_my_part->domain_link < 0) {
+        ret = xpmem_my_part->domain_link;
         goto out_4;
+    }
 
     /* Bring up palacios device driver / host OS interface */
     ret = xpmem_palacios_init(xpmem_my_part);

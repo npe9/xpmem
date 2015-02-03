@@ -864,6 +864,7 @@ xpmem_attach_remote(xpmem_link_t  link,
     pfns = kmalloc(cmd.attach.num_pfns * sizeof(u32), GFP_KERNEL);
     if (pfns == NULL) {
         free_request_id(state, reqid);
+        xpmem_put_link_data(link);
         return -ENOMEM;
     }
 

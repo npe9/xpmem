@@ -289,7 +289,7 @@ xpmem_get_free_link(struct xpmem_partition_state * state,
         end  = state->uniq_link;
         do {
             link = ++(state->uniq_link);
-            idx  = state->uniq_link % XPMEM_MAX_LINK;
+            idx  = link % XPMEM_MAX_LINK;
             if (state->conn_map[idx] == NULL) {
                 state->conn_map[idx] = conn;
                 ret = link;
