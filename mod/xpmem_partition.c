@@ -100,6 +100,7 @@ put_conn_last(struct kref * kref)
 {
     struct xpmem_link_connection * conn  = container_of(kref, struct xpmem_link_connection, refcnt);
     struct xpmem_partition_state * state = conn->state;
+    xpmem_link_t                   idx   = 0;
     int i;
 
     /* Need to do four things:
@@ -109,7 +110,8 @@ put_conn_last(struct kref * kref)
      * (4) Free the conn
      */
 
-    state->conn_map[conn->link] = NULL;
+    idx = conn->link % XPMEM_MAX_LINK;
+    state->conn_map[idx] = NULL;
 
     for (i = 0; i < XPMEM_MAX_DOMID; i++) {
         xpmem_link_t link = state->link_map[i];
