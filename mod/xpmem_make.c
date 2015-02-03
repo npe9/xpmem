@@ -35,7 +35,7 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg, xpmem_segid_t request)
     }
 
     /* Allocate a segid from the nameserver */
-    if (xpmem_make_remote(&(xpmem_my_part->part_state), request, segid_p) != 0) {
+    if (xpmem_make_remote(xpmem_my_part->domain_link, request, segid_p) != 0) {
         return -1;
     }
 
@@ -197,7 +197,7 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
 
     /* Nameserver does not know about shadow segments, so don't remove them */
     if (!(seg->flags & XPMEM_FLAG_SHADOW)) {
-        xpmem_remove_remote(&(xpmem_my_part->part_state), seg->segid);
+        xpmem_remove_remote(xpmem_my_part->domain_link, seg->segid);
     }
 
     xpmem_seg_up_write(seg);

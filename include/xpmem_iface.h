@@ -24,42 +24,40 @@ typedef enum {
 } xpmem_connection_t;
 
 
-struct xpmem_partition_state;
 struct xpmem_cmd_ex;
 
-
-struct xpmem_partition_state *
-xpmem_get_partition(void);
-
 xpmem_link_t
-xpmem_add_connection(struct xpmem_partition_state * part,
-                     xpmem_connection_t             type,
-                     int (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data),
-                     int (*in_irq_fn)(int                   irq, void * priv_data),
-                     void                         * priv_data);
+xpmem_add_connection(xpmem_connection_t type,
+                     void             * priv_data,
+                     int  (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data),
+                     int  (*in_irq_fn)(int                   irq, void * priv_data),
+                     void (*kill)     (void *));
 
 void
-xpmem_remove_connection(struct xpmem_partition_state * part,
-                        xpmem_link_t                   link);
+xpmem_remove_connection(xpmem_link_t link);
+
+void *
+xpmem_get_link_data(xpmem_link_t link);
+
+void
+xpmem_put_link_data(xpmem_link_t link);
+
 
 int
-xpmem_cmd_deliver(struct xpmem_partition_state * part,
-                  xpmem_link_t                   link,
-                  struct xpmem_cmd_ex          * cmd);
+xpmem_cmd_deliver(xpmem_link_t          link,
+                  struct xpmem_cmd_ex * cmd);
 
 int
-xpmem_request_irq_link(struct xpmem_partition_state * part,
-                       xpmem_link_t                   link);
+xpmem_request_irq_link(xpmem_link_t link);
 
 int
-xpmem_release_irq_link(struct xpmem_partition_state * part,
-                       xpmem_link_t                   link,
-                       int                            irq);
+xpmem_release_irq_link(xpmem_link_t link,
+                       int          irq);
 
 int
-xpmem_irq_deliver(struct xpmem_partition_state * part,
-                  xpmem_domid_t                  domid,
-                  xpmem_sigid_t                  sigid);
+xpmem_irq_deliver(xpmem_link_t  link,
+                  xpmem_domid_t domid,
+                  xpmem_sigid_t sigid);
 
 #endif
 

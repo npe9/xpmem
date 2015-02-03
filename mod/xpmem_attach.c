@@ -350,7 +350,7 @@ xpmem_try_attach_remote(xpmem_segid_t segid,
                         u64           at_vaddr)
 {
     return xpmem_attach_remote(
-        &(xpmem_my_part->part_state),
+        xpmem_my_part->domain_link,
         segid,
         apid,
         offset,
@@ -649,14 +649,14 @@ xpmem_detach(u64 at_vaddr)
     if (seg->flags & XPMEM_FLAG_SHADOW) {
         u64 pa = 0;
 
-        xpmem_detach_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid, att->at_vaddr);
+        xpmem_detach_remote(xpmem_my_part->domain_link, seg->segid, ap->remote_apid, att->at_vaddr);
 
         /* Free from Palacios, if we're in a VM */ 
         pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
         if (pa == 0) {
             XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)att->at_vaddr);
         } else {
-            xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pa);
+            xpmem_palacios_detach_paddr(xpmem_my_part->vmm_link, pa);
         }
     } else {
         xpmem_unpin_pages(seg, current->mm, att->at_vaddr, att->at_size);
@@ -712,14 +712,14 @@ xpmem_detach_local_att(struct xpmem_access_permit * ap,
     if (seg->flags & XPMEM_FLAG_SHADOW) {
         u64 pa = 0;
 
-        xpmem_detach_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid, att->at_vaddr);
+        xpmem_detach_remote(xpmem_my_part->domain_link, seg->segid, ap->remote_apid, att->at_vaddr);
 
         /* Free from Palacios, if we're in a VM */ 
         pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
         if (pa == 0) {
             XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)att->at_vaddr);
         } else {
-            xpmem_palacios_detach_paddr(&(xpmem_my_part->part_state), pa);
+            xpmem_palacios_detach_paddr(xpmem_my_part->vmm_link, pa);
         }
     } else {
         xpmem_unpin_pages(seg, att->mm, att->at_vaddr, att->at_size);

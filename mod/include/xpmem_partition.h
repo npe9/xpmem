@@ -26,7 +26,6 @@
 /* The well-known name server's domid */
 #define XPMEM_NS_DOMID    1
 
-
 struct xpmem_partition_state {
     /* spinlock for state */
     spinlock_t    lock;
@@ -38,10 +37,13 @@ struct xpmem_partition_state {
     xpmem_domid_t domid;
 
     /* table mapping link ids to connection structs */
-    struct xpmem_link_connection * conn_map[XPMEM_MAX_DOMID];
+    struct xpmem_link_connection * conn_map[XPMEM_MAX_LINK];
 
-    /* table mappings domids to link ids */
-    xpmem_link_t                   link_map[XPMEM_MAX_LINK];
+    /* table mapping domids to link ids */
+    xpmem_link_t                   link_map[XPMEM_MAX_DOMID];
+
+    /* unique link generation. no link is ever issued twice */
+    xpmem_link_t  uniq_link;
 
     /* are we running the nameserver? */
     int is_nameserver; 
@@ -51,10 +53,6 @@ struct xpmem_partition_state {
         struct xpmem_ns_state  * ns_state;
         struct xpmem_fwd_state * fwd_state;
     };  
-
-    /* private data */
-    void * palacios_priv;
-    void * domain_priv;
 };
 
 
@@ -64,6 +62,7 @@ xpmem_partition_init(struct xpmem_partition_state * state,
 
 int
 xpmem_partition_deinit(struct xpmem_partition_state * state);
+
 
 /* Functions used internally by fwd/ns */
 char *
@@ -85,6 +84,6 @@ xpmem_get_domid_link(struct xpmem_partition_state * state,
 
 void
 xpmem_remove_domid_link(struct xpmem_partition_state * state,
-                        xpmem_domid_t                   domid);
+                        xpmem_domid_t                  domid);
 
 #endif /* _XPMEM_PARTITION_H */

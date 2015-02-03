@@ -107,7 +107,7 @@ xpmem_try_get_remote(xpmem_segid_t   segid,
     int          status = 0;
     
     status = xpmem_get_remote(
-        &(xpmem_my_part->part_state),
+        xpmem_my_part->domain_link,
         segid,
         flags,
         permit_type,
@@ -338,7 +338,7 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     
     /* Release remote apid */
     if (ap->remote_apid > 0) {
-        xpmem_release_remote(&(xpmem_my_part->part_state), seg->segid, ap->remote_apid);
+        xpmem_release_remote(xpmem_my_part->domain_link, seg->segid, ap->remote_apid);
     }
 
     xpmem_seg_deref(seg);   /* deref of xpmem_get()'s ref */

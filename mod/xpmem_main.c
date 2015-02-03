@@ -405,6 +405,16 @@ xpmem_init(void)
     if (ret != 0) 
         goto out_3;
 
+    /* Register a local domain */
+    xpmem_my_part->domain_link = xpmem_domain_init();
+    if (xpmem_my_part->domain_link < 0)
+        goto out_4;
+
+    /* Bring up palacios device driver / host OS interface */
+    ret = xpmem_palacios_init(xpmem_my_part);
+    if (ret < 0)
+        goto out_5;
+
     /* Symbol lookups */
     xpmem_linux_symbol_init();
 
@@ -412,6 +422,10 @@ xpmem_init(void)
            XPMEM_CURRENT_VERSION_STRING);
     return 0;
 
+out_5:
+    xpmem_domain_deinit(xpmem_my_part->domain_link);
+out_4:
+    xpmem_partition_deinit(&(xpmem_my_part->part_state));
 out_3:
     remove_proc_entry("global_pages", xpmem_proc_dir);
 out_2:
@@ -432,6 +446,8 @@ void __exit
 xpmem_exit(void)
 {
     /* Free partition resources */
+    xpmem_domain_deinit(xpmem_my_part->domain_link);
+    xpmem_palacios_deinit(xpmem_my_part->vmm_link);
     xpmem_partition_deinit(&(xpmem_my_part->part_state));
 
     kfree(xpmem_my_part->tg_hashtable);

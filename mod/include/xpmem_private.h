@@ -332,6 +332,9 @@ struct xpmem_partition {
 
     /* per-partition state */
     struct xpmem_partition_state    part_state;             /* extended per-partition state */
+
+    xpmem_link_t                    domain_link;            /* local domain xpmem link */
+    xpmem_link_t                    vmm_link;               /* link into the host */
 };
 
 /*
@@ -488,8 +491,8 @@ extern int xpmem_mmu_notifier_init(struct xpmem_thread_group *);
 extern void xpmem_mmu_notifier_unlink(struct xpmem_thread_group *);
 
 /* found in xpmem_domain.c */
-extern int xpmem_domain_init(struct xpmem_partition_state *);
-extern int xpmem_domain_deinit(struct xpmem_partition_state *);
+extern xpmem_link_t xpmem_domain_init(void);
+extern int xpmem_domain_deinit(xpmem_link_t);
 
 /* found in xpmem_ns.c */
 extern int xpmem_ns_init(struct xpmem_partition_state *);
@@ -503,19 +506,18 @@ extern int xpmem_fwd_deinit(struct xpmem_partition_state *);
 extern int xpmem_fwd_deliver_cmd(struct xpmem_partition_state *, xpmem_link_t, struct xpmem_cmd_ex *);
 
 /* found in xpmem_palacios.c */
-extern int xpmem_palacios_init(struct xpmem_partition_state *);
-extern int xpmem_palacios_deinit(struct xpmem_partition_state *);
-extern int xpmem_palacios_detach_paddr(struct xpmem_partition_state *, u64);
-extern int xpmem_request_irq(struct xpmem_partition_state *, irqreturn_t (*)(int, void *), void *);
-extern int xpmem_release_irq(struct xpmem_partition_state *, int, void *);
-extern int xpmem_irq_to_vector(struct xpmem_partition_state *, int);
+extern int xpmem_palacios_init(struct xpmem_partition *);
+extern int xpmem_palacios_deinit(xpmem_link_t);
+extern int xpmem_palacios_detach_paddr(xpmem_link_t, u64);
+extern int xpmem_request_irq(irqreturn_t (*)(int, void *), void *);
+extern int xpmem_release_irq(int, void *);
+extern int xpmem_irq_to_vector(int);
 
 /* found in xpmem_irq.c */
 extern int xpmem_request_local_irq(irqreturn_t (*)(int, void *), void *);
 extern int xpmem_release_local_irq(int, void *);
 extern int xpmem_local_irq_to_vector(int);
 extern void xpmem_send_ipi_to_apic(unsigned int, unsigned int);
-extern void xpmem_send_ipi(unsigned int, unsigned int);
 
 
 

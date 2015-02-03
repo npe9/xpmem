@@ -204,10 +204,3 @@ xpmem_send_ipi_to_apic(unsigned int apic_id,
     }
     local_irq_restore(flags);
 }
-
-void
-xpmem_send_ipi(unsigned int cpu_id,
-               unsigned int vector)
-{
-    xpmem_send_ipi_to_apic(apic->cpu_present_to_apicid(cpu_id), vector);
-}
