@@ -277,7 +277,7 @@ xpmem_fault_pages(struct xpmem_attachment * att,
     }
 
     /* Lock the att's mutex */
-    while (mutex_lock_interruptible(&(att->mutex)));
+    mutex_lock(&att->mutex);
 
     /* Grab the segemnt vaddr */
     seg_vaddr = ((u64)att->vaddr & PAGE_MASK);

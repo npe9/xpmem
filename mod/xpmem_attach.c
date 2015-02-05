@@ -19,6 +19,7 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
+#include <xpmem_syms.h>
 
 /*
  * This function is called whenever a XPMEM address segment is unmapped.
@@ -360,48 +361,40 @@ xpmem_try_attach_remote(xpmem_segid_t segid,
 
 
 static unsigned long
-do_xpmem_mmap(struct xpmem_attachment * att,
-              struct file             * file, 
-              unsigned long             addr, 
-              unsigned long             len, 
-              unsigned long             prot,
-              unsigned long             flags,
-              unsigned long             offset)
+do_xpmem_mmap(struct file * file, 
+              unsigned long addr, 
+              unsigned long len, 
+              unsigned long prot,
+              unsigned long flags,
+              unsigned long offset)
 {
     unsigned long vaddr = 0;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
     vaddr = do_mmap(file, addr, len, prot, flags, offset);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
+    vaddr = linux_do_mmap_pgoff(file, addr, len, prot, flags, offset >> PAGE_SHIFT);
 #else
-    
-    mutex_unlock(&att->mutex);    /* this will never block */
-    up_write(&current->mm->mmap_sem);
-    vaddr = vm_mmap(file, addr, len, prot, flags, offset);
-    down_write(&current->mm->mmap_sem);
-    mutex_lock(&att->mutex);    /* this will never block */
+    {
+        unsigned long populate;
+        vaddr = linux_do_mmap_pgoff(file, addr, len, prot, flags, offset >> PAGE_SHIFT, &populate);
+    }
 #endif
 
     return vaddr;
 }
 
 static int
-do_xpmem_munmap(struct xpmem_attachment * att,
-                struct mm_struct        * mm,
-                unsigned long             addr,
-                unsigned long             size)
+do_xpmem_munmap(struct mm_struct * mm,
+                unsigned long      addr,
+                unsigned long      size)
 {
     int ret = 0;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
     ret = do_munmap(mm, addr, size);
 #else
-    if (mm == current->mm) {
-        mutex_unlock(&att->mutex);
-        up_write(&current->mm->mmap_sem);
-        ret = vm_munmap(addr, size);
-        down_write(&current->mm->mmap_sem);
-        mutex_lock(&att->mutex);
-    }
+    ret = linux_do_munmap(mm, addr, size);
 #endif
 
     return ret;
@@ -527,7 +520,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
         }
     }
 
-    at_vaddr = do_xpmem_mmap(att, file, vaddr, size, prot_flags, flags, offset);
+    at_vaddr = do_xpmem_mmap(file, vaddr, size, prot_flags, flags, offset);
     if (IS_ERR((void *)at_vaddr)) {
         ret = at_vaddr;
         goto out_3;
@@ -537,7 +530,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     if (seg->flags & XPMEM_FLAG_SHADOW) {
         DBUG_ON(ap->remote_apid <= 0);
         if (xpmem_try_attach_remote(seg->segid, ap->remote_apid, offset, size, at_vaddr) != 0) {
-            do_xpmem_munmap(att, current->mm, at_vaddr, size);
+            do_xpmem_munmap(current->mm, at_vaddr, size);
             ret = -EFAULT;
             goto out_3;
         }
@@ -666,7 +659,7 @@ xpmem_detach(u64 at_vaddr)
 
     vma->vm_private_data = NULL;
 
-    DBUG_ON(do_xpmem_munmap(att, current->mm, vma->vm_start, att->at_size) != 0);
+    DBUG_ON(do_xpmem_munmap(current->mm, vma->vm_start, att->at_size) != 0);
 
     att->flags &= ~XPMEM_FLAG_VALIDPTEs;
 
@@ -729,7 +722,7 @@ xpmem_detach_local_att(struct xpmem_access_permit * ap,
 
     vma->vm_private_data = NULL;
 
-    DBUG_ON(do_xpmem_munmap(att, att->mm, vma->vm_start, att->at_size) != 0);
+    DBUG_ON(do_xpmem_munmap(att->mm, vma->vm_start, att->at_size) != 0);
 }
 
 /* There's no vma or address space to manipulate here. Just need to put each page that was

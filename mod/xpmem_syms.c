@@ -22,8 +22,35 @@ void (*tlb_gather_mmu_fn)(struct mmu_gather * tlb, struct mm_struct *, unsigned 
 pte_t * (*huge_pte_offset_fn)(struct mm_struct * mm, unsigned long addr);
 void (*zap_page_range_fn)(struct vm_area_struct *, unsigned long, unsigned long, struct zap_details *); 
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)
 int  (*linux_create_irq) (void);
 void (*linux_destroy_irq)(unsigned int);
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
+unsigned long (*linux_do_mmap_pgoff)(
+        struct file *,
+        unsigned long,
+        unsigned long,
+        unsigned long,
+        unsigned long,
+        unsigned long);
+#else
+unsigned long (*linux_do_mmap_pgoff)(
+        struct file *,
+        unsigned long,
+        unsigned long,
+        unsigned long,
+        unsigned long,
+        unsigned long,
+        unsigned long *);
+#endif
+int (*linux_do_munmap)(
+        struct mm_struct *,
+        unsigned long,
+        size_t);
+#endif
 
 void tlb_gather_mmu(struct mmu_gather * tlb, 
                     struct mm_struct  * mm,
@@ -166,6 +193,69 @@ xpmem_linux_symbol_init(void)
         linux_destroy_irq = (void (*)(unsigned int))symbol_addr;
     }   
 #endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
+#if LINUX_VERSION_CODE <  KERNEL_VERSION(3,9,0)
+    /* Symbol:
+     *  --  do_mmap_pgoff
+     */
+    {   
+        symbol_addr = kallsyms_lookup_name("do_mmap_pgoff");
+    
+        if (symbol_addr == 0) {
+            printk(KERN_WARNING "Linux symbol do_mmap_pgoff not found.\n");
+            return -1; 
+        }
+
+        linux_do_mmap_pgoff = (unsigned long (*)(
+            struct file *,
+            unsigned long,
+            unsigned long,
+            unsigned long,
+            unsigned long,
+            unsigned long))symbol_addr;
+    }   
+#else
+    /* Symbol:
+     *  --  do_mmap_pgoff
+     */
+    {   
+        symbol_addr = kallsyms_lookup_name("do_mmap_pgoff");
+    
+        if (symbol_addr == 0) {
+            printk(KERN_WARNING "Linux symbol do_mmap_pgoff not found.\n");
+            return -1; 
+        }
+
+        linux_do_mmap_pgoff = (unsigned long (*)(
+            struct file *,
+            unsigned long,
+            unsigned long,
+            unsigned long,
+            unsigned long,
+            unsigned long,
+            unsigned long *))symbol_addr;
+    }   
+#endif
+
+    /* Symbol:
+     *  --  do_munmap
+     */
+    {   
+        symbol_addr = kallsyms_lookup_name("do_munmap");
+    
+        if (symbol_addr == 0) {
+            printk(KERN_WARNING "Linux symbol do_munmap not found.\n");
+            return -1; 
+        }
+
+        linux_do_munmap = (int (*)(
+            struct mm_struct *,
+            unsigned long,
+            size_t))symbol_addr;
+    }   
+#endif
+
 
     return 0;
 }
