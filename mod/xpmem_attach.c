@@ -360,47 +360,6 @@ xpmem_try_attach_remote(xpmem_segid_t segid,
 }
 
 
-static unsigned long
-do_xpmem_mmap(struct file * file, 
-              unsigned long addr, 
-              unsigned long len, 
-              unsigned long prot,
-              unsigned long flags,
-              unsigned long offset)
-{
-    unsigned long vaddr = 0;
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
-    vaddr = do_mmap(file, addr, len, prot, flags, offset);
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
-    vaddr = linux_do_mmap_pgoff(file, addr, len, prot, flags, offset >> PAGE_SHIFT);
-#else
-    {
-        unsigned long populate;
-        vaddr = linux_do_mmap_pgoff(file, addr, len, prot, flags, offset >> PAGE_SHIFT, &populate);
-    }
-#endif
-
-    return vaddr;
-}
-
-static int
-do_xpmem_munmap(struct mm_struct * mm,
-                unsigned long      addr,
-                unsigned long      size)
-{
-    int ret = 0;
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
-    ret = do_munmap(mm, addr, size);
-#else
-    ret = linux_do_munmap(mm, addr, size);
-#endif
-
-    return ret;
-}
-
-
 /*
  * Attach a XPMEM address segment.
  */
@@ -488,7 +447,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     xpmem_att_ref(att);
 
     /* must lock mmap_sem before att's sema to prevent deadlock */
-    down_write(&current->mm->mmap_sem);
+//    down_write(&current->mm->mmap_sem);
     mutex_lock(&att->mutex);    /* this will never block */
 
     /* link attach structure to its access permit's att list */
@@ -509,8 +468,10 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     if (flags & MAP_FIXED) {
         struct vm_area_struct *existing_vma;
 
+        down_write(&current->mm->mmap_sem);
         existing_vma = find_vma_intersection(current->mm, vaddr,
                 vaddr + size);
+        up_write(&current->mm->mmap_sem);
         for ( ; existing_vma && existing_vma->vm_start < vaddr + size
                 ; existing_vma = existing_vma->vm_next) {
             if (xpmem_is_vm_ops_set(existing_vma)) {
@@ -520,25 +481,27 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
         }
     }
 
-    at_vaddr = do_xpmem_mmap(file, vaddr, size, prot_flags, flags, offset);
+    at_vaddr = vm_mmap(file, vaddr, size, prot_flags, flags, offset);
     if (IS_ERR((void *)at_vaddr)) {
         ret = at_vaddr;
         goto out_3;
     }
+    att->at_vaddr = at_vaddr;
 
     /* if remote, load pfns in now */
     if (seg->flags & XPMEM_FLAG_SHADOW) {
         DBUG_ON(ap->remote_apid <= 0);
         if (xpmem_try_attach_remote(seg->segid, ap->remote_apid, offset, size, at_vaddr) != 0) {
-            do_xpmem_munmap(current->mm, at_vaddr, size);
+            vm_munmap(at_vaddr, size);
             ret = -EFAULT;
             goto out_3;
         }
     }
 
-    att->at_vaddr = at_vaddr;
-
+    down_write(&current->mm->mmap_sem);
     vma = find_vma(current->mm, at_vaddr);
+    up_write(&current->mm->mmap_sem);
+
     vma->vm_private_data = att;
     vma->vm_flags |=
         VM_DONTCOPY /*| VM_RESERVED*/ | VM_IO | VM_DONTEXPAND | VM_PFNMAP;
@@ -565,7 +528,6 @@ out_3:
         xpmem_att_destroyable(att);
     }
     mutex_unlock(&att->mutex);
-    up_write(&current->mm->mmap_sem);
     xpmem_att_deref(att);
 out_2:
     xpmem_seg_up_read(seg_tg, seg, 0);
@@ -583,7 +545,6 @@ out_1:
 int
 xpmem_detach(u64 at_vaddr)
 {
-    struct xpmem_segment *seg;
     struct xpmem_access_permit *ap;
     struct xpmem_attachment *att;
     struct vm_area_struct *vma;
@@ -606,14 +567,12 @@ xpmem_detach(u64 at_vaddr)
     xpmem_att_ref(att);
 
     xpmem_block_nonfatal_signals(&oldset);
-    
     if (mutex_lock_interruptible(&att->mutex)) {
         xpmem_unblock_nonfatal_signals(&oldset);
         xpmem_att_deref(att);
         up_write(&current->mm->mmap_sem);
         return -EINTR;
     }
-    
     xpmem_unblock_nonfatal_signals(&oldset);
 
     if (att->flags & XPMEM_FLAG_DESTROYING) {
@@ -636,13 +595,10 @@ xpmem_detach(u64 at_vaddr)
         return -EACCES;
     }
 
-    seg = ap->seg;
-    xpmem_seg_ref(seg);
-
-    if (seg->flags & XPMEM_FLAG_SHADOW) {
+    if (ap->seg->flags & XPMEM_FLAG_SHADOW) {
         u64 pa = 0;
 
-        xpmem_detach_remote(xpmem_my_part->domain_link, seg->segid, ap->remote_apid, att->at_vaddr);
+        xpmem_detach_remote(xpmem_my_part->domain_link, ap->seg->segid, ap->remote_apid, att->at_vaddr);
 
         /* Free from Palacios, if we're in a VM */ 
         pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
@@ -652,14 +608,13 @@ xpmem_detach(u64 at_vaddr)
             xpmem_palacios_detach_paddr(xpmem_my_part->vmm_link, pa);
         }
     } else {
-        xpmem_unpin_pages(seg, current->mm, att->at_vaddr, att->at_size);
+        xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
     }
-
-    xpmem_seg_deref(seg);
 
     vma->vm_private_data = NULL;
 
-    DBUG_ON(do_xpmem_munmap(current->mm, vma->vm_start, att->at_size) != 0);
+    up_write(&current->mm->mmap_sem);
+    DBUG_ON(vm_munmap(vma->vm_start, att->at_size) != 0);
 
     att->flags &= ~XPMEM_FLAG_VALIDPTEs;
 
@@ -668,7 +623,6 @@ xpmem_detach(u64 at_vaddr)
     spin_unlock(&ap->lock);
 
     mutex_unlock(&att->mutex);
-    up_write(&current->mm->mmap_sem);
 
     xpmem_att_destroyable(att);
 
@@ -684,7 +638,7 @@ xpmem_detach_local_att(struct xpmem_access_permit * ap,
                        struct xpmem_attachment    * att)
 {
     struct vm_area_struct * vma;
-    struct xpmem_segment  * seg;
+    struct mm_struct      * current_mm;
 
     /* find the corresponding vma */
     vma = find_vma(att->mm, att->at_vaddr);
@@ -699,13 +653,10 @@ xpmem_detach_local_att(struct xpmem_access_permit * ap,
     DBUG_ON((vma->vm_end - vma->vm_start) != att->at_size);
     DBUG_ON(vma->vm_private_data != att);
 
-    seg = ap->seg;
-    xpmem_seg_ref(seg);
-
-    if (seg->flags & XPMEM_FLAG_SHADOW) {
+    if (ap->seg->flags & XPMEM_FLAG_SHADOW) {
         u64 pa = 0;
 
-        xpmem_detach_remote(xpmem_my_part->domain_link, seg->segid, ap->remote_apid, att->at_vaddr);
+        xpmem_detach_remote(xpmem_my_part->domain_link, ap->seg->segid, ap->remote_apid, att->at_vaddr);
 
         /* Free from Palacios, if we're in a VM */ 
         pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
@@ -715,14 +666,21 @@ xpmem_detach_local_att(struct xpmem_access_permit * ap,
             xpmem_palacios_detach_paddr(xpmem_my_part->vmm_link, pa);
         }
     } else {
-        xpmem_unpin_pages(seg, att->mm, att->at_vaddr, att->at_size);
+        xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);
     }
-
-    xpmem_seg_deref(seg);
 
     vma->vm_private_data = NULL;
 
-    DBUG_ON(do_xpmem_munmap(att->mm, vma->vm_start, att->at_size) != 0);
+    current_mm = current->mm;
+    if (current->mm == NULL)
+        current->mm = att->mm;
+
+    up_write(&current->mm->mmap_sem);
+    mutex_unlock(&att->mutex);
+
+    DBUG_ON(vm_munmap(vma->vm_start, att->at_size) != 0);
+
+    current->mm = current_mm;
 }
 
 /* There's no vma or address space to manipulate here. Just need to put each page that was
@@ -747,6 +705,9 @@ xpmem_detach_remote_att(struct xpmem_access_permit * ap,
     }
 
     kfree(att->pfns);
+
+    up_write(&current->mm->mmap_sem);
+    mutex_unlock(&att->mutex);
 
     atomic_sub(num_pfns, &ap->seg->tg->n_pinned);
     atomic_add(num_pfns, &xpmem_my_part->n_unpinned);
@@ -781,9 +742,6 @@ xpmem_detach_att(struct xpmem_access_permit *ap, struct xpmem_attachment *att)
     spin_lock(&ap->lock);
     list_del_init(&att->att_node);
     spin_unlock(&ap->lock);
-
-    mutex_unlock(&att->mutex);
-    up_write(&att->mm->mmap_sem);
 
     xpmem_att_destroyable(att);
 }
