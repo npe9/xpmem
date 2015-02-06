@@ -42,6 +42,8 @@ int main(int argc, char ** argv) {
     } else {
         int i = 0;
 
+        sleep(5);
+
         for (i = 0; i < num_pages; i++) {
             void * addr2 = ((void *)addr + (PAGE_SIZE * i));
             *((int *)addr2) = 12340 + i;
@@ -50,7 +52,7 @@ int main(int argc, char ** argv) {
         }
     }
 
-    sleep(60);
+    sleep(5);
     xpmem_remove(segid);
 
     return 0;

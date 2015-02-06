@@ -216,28 +216,27 @@ avoid_deadlock:
     if (ret != 0)
         goto out_1;
 
-    /* BJK: acquire seg_tg mmap_sem before acquiring the att mutex. */
-    if (!seg_tg_mmap_sem_locked &&
-            &current->mm->mmap_sem > &seg_tg->mm->mmap_sem) {
-        /*
-         * The faulting thread's mmap_sem is numerically smaller
-         * than the seg's thread group's mmap_sem address-wise,
-         * therefore we need to acquire the latter's mmap_sem in a
-         * safe manner before calling xpmem_ensure_valid_PFNs() to
-         * avoid a potential deadlock.
-         */
-        seg_tg_mmap_sem_locked = 1;
-        atomic_inc(&seg_tg->mm->mm_users);
-        
-        if (!down_read_trylock(&seg_tg->mm->mmap_sem)) {
-            /* BJK: down_read will cause us to take the sems in the wrong order - so, we need
-             * to drop the current mmap_sem, take the sems in the correct order, and then
-             * verify that the faulting vma is still valid
-             *
+    /* BJK: acquire seg_tg mmap_sem before acquiring the att mutex. down_read will cause
+     * us to take the sems in the wrong order, but down_read_trylock is safe because it
+     * will fail instead of sleeping if it can't acquire the semaphore
+     */
+    atomic_inc(&seg_tg->mm->mm_users);
+    if (!down_read_trylock(&seg_tg->mm->mmap_sem)) {
+        if (&current->mm->mmap_sem > &seg_tg->mm->mmap_sem) {
+            /*
+             * The faulting thread's mmap_sem is numerically smaller
+             * than the seg's thread group's mmap_sem address-wise,
+             * therefore we need to acquire the latter's mmap_sem in a
+             * safe manner before calling xpmem_ensure_valid_PFNs() to
+             * avoid a potential deadlock.
+             */
+
+             /*
              * BJK: also, change down_read to down_read_nested to avoid false positive
-             * lock freakouts in the the kernel locl validator. As long as we always take
+             * lock freakouts in the the kernel lock validator. As long as we always take
              * the semaphores in the same order, there is no potential for deadlock, but
-             * the validator categorizes the mmap_sems in the same lock class.
+             * the validator categorizes the mmap_sems in the same lock class and doesn't
+             * understand this.
              */
             up_read(&current->mm->mmap_sem);
             down_read_nested(&seg_tg->mm->mmap_sem, SINGLE_DEPTH_NESTING);
@@ -245,6 +244,8 @@ avoid_deadlock:
             vma_verification_needed = 1;
         }
     }
+
+    seg_tg_mmap_sem_locked = 1;
 
     /* verify vma hasn't changed due to dropping current->mm->mmap_sem */
     if (vma_verification_needed) {
