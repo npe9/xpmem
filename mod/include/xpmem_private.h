@@ -472,7 +472,7 @@ extern void xpmem_detach_att(struct xpmem_access_permit *,
 extern int xpmem_mmap(struct file *, struct vm_area_struct *);
 
 /* found in xpmem_pfn.c */
-extern int xpmem_ensure_valid_PFNs(struct xpmem_segment *, u64, size_t, int);
+extern int xpmem_ensure_valid_PFNs(struct xpmem_segment *, u64, size_t);
 extern int xpmem_block_recall_PFNs(struct xpmem_thread_group *, int);
 extern void xpmem_unpin_pages(struct xpmem_segment *, struct mm_struct *, u64,
                 size_t);
