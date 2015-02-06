@@ -34,7 +34,6 @@
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
 #include <xpmem_partition.h>
-#include <xpmem_syms.h>
 
 
 struct xpmem_partition * xpmem_my_part  = NULL;  /* pointer to this partition */

@@ -540,6 +540,13 @@ extern int xpmem_release_local_irq(int, void *);
 extern int xpmem_local_irq_to_vector(int);
 extern void xpmem_send_ipi_to_apic(unsigned int, unsigned int);
 
+/* found in xpmem_syms.c */
+extern int xpmem_linux_symbol_init(void);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)
+extern int  (*linux_create_irq)(void);
+extern void (*linux_destroy_irq)(unsigned int);
+#endif
+
 
 
 

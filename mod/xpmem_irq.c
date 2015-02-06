@@ -19,7 +19,6 @@
 
 #include <xpmem.h>
 #include <xpmem_private.h>
-#include <xpmem_syms.h>
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
 static void 

@@ -19,7 +19,6 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
-#include <xpmem_syms.h>
 
 /*
  * This function is called whenever a XPMEM address segment is unmapped.
