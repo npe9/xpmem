@@ -429,36 +429,8 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
         }
     }
 
-    /* create new attach structure */
-    att = kzalloc(sizeof(struct xpmem_attachment), GFP_KERNEL);
-    if (att == NULL) {
-        ret = -ENOMEM;
-        goto out_2;
-    }
-
-    mutex_init(&att->mutex);
-    att->vaddr = seg_vaddr;
-    att->at_size = size;
-    att->ap = ap;
-    INIT_LIST_HEAD(&att->att_node);
-    att->mm = current->mm;
-
-    xpmem_att_not_destroyable(att);
-    xpmem_att_ref(att);
-
-    /* must lock mmap_sem before att's sema to prevent deadlock */
-//    down_write(&current->mm->mmap_sem);
-    mutex_lock(&att->mutex);    /* this will never block */
-
-    /* link attach structure to its access permit's att list */
-    spin_lock(&ap->lock);
-    list_add_tail(&att->att_node, &ap->att_list);
-    if (ap->flags & XPMEM_FLAG_DESTROYING) {
-        spin_unlock(&ap->lock);
-        ret = -ENOENT;
-        goto out_3;
-    }
-    spin_unlock(&ap->lock);
+    /* Take semaphore before we start mucking with vmas */
+    //down_write(&current->mm->mmap_sem);
 
     flags = MAP_SHARED;
     if (vaddr != (u64)NULL)
@@ -476,7 +448,7 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
                 ; existing_vma = existing_vma->vm_next) {
             if (xpmem_is_vm_ops_set(existing_vma)) {
                 ret = -EINVAL;
-                goto out_3;
+                goto out_2;
             }
         }
     }
@@ -484,9 +456,12 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
     at_vaddr = vm_mmap(file, vaddr, size, prot_flags, flags, offset);
     if (IS_ERR((void *)at_vaddr)) {
         ret = at_vaddr;
-        goto out_3;
+        goto out_2;
     }
-    att->at_vaddr = at_vaddr;
+
+    down_write(&current->mm->mmap_sem);
+    vma = find_vma(current->mm, at_vaddr);
+    up_write(&current->mm->mmap_sem);
 
     /* if remote, load pfns in now */
     if (seg->flags & XPMEM_FLAG_SHADOW) {
@@ -494,40 +469,61 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
         if (xpmem_try_attach_remote(seg->segid, ap->remote_apid, offset, size, at_vaddr) != 0) {
             vm_munmap(at_vaddr, size);
             ret = -EFAULT;
-            goto out_3;
+            goto out_2;
         }
     }
 
-    down_write(&current->mm->mmap_sem);
-    vma = find_vma(current->mm, at_vaddr);
-    up_write(&current->mm->mmap_sem);
+    /* create new attach structure */
+    att = kzalloc(sizeof(struct xpmem_attachment), GFP_KERNEL);
+    if (att == NULL) {
+        ret = -ENOMEM;
+        goto out_2;
+    }
+
+    mutex_init(&att->mutex);
+    att->vaddr = seg_vaddr;
+    att->at_size = size;
+    att->ap = ap;
+    INIT_LIST_HEAD(&att->att_node);
+    att->mm = current->mm;
+
+    xpmem_att_not_destroyable(att);
+    xpmem_att_ref(att);
+
+    att->at_vaddr = at_vaddr;
+    att->at_vma   = vma;
 
     vma->vm_private_data = att;
     vma->vm_flags |=
         VM_DONTCOPY /*| VM_RESERVED*/ | VM_IO | VM_DONTEXPAND | VM_PFNMAP;
     vma->vm_ops = &xpmem_vm_ops;
 
-    att->at_vma = vma;
 
     /*
      * The attach point where we mapped the portion of the segment the
      * user was interested in is page aligned. But the start of the portion
      * of the segment may not be, so we adjust the address returned to the
      * user by that page offset difference so that what they see is what
-     * they expected to see.
+     * they expected to see.KE
      */
     *at_vaddr_p = at_vaddr + offset_in_page(att->vaddr);
+
+    /* link attach structure to its access permit's att list */
+    spin_lock(&ap->lock);
+    if (ap->flags & XPMEM_FLAG_DESTROYING) {
+        spin_unlock(&ap->lock);
+        ret = -ENOENT;
+        goto out_3;
+    }
+    list_add_tail(&att->att_node, &ap->att_list);
+    spin_unlock(&ap->lock);
 
     ret = 0;
 out_3:
     if (ret != 0) {
         att->flags |= XPMEM_FLAG_DESTROYING;
-        spin_lock(&ap->lock);
-        list_del_init(&att->att_node);
-        spin_unlock(&ap->lock);
         xpmem_att_destroyable(att);
     }
-    mutex_unlock(&att->mutex);
     xpmem_att_deref(att);
 out_2:
     xpmem_seg_up_read(seg_tg, seg, 0);
@@ -613,7 +609,9 @@ xpmem_detach(u64 at_vaddr)
 
     vma->vm_private_data = NULL;
 
+    mutex_unlock(&att->mutex);
     up_write(&current->mm->mmap_sem);
+
     DBUG_ON(vm_munmap(vma->vm_start, att->at_size) != 0);
 
     att->flags &= ~XPMEM_FLAG_VALIDPTEs;
@@ -621,8 +619,6 @@ xpmem_detach(u64 at_vaddr)
     spin_lock(&ap->lock);
     list_del_init(&att->att_node);
     spin_unlock(&ap->lock);
-
-    mutex_unlock(&att->mutex);
 
     xpmem_att_destroyable(att);
 
