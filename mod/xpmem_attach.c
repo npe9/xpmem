@@ -242,6 +242,9 @@ avoid_deadlock:
             down_read_nested(&seg_tg->mm->mmap_sem, SINGLE_DEPTH_NESTING);
             down_read_nested(&current->mm->mmap_sem, SINGLE_DEPTH_NESTING);
             vma_verification_needed = 1;
+        } else {
+            /* Else, we can just do a sleeping down on the mmap_sem */
+            down_read_nested(&seg_tg->mm->mmap_sem, SINGLE_DEPTH_NESTING);
         }
     }
 
