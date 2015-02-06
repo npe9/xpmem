@@ -162,40 +162,17 @@ xpmem_get_PFNs(struct xpmem_segment *seg, u64 vaddr, size_t size)
  * functions are called to do the actual PFN discovery tasks.
  */
 int
-xpmem_ensure_valid_PFNs(struct xpmem_segment *seg, u64 vaddr, size_t size,
-            int mmap_sem_prelocked)
+xpmem_ensure_valid_PFNs(struct xpmem_segment *seg, u64 vaddr, size_t size)
 {
-    int ret = -1, n_pgs = num_of_pages(vaddr, size), mmap_sem_locked = 0;
+    int ret = -1, n_pgs = num_of_pages(vaddr, size);
     u64 l_vaddr = vaddr + size, t_vaddr = vaddr;
     size_t t_size;
-    struct xpmem_thread_group *seg_tg = seg->tg;
 
     DBUG_ON(n_pgs <= 0);
 
-    /*
-     * If we're faulting a page in our own address space, we don't have to
-     * grab the mmap_sem since we already have it via do_page_fault(). If
-     * we're faulting a page from another address space, there is a
-     * potential for a deadlock on the mmap_sem. If the fault handler
-     * detects this potential, it acquires the two mmap_sems in numeric
-     * order (address-wise).
-     */
-    if (seg_tg->mm != current->mm) {
-        if (!mmap_sem_prelocked) {
-            atomic_inc(&seg_tg->mm->mm_users);
-            down_read_nested(&seg_tg->mm->mmap_sem, SINGLE_DEPTH_NESTING);
-            mmap_sem_locked = 1;
-        }
-    }
-
     /* the seg may have been marked for destruction while we were down() */
-    if (seg->flags & XPMEM_FLAG_DESTROYING) {
-        if (mmap_sem_locked) {
-            up_read(&seg_tg->mm->mmap_sem);
-            atomic_dec(&seg_tg->mm->mm_users);
-        }
+    if (seg->flags & XPMEM_FLAG_DESTROYING)
         return -ENOENT;
-    }
 
     /* pin all PFNs */
     if (n_pgs > 0) {
@@ -204,18 +181,8 @@ xpmem_ensure_valid_PFNs(struct xpmem_segment *seg, u64 vaddr, size_t size,
             t_size = l_vaddr - t_vaddr;
 
         ret = xpmem_get_PFNs(seg, t_vaddr, t_size);
-        if (ret != 0) {
-            if (mmap_sem_locked) {
-                up_read(&seg_tg->mm->mmap_sem);
-                atomic_dec(&seg_tg->mm->mm_users);
-            }
+        if (ret != 0)
             return ret;
-        }
-    }
-
-    if (mmap_sem_locked) {
-        up_read(&seg_tg->mm->mmap_sem);
-        atomic_dec(&seg_tg->mm->mm_users);
     }
 
     return ret;

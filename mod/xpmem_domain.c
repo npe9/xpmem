@@ -287,7 +287,7 @@ xpmem_fault_pages(struct xpmem_attachment * att,
     atomic_inc(&(seg_tg->mm->mm_users));
 
     /* Fault the pages into the seg */
-    ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, att->at_size, 1);
+    ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, att->at_size);
 
     if (ret != 0) {
         goto out_2;

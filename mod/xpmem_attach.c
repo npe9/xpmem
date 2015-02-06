@@ -282,13 +282,12 @@ avoid_deadlock:
     seg_vaddr = ((u64)att->vaddr & PAGE_MASK) + (vaddr - att->at_vaddr);
     XPMEM_DEBUG("vaddr = %llx, seg_vaddr = %llx", vaddr, seg_vaddr);
 
-    ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, 1,
-            seg_tg_mmap_sem_locked);
-    if (seg_tg_mmap_sem_locked) {
-        up_read(&seg_tg->mm->mmap_sem);
-        atomic_dec(&seg_tg->mm->mm_users);
-        seg_tg_mmap_sem_locked = 0;
-    }
+    ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, 1);
+
+    up_read(&seg_tg->mm->mmap_sem);
+    atomic_dec(&seg_tg->mm->mm_users);
+    seg_tg_mmap_sem_locked = 0;
+
     if (ret != 0) {
         if (ret == -EAGAIN) {
             mutex_unlock(&att->mutex);
