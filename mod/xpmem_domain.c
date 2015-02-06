@@ -283,7 +283,7 @@ xpmem_fault_pages(struct xpmem_attachment * att,
     seg_vaddr = ((u64)att->vaddr & PAGE_MASK);
 
     /* Take the segment thread's mmap sem */
-    down_read(&(seg_tg->mm->mmap_sem));
+    down_read_nested(&(seg_tg->mm->mmap_sem), SINGLE_DEPTH_NESTING);
     atomic_inc(&(seg_tg->mm->mm_users));
 
     /* Fault the pages into the seg */

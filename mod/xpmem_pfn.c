@@ -183,7 +183,7 @@ xpmem_ensure_valid_PFNs(struct xpmem_segment *seg, u64 vaddr, size_t size,
     if (seg_tg->mm != current->mm) {
         if (!mmap_sem_prelocked) {
             atomic_inc(&seg_tg->mm->mm_users);
-            down_read(&seg_tg->mm->mmap_sem);
+            down_read_nested(&seg_tg->mm->mmap_sem, SINGLE_DEPTH_NESTING);
             mmap_sem_locked = 1;
         }
     }

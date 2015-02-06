@@ -205,18 +205,47 @@ xpmem_fault_handler(struct vm_area_struct *vma, struct vm_fault *vmf)
 
     ret = xpmem_seg_down_read(seg_tg, seg, 1, 0);
 
-avoid_deadlock_1:
+avoid_deadlock:
     if (ret == -EAGAIN) {
         /* to avoid possible deadlock drop current->mm->mmap_sem */
         up_read(&current->mm->mmap_sem);
         ret = xpmem_seg_down_read(seg_tg, seg, 1, 1);
-        down_read(&current->mm->mmap_sem);
+        down_read_nested(&current->mm->mmap_sem, SINGLE_DEPTH_NESTING);
         vma_verification_needed = 1;
     }
     if (ret != 0)
         goto out_1;
 
-avoid_deadlock_2:
+    /* BJK: acquire seg_tg mmap_sem before acquiring the att mutex. */
+    if (!seg_tg_mmap_sem_locked &&
+            &current->mm->mmap_sem > &seg_tg->mm->mmap_sem) {
+        /*
+         * The faulting thread's mmap_sem is numerically smaller
+         * than the seg's thread group's mmap_sem address-wise,
+         * therefore we need to acquire the latter's mmap_sem in a
+         * safe manner before calling xpmem_ensure_valid_PFNs() to
+         * avoid a potential deadlock.
+         */
+        seg_tg_mmap_sem_locked = 1;
+        atomic_inc(&seg_tg->mm->mm_users);
+        
+        if (!down_read_trylock(&seg_tg->mm->mmap_sem)) {
+            /* BJK: down_read will cause us to take the sems in the wrong order - so, we need
+             * to drop the current mmap_sem, take the sems in the correct order, and then
+             * verify that the faulting vma is still valid
+             *
+             * BJK: also, change down_read to down_read_nested to avoid false positive
+             * lock freakouts in the the kernel locl validator. As long as we always take
+             * the semaphores in the same order, there is no potential for deadlock, but
+             * the validator categorizes the mmap_sems in the same lock class.
+             */
+            up_read(&current->mm->mmap_sem);
+            down_read_nested(&seg_tg->mm->mmap_sem, SINGLE_DEPTH_NESTING);
+            down_read_nested(&current->mm->mmap_sem, SINGLE_DEPTH_NESTING);
+            vma_verification_needed = 1;
+        }
+    }
+
     /* verify vma hasn't changed due to dropping current->mm->mmap_sem */
     if (vma_verification_needed) {
         struct vm_area_struct *retry_vma;
@@ -249,27 +278,6 @@ avoid_deadlock_2:
     seg_vaddr = ((u64)att->vaddr & PAGE_MASK) + (vaddr - att->at_vaddr);
     XPMEM_DEBUG("vaddr = %llx, seg_vaddr = %llx", vaddr, seg_vaddr);
 
-    if (!seg_tg_mmap_sem_locked &&
-            &current->mm->mmap_sem > &seg_tg->mm->mmap_sem) {
-        /*
-         * The faulting thread's mmap_sem is numerically smaller
-         * than the seg's thread group's mmap_sem address-wise,
-         * therefore we need to acquire the latter's mmap_sem in a
-         * safe manner before calling xpmem_ensure_valid_PFNs() to
-         * avoid a potential deadlock.
-         */
-        seg_tg_mmap_sem_locked = 1;
-        atomic_inc(&seg_tg->mm->mm_users);
-        if (!down_read_trylock(&seg_tg->mm->mmap_sem)) {
-            mutex_unlock(&att->mutex);
-            up_read(&current->mm->mmap_sem);
-            down_read(&seg_tg->mm->mmap_sem);
-            down_read(&current->mm->mmap_sem);
-            vma_verification_needed = 1;
-            goto avoid_deadlock_2;
-        }
-    }
-
     ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, 1,
             seg_tg_mmap_sem_locked);
     if (seg_tg_mmap_sem_locked) {
@@ -281,7 +289,7 @@ avoid_deadlock_2:
         if (ret == -EAGAIN) {
             mutex_unlock(&att->mutex);
             xpmem_seg_up_read(seg_tg, seg, 1);
-            goto avoid_deadlock_1;
+            goto avoid_deadlock;
         }
         goto out_3;
     }
@@ -773,7 +781,7 @@ xpmem_clear_PTEs_of_att(struct xpmem_attachment *att, u64 start, u64 end,
         locked_mmap = down_read_trylock(&att->mm->mmap_sem);
         locked_att = mutex_trylock(&att->mutex);
     } else {
-        down_read(&att->mm->mmap_sem);
+        down_read_nested(&att->mm->mmap_sem, SINGLE_DEPTH_NESTING);
         mutex_lock(&att->mutex);
     }
 
