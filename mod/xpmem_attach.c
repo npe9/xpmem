@@ -761,7 +761,7 @@ static void
 xpmem_clear_PTEs_of_att(struct xpmem_attachment *att, u64 start, u64 end,
         int from_mmu)
 {
-    int locked_mmap = 1, locked_att = 1;
+    int locked_mmap = 1, locked_att = 1, ret;
 
     /*
      * This function should ideally acquire both att->mm->mmap_sem
@@ -863,7 +863,11 @@ xpmem_clear_PTEs_of_att(struct xpmem_attachment *att, u64 start, u64 end,
             vma = att->at_vma;
         else
             vma = find_vma(att->mm, att->at_vaddr);
-        zap_page_range(vma, unpin_at, invalidate_len, NULL);
+
+        ret = zap_vma_ptes(vma, unpin_at, invalidate_len);
+        XPMEM_DEBUG("zap_vma_ptes returned %d", ret);
+//        zap_page_range(vma, unpin_at, invalidate_len, NULL);
+        
 
         /* Only clear the flag if all pages were zapped */
         if (offset_start == 0 && att->at_size == invalidate_len)
