@@ -110,7 +110,7 @@ xpmem_unpin_pages(struct xpmem_segment *seg, struct mm_struct *mm,
             XPMEM_DEBUG("pfn=%llx, vaddr=%llx, n_pgs=%d",
                     pfn, vaddr, n_pgs);
 
-            page = virt_to_page(__va(pfn << PAGE_SHIFT));
+            page = pfn_to_page(pfn);
             page_cache_release(page);
 
             n_pgs_unpinned++;

@@ -706,13 +706,13 @@ xpmem_detach_remote_att(struct xpmem_access_permit * ap,
 
     for (i =  0; i < num_pfns; i++) {
         pfn  = att->pfns[i];
-        page = virt_to_page(__va(pfn << PAGE_SHIFT));
+        page = pfn_to_page(pfn);
         page_cache_release(page);
     }
 
     kfree(att->pfns);
 
-    up_write(&current->mm->mmap_sem);
+    up_write(&att->mm->mmap_sem);
     mutex_unlock(&att->mutex);
 
     atomic_sub(num_pfns, &ap->seg->tg->n_pinned);

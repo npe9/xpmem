@@ -216,13 +216,7 @@ xpmem_release_domain(struct xpmem_cmd_release_ex * release_ex)
     seg_tg = seg->tg;
     xpmem_tg_ref(seg_tg);
 
-    /* Before releasing, check that the seg is still up so we don't access dead data
-     * structures in xpmem_release_ap
-     */
-    if (xpmem_seg_down_read(seg_tg, seg, 0, 1) == 0) {
-        xpmem_release_ap(ap_tg, ap);
-        xpmem_seg_up_read(seg_tg, seg, 0);
-    }
+    xpmem_release_ap(ap_tg, ap);
 
     xpmem_ap_deref(ap);
     xpmem_tg_deref(ap_tg);
@@ -276,15 +270,15 @@ xpmem_fault_pages(struct xpmem_attachment * att,
         goto out;
     }
 
-    /* Lock the att's mutex */
-    mutex_lock(&att->mutex);
-
     /* Grab the segemnt vaddr */
     seg_vaddr = ((u64)att->vaddr & PAGE_MASK);
 
     /* Take the segment thread's mmap sem */
     down_read_nested(&(seg_tg->mm->mmap_sem), SINGLE_DEPTH_NESTING);
     atomic_inc(&(seg_tg->mm->mm_users));
+
+    /* Lock the att's mutex */
+    mutex_lock(&att->mutex);
 
     /* Fault the pages into the seg */
     ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, att->at_size);
@@ -408,28 +402,34 @@ xpmem_attach_domain(struct xpmem_cmd_attach_ex * attach_ex)
     xpmem_att_not_destroyable(att);
     xpmem_att_ref(att);
 
+    down_write(&att->mm->mmap_sem);
     vma = find_vma(att->mm, att->at_vaddr);
+    up_write(&att->mm->mmap_sem);
+
+    if (!vma || vma->vm_start > att->vaddr) {
+        ret = -ENOENT;
+        goto out_3;
+    }
     att->at_vma = vma;
+
+    /* fault pages into the seg, copy to remote domain */
+    ret = xpmem_fault_pages(att, attach_ex->num_pfns, attach_ex->pfn_pa);
+    if (ret != 0)
+        goto out_3;
 
     /* link attach structure to its access permit's remote att list */
     spin_lock(&ap->lock);
-    list_add_tail(&att->att_node, &ap->att_list);
     if (ap->flags & XPMEM_FLAG_DESTROYING) {
         spin_unlock(&ap->lock);
         ret = -ENOENT;
         goto out_3;
     }
+    list_add_tail(&att->att_node, &ap->att_list);
     spin_unlock(&ap->lock);
-
-    /* fault pages into the seg, copy to remote domain */
-    ret = xpmem_fault_pages(att, attach_ex->num_pfns, attach_ex->pfn_pa);
 
 out_3:
     if (ret != 0) {
         att->flags |= XPMEM_FLAG_DESTROYING;
-        spin_lock(&ap->lock);
-        list_del_init(&att->att_node);
-        spin_unlock(&ap->lock);
         kfree(att->pfns);
         xpmem_att_destroyable(att);
     }
