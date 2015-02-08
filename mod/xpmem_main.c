@@ -33,7 +33,6 @@
 #include <xpmem.h>
 #include <xpmem_private.h>
 #include <xpmem_extended.h>
-#include <xpmem_partition.h>
 
 
 struct xpmem_partition * xpmem_my_part  = NULL;  /* pointer to this partition */
@@ -234,6 +233,7 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case XPMEM_CMD_MAKE: {
         struct xpmem_cmd_make make_info;
         xpmem_segid_t segid;
+        int fd;
 
         if (copy_from_user(&make_info, (void __user *)arg,
                    sizeof(struct xpmem_cmd_make)))
@@ -241,8 +241,9 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
         ret = xpmem_make(make_info.vaddr, make_info.size,
                  make_info.permit_type,
-                 (void *)make_info.permit_value, 
-                 &segid);
+                 (void *)make_info.permit_value,
+                 make_info.flags,
+                 make_info.segid, &segid, &fd);
         if (ret != 0)
             return ret;
 
@@ -329,6 +330,15 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case XPMEM_CMD_FORK_END: {
         return xpmem_fork_end();
     }
+    case XPMEM_CMD_GET_DOMID: {
+        xpmem_domid_t domid = xpmem_get_domid();
+
+        if (put_user(domid,
+                &((struct xpmem_cmd_domid __user *)arg)->domid)) 
+            return -EFAULT;
+
+        return 0;
+    }
     default:
         break;
     }
@@ -400,7 +410,7 @@ xpmem_init(void)
         goto out_2;
     }
 
-    ret = xpmem_partition_init(&(xpmem_my_part->part_state), ns);
+    ret = xpmem_partition_init(ns);
     if (ret != 0) 
         goto out_3;
 
@@ -426,7 +436,7 @@ xpmem_init(void)
 out_5:
     xpmem_domain_deinit(xpmem_my_part->domain_link);
 out_4:
-    xpmem_partition_deinit(&(xpmem_my_part->part_state));
+    xpmem_partition_deinit();
 out_3:
     remove_proc_entry("global_pages", xpmem_proc_dir);
 out_2:
@@ -449,7 +459,7 @@ xpmem_exit(void)
     /* Free partition resources */
     xpmem_domain_deinit(xpmem_my_part->domain_link);
     xpmem_palacios_deinit(xpmem_my_part->vmm_link);
-    xpmem_partition_deinit(&(xpmem_my_part->part_state));
+    xpmem_partition_deinit();
 
     kfree(xpmem_my_part->tg_hashtable);
     kfree(xpmem_my_part);

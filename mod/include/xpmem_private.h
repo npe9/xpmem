@@ -20,7 +20,6 @@
 #include <asm/signal.h>
 
 #include <xpmem.h>
-#include <xpmem_partition.h>
 #include <xpmem_extended.h>
 
 
@@ -339,6 +338,40 @@ struct xpmem_attachment {
 };
 
 
+#define XPMEM_MAX_LINK  128
+#define XPMEM_MIN_DOMID 32
+#define XPMEM_MAX_DOMID 128
+
+/* The name server's well known domid */
+#define XPMEM_NS_DOMID  1
+
+struct xpmem_link_connection;
+struct xpmem_partition_state {
+    /* spinlock for state */
+    spinlock_t    lock;
+
+    /* link to our own domain */
+    xpmem_link_t  local_link;
+
+    /* table mapping link ids to connection structs */
+    struct xpmem_link_connection * conn_map[XPMEM_MAX_LINK];
+
+    /* table mapping domids to link ids */
+    xpmem_link_t                   link_map[XPMEM_MAX_DOMID];
+
+    /* unique link generation. no link is ever issued twice */
+    xpmem_link_t  uniq_link;
+
+    /* are we running the nameserver? */
+    int is_nameserver; 
+
+    /* this partition's internal state */
+    union {
+        struct xpmem_ns_state  * ns_state;
+        struct xpmem_fwd_state * fwd_state;
+    };  
+};
+
 
 struct xpmem_partition {
     struct xpmem_hashlist         * tg_hashtable;           /* locks + tg hash lists */
@@ -445,8 +478,8 @@ xpmem_vaddr_to_PFN(struct mm_struct *mm, u64 vaddr)
 #define XPMEM_CPUS_OFFLINE      -2
 
 /* found in xpmem_make.c */
-extern int xpmem_make_segment(u64, size_t, int, void *, struct xpmem_thread_group *, xpmem_segid_t);
-extern int xpmem_make(u64, size_t, int, void *, xpmem_segid_t *);
+extern int xpmem_make_segment(u64, size_t, int, void *, int, struct xpmem_thread_group *, xpmem_segid_t);
+extern int xpmem_make(u64, size_t, int, void *, int, xpmem_segid_t,  xpmem_segid_t *, int *);
 extern void xpmem_remove_segs_of_tg(struct xpmem_thread_group *);
 extern int xpmem_remove_seg(struct xpmem_thread_group *, struct xpmem_segment *);
 extern int xpmem_remove(xpmem_segid_t);
@@ -511,6 +544,24 @@ extern void xpmem_unblock_nonfatal_signals(sigset_t *);
 extern int xpmem_mmu_notifier_init(struct xpmem_thread_group *);
 extern void xpmem_mmu_notifier_unlink(struct xpmem_thread_group *);
 
+/* found in xpmem_partition.c */
+extern int xpmem_partition_init(int);
+extern int xpmem_partition_deinit(void);
+extern xpmem_domid_t xpmem_get_domid(void);
+extern int xpmem_send_cmd_link(struct xpmem_partition_state *,
+        xpmem_link_t, struct xpmem_cmd_ex *);
+extern void xpmem_add_domid_link(struct xpmem_partition_state *,
+        xpmem_domid_t, xpmem_link_t);
+extern xpmem_link_t xpmem_get_domid_link(struct xpmem_partition_state *,
+        xpmem_domid_t);
+extern void xpmem_remove_domid_link(struct xpmem_partition_state *,
+        xpmem_domid_t);
+extern xpmem_link_t xpmem_add_local_connection(
+    void *,
+    int (*)(struct xpmem_cmd_ex *,  void *),
+    int (*)(int, void *),
+    void (*)(void *));
+
 /* found in xpmem_domain.c */
 extern xpmem_link_t xpmem_domain_init(void);
 extern int xpmem_domain_deinit(xpmem_link_t);
@@ -525,6 +576,7 @@ extern void xpmem_ns_kill_domain(struct xpmem_partition_state *, xpmem_domid_t);
 extern int xpmem_fwd_init(struct xpmem_partition_state *);
 extern int xpmem_fwd_deinit(struct xpmem_partition_state *);
 extern int xpmem_fwd_deliver_cmd(struct xpmem_partition_state *, xpmem_link_t, struct xpmem_cmd_ex *);
+extern xpmem_domid_t xpmem_fwd_get_domid(struct xpmem_partition_state *);
 
 /* found in xpmem_palacios.c */
 extern int xpmem_palacios_init(struct xpmem_partition *);
@@ -547,9 +599,44 @@ extern int  (*linux_create_irq)(void);
 extern void (*linux_destroy_irq)(unsigned int);
 #endif
 
-
-
-
+static inline char *
+xpmem_cmd_to_string(xpmem_op_t op) 
+{
+    switch (op) {
+        case XPMEM_MAKE:
+            return "XPMEM_MAKE";
+        case XPMEM_REMOVE:
+            return "XPMEM_REMOVE";
+        case XPMEM_GET:
+            return "XPMEM_GET";
+        case XPMEM_RELEASE:
+            return "XPMEM_RELEASE";
+        case XPMEM_ATTACH:
+            return "XPMEM_ATTACH";
+        case XPMEM_DETACH:
+            return "XPMEM_DETACH";
+        case XPMEM_MAKE_COMPLETE:
+            return "XPMEM_MAKE_COMPLETE";
+        case XPMEM_REMOVE_COMPLETE:
+            return "XPMEM_REMOVE_COMPLETE";
+        case XPMEM_GET_COMPLETE:
+            return "XPMEM_GET_COMPLETE";
+        case XPMEM_RELEASE_COMPLETE:
+            return "XPMEM_RELEASE_COMPLETE";
+        case XPMEM_ATTACH_COMPLETE:
+            return "XPMEM_ATTACH_COMPLETE";
+        case XPMEM_DETACH_COMPLETE:
+            return "XPMEM_DETACH_COMPLETE";
+        case XPMEM_DOMID_REQUEST:
+            return "XPMEM_DOMID_REQUEST";
+        case XPMEM_DOMID_RESPONSE:
+            return "XPMEM_DOMID_RESPONSE";
+        case XPMEM_DOMID_RELEASE:
+            return "XPMEM_DOMID_RELEASE";
+        default:
+            return "UNKNOWN";
+    }
+}
 
 /*
  * Inlines that mark an internal driver structure as being destroyable or not.

@@ -9,6 +9,7 @@
 
 int main(int argc, char ** argv) {
     int * addr;
+    int flags;
     xpmem_segid_t segid = 0;
     long num_pages;
 
@@ -29,12 +30,23 @@ int main(int argc, char ** argv) {
     }
 
     if (segid > 0) {
-        segid = xpmem_make((void *)addr, PAGE_SIZE * num_pages, XPMEM_REQUEST_MODE, (void *)segid);
-    } else {
-        segid = xpmem_make((void *)addr, PAGE_SIZE * num_pages, XPMEM_PERMIT_MODE, (void *)0600);
+        flags = XPMEM_REQUEST_MODE;
+    } 
+/*
+    else {
+        flags = XPMEM_MEM_MODE;
     }
+*/
+    segid = xpmem_make_hobbes((void *)addr, PAGE_SIZE * num_pages, 
+            XPMEM_PERMIT_MODE, (void *)0600,
+            flags, segid, NULL);
 
+/*    segid = xpmem_make((void *)addr, PAGE_SIZE * num_pages, 
+            XPMEM_PERMIT_MODE, (void *)0666);
+*/
     printf("segid: %lli\n", segid);
+
+    sleep(10);
 
     if (segid <= 0) {
         printf("Cannot allocate segid\n");

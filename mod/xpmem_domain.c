@@ -976,8 +976,7 @@ xpmem_domain_init(void)
     spin_lock_init(&(state->lock));
     init_request_map(state);
 
-    state->link = xpmem_add_connection(
-            XPMEM_CONN_LOCAL,
+    state->link = xpmem_add_local_connection(
             (void *)state,
             xpmem_cmd_fn,
             NULL,

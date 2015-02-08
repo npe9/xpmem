@@ -212,7 +212,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
          * was created locally by creating a "shadow" segment ourselves
          */
         seg_tg = xpmem_tg_ref_by_tgid(current->tgid);
-        xpmem_make_segment(0, remote_size, permit_type, permit_value, seg_tg, segid);
+        xpmem_make_segment(0, remote_size, permit_type, permit_value, 0, seg_tg, segid);
     }
 
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);

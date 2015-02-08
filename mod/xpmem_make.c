@@ -24,20 +24,20 @@ xpmem_make_segid(struct xpmem_thread_group *seg_tg, xpmem_segid_t request)
 {
     struct xpmem_id segid;
     xpmem_segid_t *segid_p = (xpmem_segid_t *)&segid;
+    int ret;
 
     DBUG_ON(sizeof(struct xpmem_id) != sizeof(xpmem_segid_t));
 
     *segid_p = 0;
 
     /* If there's no explicit request, the tgid is encoded directly in the segid */
-    if (request == 0) {
+    if (request == 0)
         segid.tgid = seg_tg->tgid;
-    }
 
     /* Allocate a segid from the nameserver */
-    if (xpmem_make_remote(xpmem_my_part->domain_link, request, segid_p) != 0) {
-        return -1;
-    }
+    ret = xpmem_make_remote(xpmem_my_part->domain_link, request, segid_p);
+    if (ret != 0)
+        return ret;
 
     return *segid_p;
 }
@@ -47,6 +47,7 @@ xpmem_make_segment(u64                         vaddr,
                    size_t                      size, 
                    int                         permit_type,
                    void                      * permit_value,
+                   int                         flags,
                    struct xpmem_thread_group * seg_tg,
                    xpmem_segid_t               segid)
 {
@@ -95,22 +96,42 @@ xpmem_make_segment(u64                         vaddr,
  * Make a segid and segment for the specified address segment.
  */
 int
-xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, xpmem_segid_t *segid_p)
+xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, int flags,
+        xpmem_segid_t request, xpmem_segid_t *segid_p, int *fd_p)
 {
-    xpmem_segid_t segid, request = 0;
+    xpmem_segid_t segid;
     struct xpmem_thread_group *seg_tg;
     int status;
 
-    if (permit_type == XPMEM_REQUEST_MODE) {
-        request = (xpmem_segid_t)permit_value;
+    if (permit_type != XPMEM_PERMIT_MODE ||
+        ((u64)permit_value & ~00777)) 
+    {
+        return -EINVAL;
+    }
 
+#if 0
+
+    if (flags & XPMEM_MEM_MODE) {
+        /* MEM_MODE means size must be greater than 0 */
+        if (size <= 0) {
+            return -EINVAL;
+        }
+    } else {
+        /* SIG_MODE w/o MEM_MODE means size must be 0 */
+        if (!(flags & XPMEM_SIG_MODE) ||
+             (size != 0)) 
+        {
+            return -EINVAL;
+        }
+    }
+#endif
+
+    if (flags & XPMEM_REQUEST_MODE) {
         if (request <= 0 || request > XPMEM_MAX_WK_SEGID) {
             return -EINVAL;
         }
-
-    } else if (permit_type != XPMEM_PERMIT_MODE ||
-        ((u64)permit_value & ~00777) || size == 0) {
-        return -EINVAL;
+    } else {
+        request = 0;
     }
 
     seg_tg = xpmem_tg_ref_by_tgid(current->tgid);
@@ -142,7 +163,8 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, xpmem_se
         return segid;
     }
 
-    status = xpmem_make_segment(vaddr, size, permit_type, permit_value, seg_tg, segid);
+
+    status = xpmem_make_segment(vaddr, size, permit_type, permit_value, flags, seg_tg, segid);
 
     if (status == 0) {
         *segid_p = segid;

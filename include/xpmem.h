@@ -28,6 +28,7 @@
  */
 typedef __s64 xpmem_segid_t;    /* segid returned from xpmem_make() */
 typedef __s64 xpmem_apid_t; /* apid returned from xpmem_get() */
+typedef __s64 xpmem_domid_t;
 
 
 struct xpmem_addr {
@@ -42,7 +43,6 @@ struct xpmem_addr {
  * path to XPMEM device
  */
 #define XPMEM_DEV_PATH  "/dev/xpmem"
-#define XPMEM_KITTEN_PATH  "/xpmem"
 
 /*
  * The following are the possible XPMEM related errors.
@@ -53,7 +53,7 @@ struct xpmem_addr {
  * flags for segment permissions
  */
 #define XPMEM_RDONLY    0x1
-#define XPMEM_RDWR  0x2
+#define XPMEM_RDWR      0x2
 
 /*
  * Valid permit_type values for xpmem_make()/xpmem_get().
@@ -75,6 +75,7 @@ struct xpmem_addr {
 #define XPMEM_CMD_DETACH    _IO(XPMEM_IOC_MAGIC, 7)
 #define XPMEM_CMD_FORK_BEGIN    _IO(XPMEM_IOC_MAGIC, 8)
 #define XPMEM_CMD_FORK_END  _IO(XPMEM_IOC_MAGIC, 9)
+#define XPMEM_CMD_GET_DOMID _IO(XPMEM_IOC_MAGIC, 10)
 
 /*
  * Structures used with the preceding ioctl() commands to pass data.
@@ -118,9 +119,14 @@ struct xpmem_cmd_detach {
     __u64 vaddr;
 };
 
+struct xpmem_cmd_domid {
+    xpmem_domid_t domid;
+};
+
 #ifndef __KERNEL__
 extern int xpmem_version(void);
 extern xpmem_segid_t xpmem_make(void *, size_t, int, void *);
+extern xpmem_segid_t xpmem_make_hobbes(void *, size_t, int, void *, int, xpmem_segid_t, int *);
 extern xpmem_segid_t xpmem_search(char *, size_t);
 extern int xpmem_remove(xpmem_segid_t);
 extern xpmem_apid_t xpmem_get(xpmem_segid_t, int, int, void *);

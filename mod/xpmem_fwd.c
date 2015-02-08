@@ -8,46 +8,33 @@
  */
 
 
-#include <linux/module.h>
 #include <linux/list.h>
-#include <linux/kthread.h>
-#include <linux/delay.h>
+#include <linux/wait.h>
 
-#include <asm/uaccess.h>
 
-#include <xpmem.h>
 #include <xpmem_private.h>
-#include <xpmem_extended.h>
-#include <xpmem_iface.h>
-
-
-#define PING_PERIOD       10
 
 struct xpmem_fwd_state {
     /* Lock for fwd state */
-    spinlock_t                     lock;
+    spinlock_t        lock;
     
-    /* "Upstream" link to the nameserver */
-    xpmem_link_t                   ns_link; 
-
     /* Have we requested a domid */
-    int                            domid_requested;
+    int               domid_requested;
+    volatile int      domid_received;
+
+    /* Our partition's domid */
+    xpmem_domid_t     domid;
+
+    /* "Upstream" link to the nameserver */
+    xpmem_link_t      ns_link; 
 
     /* list of outstanding domid requests for this domain. Requests that cannot
      * be immediately serviced are put on this list
      */
-    struct list_head               domid_req_list;
+    struct list_head  domid_req_list;
 
-    /* kernel thread sending XPMEM pings */
-    struct task_struct           * ping_thread;   
-    int                            ping_should_exit;
-
-    /* waitq for kernel thread */
-    wait_queue_head_t              ping_waitq;
-    int                            ping_condition;
-
-    /* timer for waking up ping_thread */
-    struct timer_list              ping_timer;
+    /* waitq for outstanding domid requests */
+    wait_queue_head_t domid_waitq;
 };
 
 
@@ -57,215 +44,116 @@ struct xpmem_domid_req_iter {
 };
 
 
-/* Ping all of the connections we have looking for the nameserver, skipping id
- * 'skip'
+/* Ping all of the connections with a domid request, skipping id 'skip'. Return 0
+ * if we sent at least one request
  */
-static void
-xpmem_ping_ns(struct xpmem_partition_state * part_state, 
-              xpmem_link_t                   skip)
+static int
+xpmem_request_domid(struct xpmem_partition_state * part) 
 {
-    struct xpmem_cmd_ex      ping_cmd;
+    struct xpmem_fwd_state * state = part->fwd_state;
+    xpmem_link_t             link  = 0;
+    int                      ret   = -ENOENT;
+    struct xpmem_cmd_ex      domid_cmd;
 
-    memset(&(ping_cmd), 0, sizeof(struct xpmem_cmd_ex));
+    memset(&(domid_cmd), 0, sizeof(struct xpmem_cmd_ex));
 
-    ping_cmd.type    = XPMEM_PING_NS;
-    ping_cmd.req_dom = -1;
-    ping_cmd.src_dom = -1;
-    ping_cmd.dst_dom = XPMEM_NS_DOMID;
+    domid_cmd.type    = XPMEM_DOMID_REQUEST;
+    domid_cmd.req_dom = -1;
+    domid_cmd.src_dom = -1;
+    domid_cmd.dst_dom = XPMEM_NS_DOMID;
 
+    spin_lock(&(state->lock));
     {
-        int i = 0;
-        for (i = 0; i < XPMEM_MAX_LINK; i++) {
-            xpmem_link_t search_id = (xpmem_link_t)i;
+        link = state->ns_link;
+    }
+    spin_unlock(&(state->lock));
 
-            if (search_id == skip) {
-                continue;
-            }
-
+    /* If we know how to get to the name server, send it there. Else, ping 
+     * each of our connections
+     */
+    if (link > 0) {
+        ret = xpmem_send_cmd_link(part, link, &domid_cmd);
+    } else {
+        for (link = 0; link < XPMEM_MAX_LINK; link++) {
             /* Don't PING the local domain */
-            if (search_id == part_state->local_link) {
+            if (link == part->local_link)
                 continue;
-            }
 
-            xpmem_send_cmd_link(part_state, search_id, &ping_cmd);
+            if (xpmem_send_cmd_link(part, link, &domid_cmd) == 0)
+                ret = 0;
         }
     }
+
+    return ret;
 }
 
-/* Pong all of the connections we have notifying path to the nameserver,
- * skipping id 'skip'
- */
+static xpmem_domid_t
+xpmem_wait_domid(struct xpmem_partition_state * part)
+{
+    struct xpmem_fwd_state * state = part->fwd_state;
+    xpmem_domid_t            domid = 0;
+
+    wait_event_interruptible(state->domid_waitq,
+            (state->domid_received == 1));
+    mb();
+
+    spin_lock(&(state->lock));
+    {
+        /* Return nonzero if we don't have a domid */
+        domid = state->domid;
+        state->domid_requested = 0;
+    }
+    spin_unlock(&(state->lock));
+
+    return domid;
+}
+
 static void
-xpmem_pong_ns(struct xpmem_partition_state * part_state,
-              xpmem_link_t                   skip)
+xpmem_wakeup_domid(struct xpmem_partition_state * part)
 {
-    struct xpmem_cmd_ex pong_cmd;
+    struct xpmem_fwd_state * state = part->fwd_state;
 
-    memset(&(pong_cmd), 0, sizeof(struct xpmem_cmd_ex));
+    state->domid_received = 1;
+    mb();
 
-    pong_cmd.type    = XPMEM_PONG_NS;
-    pong_cmd.req_dom = -1;
-    pong_cmd.src_dom = -1;
-    pong_cmd.dst_dom = -1;
-
-    {
-        int i = 0;
-        for (i = 0; i < XPMEM_MAX_LINK; i++) {
-            xpmem_link_t search_id = (xpmem_link_t)i;
-
-            if (search_id == skip) {
-                continue;
-            }
-
-            /* Don't PONG the local domain */
-            if (search_id == part_state->local_link) {
-                continue;
-            }
-
-            xpmem_send_cmd_link(part_state, search_id, &pong_cmd);
-        }
-    }
+    wake_up_interruptible(&(state->domid_waitq));
 }
 
 
-/* Do we have a link to the ns? */
+/* Process an XPMEM_DOMID_REQUEST/RESPONSE/RELEASE command */
 static int
-xpmem_have_ns_link(struct xpmem_fwd_state * fwd_state)
-{
-    int have_link = 0;
-
-    spin_lock(&(fwd_state->lock));
-    {
-        if (fwd_state->ns_link > 0) {
-            have_link = 1;
-        }
-    }
-    spin_unlock(&(fwd_state->lock));
-
-    return have_link;
-}
-
-
-/* Process an XPMEM_PING/PONG_NS command */
-static int
-xpmem_fwd_process_ping_cmd(struct xpmem_partition_state * part_state,
-                           xpmem_link_t                   link,
-                           struct xpmem_cmd_ex          * cmd)
-{
-    struct xpmem_fwd_state * fwd_state = part_state->fwd_state;
-
-    switch (cmd->type) {
-        case XPMEM_PING_NS: {
-            /* Do we know the way to the nameserver that is not through the link
-             * pinging us? If we do, respond with a PONG.
-             */
-            if (xpmem_have_ns_link(fwd_state)) {
-                /* Send PONG back to the source */
-                cmd->type = XPMEM_PONG_NS;
-
-                if (xpmem_send_cmd_link(part_state, link, cmd)) {
-                    XPMEM_ERR("Cannot send command on link %d", link);
-                    return -EFAULT;
-                }
-            }
-
-            break;
-        }
-
-        case XPMEM_PONG_NS: {
-            int req = 0;
-
-            /* We received a PONG. So, the nameserver can be found through this link */
-
-            /* Remember the link */
-            spin_lock(&(fwd_state->lock));
-            {
-                fwd_state->ns_link = link;
-
-                req = fwd_state->domid_requested;
-                if (req == 0) {
-                    fwd_state->domid_requested = 1;
-                }
-            }
-            spin_unlock(&(fwd_state->lock));
-
-            /* Update the domid map to remember this link */
-            xpmem_add_domid_link(part_state, XPMEM_NS_DOMID, link);
-
-            /* Broadcast the PONG to all our neighbors, except the source */
-            xpmem_pong_ns(part_state, link);
-
-            /* Have we requested a domid? */
-            if (req == 0) {
-                struct xpmem_cmd_ex domid_req;
-                memset(&(domid_req), 0, sizeof(struct xpmem_cmd_ex));
-
-                domid_req.type    = XPMEM_DOMID_REQUEST;
-                domid_req.req_dom = -1;
-                domid_req.src_dom = -1;
-                domid_req.dst_dom = XPMEM_NS_DOMID;
-
-                if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &domid_req)) {
-                    XPMEM_ERR("Cannot send command on link %d", fwd_state->ns_link);
-                    return -EFAULT;
-                }
-            }
-
-            break;
-        }
-
-        default: {
-            XPMEM_ERR("Unknown PING operation: %s", cmd_to_string(cmd->type));
-            return -EINVAL;
-        }
-    }
-
-    return 0;
-}
-
-/* Process an XPMEM_DOMID_REQUEST/RESPONSE command */
-static int
-xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
+xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part,
                             xpmem_link_t                   link,
                             struct xpmem_cmd_ex          * cmd)
 {
-    struct xpmem_fwd_state * fwd_state = part_state->fwd_state;
+    struct xpmem_fwd_state * state    = part->fwd_state;
 
     /* There's no reason not to reuse the input command struct for responses */
     struct xpmem_cmd_ex    * out_cmd  = cmd;
     xpmem_link_t             out_link = link;
+    int                      ret      = 0;
 
     switch (cmd->type) {
         case XPMEM_DOMID_REQUEST: {
             /* A domid is requested by someone downstream from us on link
-             * 'link'. If we can't reach the nameserver, just return failure,
-             * because the request should not come through us unless we have a
-             * route already
+             * 'link'. Remember the request and forward it
              */
-            if (!xpmem_have_ns_link(fwd_state)) {
-                return -1;
-            }
+            struct xpmem_domid_req_iter * iter = NULL;
 
-            /* Buffer the request */
+            iter = kmalloc(sizeof(struct xpmem_domid_req_iter), GFP_KERNEL);
+            if (iter == NULL)
+                return -ENOMEM;
+
+            iter->link = link;
+
+            spin_lock(&(state->lock));
             {
-                struct xpmem_domid_req_iter * iter = NULL;
-
-                iter = kmalloc(sizeof(struct xpmem_domid_req_iter), GFP_KERNEL);
-                if (!iter) {
-                    return -ENOMEM;
-                }
-
-                iter->link = link;
-
-                spin_lock(&(fwd_state->lock));
-                {
-                    list_add_tail(&(iter->node), &(fwd_state->domid_req_list));
-                }
-                spin_unlock(&(fwd_state->lock));
-
-                /* Forward request up to the nameserver */
-                out_link = fwd_state->ns_link;
+                list_add_tail(&(iter->node), &(state->domid_req_list));
             }
+            spin_unlock(&(state->lock));
+
+            /* Forward request up to the nameserver */
+            ret = xpmem_request_domid(part);
 
             break;
         }
@@ -276,71 +164,87 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part_state,
              * If our domain has no domid, take it for ourselves it.
              * Otherwise, assign it to a link that has requested a domid from us
              */
-             
-            if (part_state->domid <= 0) {
-                part_state->domid = cmd->domid_req.domid;
+            int forward = 1;
+            spin_lock(&(state->lock));
+            {
+                if (state->domid == -1) {
+                    /* Take the domid */
+                    state->domid = cmd->domid_req.domid;
 
-                /* Update the domid map to remember our own domid */
-                xpmem_add_domid_link(part_state, part_state->domid, part_state->local_link);
+                    /* Remember that this link is to the name server */
+                    state->ns_link = link;
 
+                    /* Update the domid map to remember the ns link */
+                    xpmem_add_domid_link(part, XPMEM_NS_DOMID, state->ns_link);
+
+                    /* Update the domid map to remember our own domid */
+                    xpmem_add_domid_link(part, state->domid, part->local_link);
+
+                    /* Wake up the wait queue */
+                    xpmem_wakeup_domid(part);
+
+                    forward = 0;
+                }
+            }
+            spin_unlock(&(state->lock));
+
+            if (forward == 0) {
+                /* We took the domid - no command to forward */
                 return 0;
             } else {
                 struct xpmem_domid_req_iter * iter = NULL;
 
-                if (list_empty(&(fwd_state->domid_req_list))) {
-                    XPMEM_ERR("We currently do not support the buffering of XPMEM domids");
-                    return -1;
-                }
-
-                spin_lock(&(fwd_state->lock));
+                spin_lock(&(state->lock));
                 {
-                    iter = list_first_entry(&(fwd_state->domid_req_list),
+                    if (list_empty(&(state->domid_req_list))) {
+                        XPMEM_ERR("We currently do not support the buffering of XPMEM domids");
+                        ret = -1;
+                    } else {
+                        iter = list_first_entry(&(state->domid_req_list),
                                 struct xpmem_domid_req_iter,
                                 node);
-                    list_del(&(iter->node));
+                        list_del(&(iter->node));
+                    }
                 }
-                spin_unlock(&(fwd_state->lock));
+                spin_unlock(&(state->lock));
 
-                /* Forward the domid to this link */
-                out_link = iter->link;
-                kfree(iter);
+                if (ret == 0) {
+                    /* Forward the domid to this link */
+                    out_link = iter->link;
+                    kfree(iter);
 
-                /* Update the domid map to remember who has this */
-                xpmem_add_domid_link(part_state, cmd->domid_req.domid, out_link);
+                    /* Update the domid map to remember who has this */
+                    xpmem_add_domid_link(part, cmd->domid_req.domid, out_link);
+                }
             }
 
             break;
         }
 
         case XPMEM_DOMID_RELEASE:
-            /* Someone downstream is releasing their domid */ 
-
-            /* Update the domid map to forget this link */
-            xpmem_remove_domid_link(part_state, cmd->domid_req.domid);
-
-             /* Forward to the namserver */
-            out_link = xpmem_get_domid_link(part_state, out_cmd->dst_dom);
+            /* Someone downstream is releasing their domid: simply forward to the
+             * namserver */
+            out_link = xpmem_get_domid_link(part, out_cmd->dst_dom);
 
             if (out_link == 0) {
-                XPMEM_ERR("Cannot find link for domid %lli", out_cmd->dst_dom);
+                XPMEM_ERR("Cannot find domid %lli", out_cmd->dst_dom);
                 return -EFAULT;
             }
 
             break;
 
         default: {
-            XPMEM_ERR("Unknown domid operation: %s", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown DOMID operation: %s", xpmem_cmd_to_string(cmd->type));
             return -EINVAL;
         }
     }
 
     /* Send the response */
-    if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
+    ret = xpmem_send_cmd_link(part, out_link, out_cmd);
+    if (ret != 0)
         XPMEM_ERR("Cannot send command on link %d", out_link);
-        return -EFAULT;
-    }
 
-    return 0;
+    return ret;
 }
 
 static void
@@ -411,28 +315,34 @@ xpmem_set_complete(struct xpmem_cmd_ex * cmd)
  * server already and have a domid
  */
 static int
-xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
-                           xpmem_link_t                    link,
-                           struct xpmem_cmd_ex           * cmd)
+xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part,
+                            xpmem_link_t                   link,
+                            struct xpmem_cmd_ex          * cmd)
 {
     /* There's no reason not to reuse the input command struct for responses */
     struct xpmem_cmd_ex * out_cmd  = cmd;
     xpmem_link_t          out_link = link;
+    int ret = 0;
 
-    /* If we don't have a domid, we need to fail */
-    if (part_state->domid <= 0) {
-        XPMEM_ERR("This domain has no XPMEM domid. Are you running the nameserver anywhere?");
+    spin_lock(&(part->fwd_state->lock));
+    {
+        if (part->fwd_state->domid == -1)
+            ret = -ENOENT;
+    }
+    spin_unlock(&(part->fwd_state->lock));
+
+    if (ret != 0) {
+        XPMEM_ERR("This domain has no XPMEM domid. Are you running the name server anywhere?");
 
         xpmem_set_failure(out_cmd);
         xpmem_set_complete(out_cmd);
 
-        if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
+        if (xpmem_send_cmd_link(part, out_link, out_cmd))
             XPMEM_ERR("Cannot send command on link %d", out_link);
-        }
 
-        return -EFAULT;
+        return ret;
     }
-    
+
     switch (cmd->type) {
         case XPMEM_MAKE:
         case XPMEM_REMOVE:
@@ -445,198 +355,94 @@ xpmem_fwd_process_xpmem_cmd(struct xpmem_partition_state * part_state,
         case XPMEM_GET_COMPLETE:
         case XPMEM_RELEASE_COMPLETE:
         case XPMEM_ATTACH_COMPLETE:
-        case XPMEM_DETACH_COMPLETE:
+        case XPMEM_DETACH_COMPLETE: {
 
-            out_link = xpmem_get_domid_link(part_state, out_cmd->dst_dom);
+            out_link = xpmem_get_domid_link(part, out_cmd->dst_dom);
 
             if (out_link == 0) {
-                XPMEM_ERR("Cannot find link for domid %lli", out_cmd->dst_dom);
+                XPMEM_ERR("Cannot find domid %lli", out_cmd->dst_dom);
                 return -EINVAL;
             }
 
             break;
+        }
 
-        default: 
-            XPMEM_ERR("Unknown operation: %s", cmd_to_string(cmd->type));
+        default: {
+            XPMEM_ERR("Unknown operation: %s", xpmem_cmd_to_string(cmd->type));
             return -EINVAL;
+        }
     }
 
     /* Write the response */
-    if (xpmem_send_cmd_link(part_state, out_link, out_cmd)) {
+    ret = xpmem_send_cmd_link(part, out_link, out_cmd);
+    if (ret != 0)
         XPMEM_ERR("Cannot send command on link %d", out_link);
-        return -EFAULT;
-    }
 
-    return 0;
+    return ret;
 }
 
 
-
-static void 
-prepare_domids(struct xpmem_partition_state * part_state,
+static void
+prepare_domids(struct xpmem_partition_state * part,
                xpmem_link_t                   link,
                struct xpmem_cmd_ex          * cmd)
 {
-    /* If the source is local, we need to setup the domids for routing - otherwise we just
-     * forward to what's already been set
-     */
-    if (link == part_state->local_link) {
+    struct xpmem_fwd_state * state = part->fwd_state;
+
+    if (part->local_link == link) {
         if (cmd->req_dom == 0) {
             /* The request is being generated here: set the req domid */
-            cmd->req_dom = part_state->domid;
-        } 
+            cmd->req_dom = state->domid;
+        }
 
-        /* Route to the NS */
-        cmd->src_dom = part_state->domid;
+        /* TODO: if the dst_dom is already set (i.e., we decide to push domid
+         * knowledge to user space) this will have to change
+         *
+         * For now, route to the NS
+         */
+        cmd->src_dom = state->domid;
         cmd->dst_dom = XPMEM_NS_DOMID;
     }
 }
 
 int
-xpmem_fwd_deliver_cmd(struct xpmem_partition_state * part_state,
+xpmem_fwd_deliver_cmd(struct xpmem_partition_state * part,
                       xpmem_link_t                   link,
                       struct xpmem_cmd_ex          * cmd)
 {
-
     /* Prepare the domids for routing, if necessary */
-    prepare_domids(part_state, link, cmd);
+    prepare_domids(part, link, cmd);
 
     switch (cmd->type) {
-        case XPMEM_PING_NS:
-        case XPMEM_PONG_NS:
-            return xpmem_fwd_process_ping_cmd(part_state, link, cmd);
-
         case XPMEM_DOMID_REQUEST:
         case XPMEM_DOMID_RESPONSE:
         case XPMEM_DOMID_RELEASE:
-            return xpmem_fwd_process_domid_cmd(part_state, link, cmd);
+            return xpmem_fwd_process_domid_cmd(part, link, cmd);
 
         default:
-            return xpmem_fwd_process_xpmem_cmd(part_state, link, cmd);
+            return xpmem_fwd_process_xpmem_cmd(part, link, cmd);
     }
-}
-
-
-
-/*
- * Kernel thread for pinging the name server
- *
- * The current policy is to ping periodically (every PING_PERIOD seconds) until
- * the name server is found
- */
-static int
-xpmem_ping_fn(void * private)
-{
-    struct xpmem_partition_state * part_state = (struct xpmem_partition_state *)private;
-    struct xpmem_fwd_state       * fwd_state  = NULL;
-
-    fwd_state = part_state->fwd_state;
-
-    while (1) {
-
-        /* Wait on waitq  */
-        wait_event_interruptible(fwd_state->ping_waitq, 
-            ((fwd_state->ping_condition   == 1) ||
-             (fwd_state->ping_should_exit == 1))
-        );    
-
-        /* Exit criteria */
-        if (fwd_state->ping_should_exit) {
-            break;
-        }
-
-        /* Reset condition */
-        fwd_state->ping_condition = 0;
-        mb();
-
-        /* If we have a link, we die */
-        if (xpmem_have_ns_link(fwd_state)) {
-            break;
-        }
-
-        /* Send a PING */
-        xpmem_ping_ns(part_state, 0);
-
-        /* Restart timer */
-        mod_timer(&(fwd_state->ping_timer), jiffies + (HZ * PING_PERIOD));
-    }
-
-    /* Wait on waitq for exit signal */
-    wait_event_interruptible(fwd_state->ping_waitq, 
-         (fwd_state->ping_should_exit == 1)
-    );    
-
-    return 0;
-}
-
-/* 
- * Ping timer
- */
-static void
-xpmem_ping_timer_fn(unsigned long data)
-{
-    struct xpmem_partition_state * part_state = (struct xpmem_partition_state *)data;
-    struct xpmem_fwd_state       * fwd_state  = part_state->fwd_state;
-
-    /* Wakeup waitq */
-    fwd_state->ping_condition = 1;
-    mb();
-
-    wake_up_interruptible(&(fwd_state->ping_waitq));
 }
 
 
 int
-xpmem_fwd_init(struct xpmem_partition_state * part_state)
+xpmem_fwd_init(struct xpmem_partition_state * part)
 {
-    struct xpmem_fwd_state * fwd_state = kmalloc(sizeof(struct xpmem_fwd_state), GFP_KERNEL);
-    if (!fwd_state) {
-        return -1;
-    }
+    struct xpmem_fwd_state * state = kmalloc(sizeof(struct xpmem_fwd_state), GFP_KERNEL);
+    if (state == NULL) 
+        return -ENOMEM;
 
-    /* Save partition state pointer */
-    part_state->fwd_state = fwd_state;
+    spin_lock_init(&(state->lock));
+    INIT_LIST_HEAD(&(state->domid_req_list));
+    init_waitqueue_head(&(state->domid_waitq));
 
-    spin_lock_init(&(fwd_state->lock));
-    INIT_LIST_HEAD(&(fwd_state->domid_req_list));
+    state->ns_link         = -1;
+    state->domid_requested = 0;
+    state->domid_received  = 0;
+    state->domid           = -1;
 
-    fwd_state->ns_link         = -1;
-    fwd_state->domid_requested = 0;
-
-    /* Ping thread waitqueue */
-    init_waitqueue_head(&(fwd_state->ping_waitq));
-
-    /* Waitqueue condition */
-    fwd_state->ping_condition   = 0;
-    fwd_state->ping_should_exit = 0;
-    mb();
-
-    /* Set up the ping thread */
-    fwd_state->ping_thread = kthread_create(
-            xpmem_ping_fn,
-            part_state,
-            "xpmem-ping"
-    );
-
-    if (fwd_state->ping_thread == NULL) {
-        XPMEM_ERR("Cannot create kernel thread");
-        kfree(fwd_state);
-        return -1;
-    }
-
-    /* Start it */
-    wake_up_process(fwd_state->ping_thread);
-
-    /* Create timer */
-    init_timer(&(fwd_state->ping_timer));
-
-    /* Set it up */
-    fwd_state->ping_timer.expires  = jiffies + HZ;
-    fwd_state->ping_timer.function = xpmem_ping_timer_fn;
-    fwd_state->ping_timer.data     = (unsigned long)part_state;
-
-    /* Start the timer */
-    add_timer(&(fwd_state->ping_timer));
+    /* Save state pointer */
+    part->fwd_state = state;
 
     printk("XPMEM forwarding service initialized\n");
 
@@ -644,51 +450,96 @@ xpmem_fwd_init(struct xpmem_partition_state * part_state)
 }
 
 int
-xpmem_fwd_deinit(struct xpmem_partition_state * part_state)
+xpmem_fwd_deinit(struct xpmem_partition_state * part)
 {
-    struct xpmem_fwd_state * fwd_state = part_state->fwd_state;
+    struct xpmem_fwd_state * state   = part->fwd_state;
+    xpmem_domid_t            domid   = -1;
+    int                      release = 0;
 
-    /* Kill timer */
-    del_timer_sync(&(fwd_state->ping_timer));
+    spin_lock(&(state->lock));
+    {
+        if (state->domid > 0) {
+            release = 1;
+            domid   = state->domid;
+        }
 
-    /* Stop kernel thread, if it's running */
-    fwd_state->ping_should_exit = 1;
-    mb();
+        /* Clear the domid */
+        state->domid = -1;
 
-    wake_up_interruptible(&(fwd_state->ping_waitq));
+        /* Wake up all wait queue waiters */
+        xpmem_wakeup_domid(part);
+    }
+    spin_unlock(&(state->lock));
 
     /* Send a domid release, if we have one */
-    if (part_state->domid > 0) {
+    if (release) {
         struct xpmem_cmd_ex dom_cmd;
 
         memset(&(dom_cmd), 0, sizeof(struct xpmem_cmd_ex));
 
-        dom_cmd.type            = XPMEM_DOMID_RELEASE;
-        dom_cmd.req_dom         = part_state->domid;
-        dom_cmd.src_dom         = part_state->domid;
-        dom_cmd.dst_dom         = XPMEM_NS_DOMID;
-        dom_cmd.domid_req.domid = part_state->domid;
+        dom_cmd.type        = XPMEM_DOMID_RELEASE;
+        dom_cmd.req_dom     = domid;
+        dom_cmd.src_dom     = domid;
+        dom_cmd.dst_dom     = XPMEM_NS_DOMID;
+        dom_cmd.domid_req.domid = domid;
 
-        if (xpmem_send_cmd_link(part_state, fwd_state->ns_link, &dom_cmd)) {
-            XPMEM_ERR("Cannot send DOMID_RELEASE on link %d", fwd_state->ns_link);
+        if (xpmem_send_cmd_link(part, state->ns_link, &dom_cmd)) {
+            XPMEM_ERR("Cannot send DOMID_RELEASE on link %d", state->ns_link);
         }
     }
 
     /* Delete domid cmd list */
+    spin_lock(&(state->lock));
     {
         struct xpmem_domid_req_iter * iter = NULL;
         struct xpmem_domid_req_iter * next = NULL;
 
-        list_for_each_entry_safe(iter, next, &(fwd_state->domid_req_list), node) {
+        list_for_each_entry_safe(iter, next, &(state->domid_req_list), node) {
             list_del(&(iter->node));
             kfree(iter);
         }
     }
+    spin_unlock(&(state->lock));
 
-    kfree(fwd_state);
-    part_state->fwd_state = NULL;
+    kfree(state);
+    part->fwd_state = NULL;
 
     printk("XPMEM forwarding service deinitialized\n");
 
     return 0;
+}
+
+xpmem_domid_t
+xpmem_fwd_get_domid(struct xpmem_partition_state * part)
+{
+    struct xpmem_fwd_state * state = part->fwd_state;
+    xpmem_domid_t            domid = 0;
+
+    int request = 0;
+    int wait    = 0;
+    int ret     = 0;
+
+    spin_lock(&(state->lock));
+    {
+        domid = state->domid;
+
+        if (domid == -1) {
+            wait = 1;
+
+            if (state->domid_requested == 0) {
+                request = 1;
+                state->domid_received  = 0; 
+                state->domid_requested = 1;
+            }
+        }
+    }
+    spin_unlock(&(state->lock));
+
+    if (request)
+        ret = xpmem_request_domid(part);
+
+    if ((ret == 0) && wait)
+        domid = xpmem_wait_domid(part);
+
+    return domid;
 }

@@ -9,22 +9,13 @@
 
 
 #include <linux/module.h>
-#include <linux/kthread.h>
-#include <linux/timer.h>
-#include <linux/delay.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 
-#include <asm/uaccess.h>
-
-#include <xpmem.h>
-#include <xpmem_iface.h>
-#include <xpmem_extended.h>
 #include <xpmem_private.h>
 #include <xpmem_hashtable.h>
 
 extern struct proc_dir_entry * xpmem_proc_dir;
-
 
 /* Name server state */
 struct xpmem_ns_state {
@@ -764,7 +755,7 @@ xpmem_ns_process_ping_cmd(struct xpmem_partition_state * part_state,
         }
 
         default: {
-            XPMEM_ERR("Unknown PING operation: %s", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown PING operation: %s", xpmem_cmd_to_string(cmd->type));
             return -EINVAL;
         }
     }
@@ -813,7 +804,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
             out_domid_req:
             {
                 out_cmd->type    = XPMEM_DOMID_RESPONSE;
-                out_cmd->src_dom = part_state->domid;
+                out_cmd->src_dom = XPMEM_NS_DOMID;
             }
 
             break;
@@ -838,7 +829,7 @@ xpmem_ns_process_domid_cmd(struct xpmem_partition_state * part_state,
             return 0;
         }
         default: {
-            XPMEM_ERR("Unknown domid operation: %s", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown domid operation: %s", xpmem_cmd_to_string(cmd->type));
             return -EINVAL;
         }
     }
@@ -882,7 +873,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
             out_cmd->type    = XPMEM_MAKE_COMPLETE;
             out_cmd->dst_dom = cmd->src_dom;
-            out_cmd->src_dom = part_state->domid;
+            out_cmd->src_dom = XPMEM_NS_DOMID;
 
             break;
         }
@@ -895,7 +886,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
             out_cmd->type    = XPMEM_REMOVE_COMPLETE;
             out_cmd->dst_dom = cmd->src_dom;
-            out_cmd->src_dom = part_state->domid;
+            out_cmd->src_dom = XPMEM_NS_DOMID;
 
             break;
         }
@@ -931,7 +922,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
                 out_cmd->get.apid = -1;
                 out_cmd->type     = XPMEM_GET_COMPLETE;
                 out_cmd->dst_dom  = cmd->src_dom;
-                out_cmd->src_dom  = part_state->domid;
+                out_cmd->src_dom  = XPMEM_NS_DOMID;
                 out_link          = link;
             }
 
@@ -979,7 +970,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             {
                 out_cmd->type    = XPMEM_RELEASE_COMPLETE;
                 out_cmd->dst_dom = cmd->src_dom;
-                out_cmd->src_dom = part_state->domid;
+                out_cmd->src_dom = XPMEM_NS_DOMID;
                 out_link         = link;
             }
 
@@ -1024,7 +1015,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             {
                 out_cmd->type    = XPMEM_ATTACH_COMPLETE;
                 out_cmd->dst_dom = cmd->src_dom;
-                out_cmd->src_dom = part_state->domid;
+                out_cmd->src_dom = XPMEM_NS_DOMID;
                 out_link         = link;
             }
 
@@ -1036,7 +1027,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             {
                 out_cmd->type    = XPMEM_DETACH_COMPLETE;
                 out_cmd->dst_dom = cmd->src_dom;
-                out_cmd->src_dom = part_state->domid;
+                out_cmd->src_dom = XPMEM_NS_DOMID;
                 out_link         = link;
             }
 
@@ -1066,7 +1057,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
             out_link = xpmem_get_domid_link(part_state, cmd->dst_dom);
 
             if (out_link == 0) {
-                XPMEM_ERR("Cannot find domid %lli in hashtable", cmd->dst_dom);
+                XPMEM_ERR("Cannot find domid %lli", cmd->dst_dom);
                 return -EFAULT;
             }
 
@@ -1075,7 +1066,7 @@ xpmem_ns_process_xpmem_cmd(struct xpmem_partition_state * part_state,
 
 
         default: {
-            XPMEM_ERR("Unknown operation: %s", cmd_to_string(cmd->type));
+            XPMEM_ERR("Unknown operation: %s", xpmem_cmd_to_string(cmd->type));
             return -EINVAL;
         }
     }
@@ -1102,11 +1093,11 @@ prepare_domids(struct xpmem_partition_state * part_state,
     if (link == part_state->local_link) {
         if (cmd->req_dom == 0) {
             /* The request is being generated here: set the req domid */
-            cmd->req_dom = part_state->domid;
+            cmd->req_dom = XPMEM_NS_DOMID;
         }
 
         /* Route to the NS - trivially */
-        cmd->src_dom = part_state->domid;
+        cmd->src_dom = XPMEM_NS_DOMID;
         cmd->dst_dom = XPMEM_NS_DOMID;
     }
 }
@@ -1246,7 +1237,6 @@ xpmem_ns_init(struct xpmem_partition_state * part_state)
     INIT_LIST_HEAD(&(ns_state->segid_free_list));
 
     /* Name server partition has a well-known domid */
-    part_state->domid    = XPMEM_NS_DOMID;
     part_state->ns_state = ns_state;
 
     /* Populate segid list */

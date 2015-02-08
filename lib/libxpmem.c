@@ -32,9 +32,11 @@ static int xpmem_fd = -1;
  */
 int xpmem_init(void)
 {
-	struct stat stb;
-
-/*	if (stat(XPMEM_DEV_PATH, &stb) != 0 ||
+    int ret;
+    struct xpmem_cmd_domid domid_info;
+    /*	
+        struct stat stb;
+      	if (stat(XPMEM_DEV_PATH, &stb) != 0 ||
 	    !S_ISCHR(stb.st_mode) ||
 	    (xpmem_fd = open(XPMEM_DEV_PATH, O_RDWR)) == -1 ||
 	    fcntl(xpmem_fd, F_SETFD, FD_CLOEXEC) == -1) {
@@ -44,6 +46,14 @@ int xpmem_init(void)
     xpmem_fd = open(XPMEM_DEV_PATH, O_RDWR);
     if (xpmem_fd == -1)
         return -1;
+
+    /* make sure we have a domid */
+    ret = ioctl(xpmem_fd, XPMEM_CMD_GET_DOMID, &domid_info);
+    if (ret < 0 || domid_info.domid < 0) {
+        close(xpmem_fd);
+        xpmem_fd = -1;
+        return -1;
+    }
 
     return 0;
 }
@@ -67,6 +77,7 @@ int xpmem_ioctl(int cmd, void *arg)
 	int ret;
 	if (xpmem_fd == -1 && xpmem_init() != 0)
 		return -1;
+
 	ret = ioctl(xpmem_fd, cmd, arg);
 	/**
 	 * A child process that never opened the XPMEM device, but inherits
@@ -96,19 +107,32 @@ int xpmem_ioctl(int cmd, void *arg)
  *	Success: 64-bit segment ID (xpmem_segid_t)
  *	Failure: -1
  */
-xpmem_segid_t xpmem_make(void *vaddr, size_t size, int permit_type,
-			 void *permit_value)
+xpmem_segid_t xpmem_make_hobbes(void *vaddr, size_t size, int permit_type,
+            void *permit_value, int flags, xpmem_segid_t request, int * fd)
 {
 	struct xpmem_cmd_make make_info;
 
 	make_info.vaddr = (__u64)vaddr;
 	make_info.size  = size;
-    make_info.flags = 0;
 	make_info.permit_type  = permit_type;
 	make_info.permit_value = (__s64)permit_value;
+    make_info.flags = flags;
+    make_info.segid = request;
+
 	if (xpmem_ioctl(XPMEM_CMD_MAKE, &make_info) == -1 || !make_info.segid)
 		return -1;
+
+    /*if (flags & XPMEM_SIG_MODE)
+        *fd = make_info.fd;
+*/
 	return make_info.segid;
+}
+
+xpmem_segid_t xpmem_make(void *vaddr, size_t size, int permit_type,
+			 void *permit_value)
+{
+    return xpmem_make_hobbes(vaddr, size, permit_type, permit_value, 
+        0, 0, NULL);
 }
 
 /**

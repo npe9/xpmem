@@ -18,8 +18,6 @@
 
 #include <xpmem.h>
 #include <xpmem_private.h>
-#include <xpmem_partition.h>
-#include <xpmem_extended.h>
 #include <xpmem_iface.h>
 
 #define XPMEM_VENDOR_ID     0xfff0
@@ -372,7 +370,6 @@ xpmem_probe_driver(struct pci_dev             * dev,
 
     /* Add connection to name/forwarding service */
     palacios_state->link = xpmem_add_connection(
-            XPMEM_CONN_REMOTE,
             (void *)palacios_state,
             xpmem_cmd_fn, 
             NULL,
