@@ -122,9 +122,9 @@ xpmem_segid_t xpmem_make_hobbes(void *vaddr, size_t size, int permit_type,
 	if (xpmem_ioctl(XPMEM_CMD_MAKE, &make_info) == -1 || !make_info.segid)
 		return -1;
 
-    /*if (flags & XPMEM_SIG_MODE)
+    if (flags & XPMEM_SIG_MODE)
         *fd = make_info.fd;
-*/
+
 	return make_info.segid;
 }
 
@@ -132,7 +132,7 @@ xpmem_segid_t xpmem_make(void *vaddr, size_t size, int permit_type,
 			 void *permit_value)
 {
     return xpmem_make_hobbes(vaddr, size, permit_type, permit_value, 
-        0, 0, NULL);
+        XPMEM_MEM_MODE, 0, NULL);
 }
 
 /**

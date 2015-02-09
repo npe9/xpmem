@@ -109,22 +109,21 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, int flag
         return -EINVAL;
     }
 
-#if 0
 
+    /* BJK: sanity check xpmem_make_hobbes() stuff.
+       MEM_MODE: size must be greater than 0 
+       SIG_MODE AND NOT MEM_MODE: size must be 0
+       REQUEST_MODE: check segid in valid range
+     */
     if (flags & XPMEM_MEM_MODE) {
-        /* MEM_MODE means size must be greater than 0 */
         if (size <= 0) {
             return -EINVAL;
         }
-    } else {
-        /* SIG_MODE w/o MEM_MODE means size must be 0 */
-        if (!(flags & XPMEM_SIG_MODE) ||
-             (size != 0)) 
-        {
-            return -EINVAL;
-        }
+    } else if (!(flags & XPMEM_SIG_MODE)) {
+        return -EINVAL;
+    } else if (size != 0) {
+        return -EINVAL;
     }
-#endif
 
     if (flags & XPMEM_REQUEST_MODE) {
         if (request <= 0 || request > XPMEM_MAX_WK_SEGID) {
