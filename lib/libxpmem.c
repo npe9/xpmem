@@ -212,6 +212,29 @@ int xpmem_release(xpmem_apid_t apid)
 }
 
 /**
+ * xpmem_signal - send signal to the segment
+ * @apid: IN: 64-bit access permit ID to signal
+ * Description:
+ *  Send an interrupt (signal) to the segment refered to by
+ *  the access permit
+ * Context:
+ *  Called by the consumer process
+ * Return Value:
+ *  Success: 0
+ *  Failure: -1
+ */
+int xpmem_signal(xpmem_apid_t apid)
+{
+    struct xpmem_cmd_signal signal_info;
+
+    signal_info.apid = apid;
+    if (xpmem_ioctl(XPMEM_CMD_SIGNAL, &signal_info) == -1)
+        return -1;
+    return 0;
+}
+ 
+
+/**
  * xpmem_attach - map a source address to own address space
  * @addr: IN: a structure consisting of a xpmem_apid_t apid and an off_t offset
  * 	addr.apid: access permit ID returned from a previous xpmem_get() call
