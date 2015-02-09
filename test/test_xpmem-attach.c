@@ -13,20 +13,18 @@ int main(int argc, char ** argv) {
     xpmem_segid_t segid = DEFAULT_WK_SEGID;
     xpmem_apid_t apid;
     long num_pages;
+    int signalable;
 
-    if (argc < 2 || argc > 3) {
-        printf("Usage: %s <num_pages> [<segid>]\n", *argv);
+    if (argc != 4) {
+        printf("Usage: %s <num_pages> <signalable> <segid>\n", *argv);
         return -1;
     }
 
     num_pages = atol(*(++argv));
-
-    if (argc == 3) {
-        segid = atoll(*(++argv));
-    }
+    signalable = atoi(*(++argv));
+    segid = atoll(*(++argv));
 
     printf("segid: %lli, num_pages: %lu\n", segid, num_pages);
-
     apid = xpmem_get(segid, XPMEM_RDWR, XPMEM_PERMIT_MODE, NULL);
     printf("apid: %lli\n", apid);
 
@@ -39,6 +37,7 @@ int main(int argc, char ** argv) {
         struct xpmem_addr addr;
         void * vaddr, * vaddr2;
         int i;
+        int data;
 
         addr.apid = apid;
         addr.offset = 0;
@@ -52,19 +51,23 @@ int main(int argc, char ** argv) {
 
         printf("Attached to vaddr %p\n", vaddr);
 
-//       xpmem_detach(vaddr);
-//       xpmem_release(apid);
-
         for (i = 0; i < num_pages; i++) {
             vaddr2 = (vaddr + (PAGE_SIZE * i));
+            data   = *((int *)vaddr2);
+
             printf("vaddr2 (%p): %d\n",
                 (void * )vaddr2,
                 *((int *)vaddr2));
+
+            *((int *)vaddr2) = data + 10; 
+
+
         }
-
-        sleep(15);
-
         xpmem_detach(vaddr);
-        xpmem_release(apid);
     }
+
+    if (signalable) 
+        xpmem_signal(apid);
+
+    xpmem_release(apid);
 }

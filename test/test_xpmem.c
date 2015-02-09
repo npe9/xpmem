@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <poll.h>
 
 #include <xpmem.h>
 
@@ -9,52 +10,46 @@
 
 int main(int argc, char ** argv) {
     int * addr;
-    int flags;
+    int flags, signalable, fd, sec;
     xpmem_segid_t segid = 0;
     long num_pages;
 
-    if (argc < 2 || argc > 3) {
-        printf("Usage: %s <num_pages> [<well-known segid>]\n", *argv);
+    if (argc < 4 || argc > 5) {
+        printf("Usage: %s <num_pages> <signalable> <duration (s)> [<well-known segid>]\n", *argv);
         return -1;
     }
 
+    flags = XPMEM_MEM_MODE;
     num_pages = atol(*(++argv));
+    signalable = atoi(*(++argv));
+    sec = atoi(*(++argv));
 
-    if (argc == 3) {
+    if (argc == 5)
         segid = atoll(*(++argv));
-    }
+
+    if (segid > 0)
+        flags |= XPMEM_REQUEST_MODE;
+
+    if (signalable)
+        flags |= XPMEM_SIG_MODE;
 
     if (posix_memalign((void **)&addr, PAGE_SIZE, PAGE_SIZE * num_pages) != 0) {
         perror("posix_memalign");
         return -1;
     }
 
-    if (segid > 0) {
-        flags = XPMEM_REQUEST_MODE;
-    } 
-/*
-    else {
-        flags = XPMEM_MEM_MODE;
-    }
-*/
     segid = xpmem_make_hobbes((void *)addr, PAGE_SIZE * num_pages, 
             XPMEM_PERMIT_MODE, (void *)0600,
-            flags, segid, NULL);
+            flags, segid, &fd);
 
-/*    segid = xpmem_make((void *)addr, PAGE_SIZE * num_pages, 
-            XPMEM_PERMIT_MODE, (void *)0666);
-*/
+
     printf("segid: %lli\n", segid);
-
-    sleep(10);
 
     if (segid <= 0) {
         printf("Cannot allocate segid\n");
         return -1;
     } else {
         int i = 0;
-
-        sleep(5);
 
         for (i = 0; i < num_pages; i++) {
             void * addr2 = ((void *)addr + (PAGE_SIZE * i));
@@ -64,7 +59,37 @@ int main(int argc, char ** argv) {
         }
     }
 
-    sleep(5);
+    if (signalable) {
+        struct pollfd fds[1];
+        unsigned long irqs;
+        int status;
+
+        fds[0].fd = fd;
+        fds[0].events = POLLIN | POLLRDNORM;
+
+        while (1) {
+            printf("Polling fd %d\n", fd);
+
+            status = poll(fds, 1, -1);
+            printf("poll status = %d\n", status, irqs);
+
+            status = read(fd, &irqs, sizeof(unsigned long));
+            printf("read status = %d, outstanding irqs =%lu\n", status, irqs);
+        }
+
+    } else {
+        if (sec == -1) {
+           while (1)
+               sleep(1);
+        } else {
+            int i = 0;
+            for (i = 0; i < sec; i++) {
+                printf("exiting in %d seconds\n", sec - i);
+                sleep(1);
+            }
+        }
+    }
+
     xpmem_remove(segid);
 
     return 0;
