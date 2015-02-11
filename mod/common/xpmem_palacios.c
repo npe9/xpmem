@@ -464,31 +464,6 @@ xpmem_palacios_detach_paddr(xpmem_link_t link,
 
 
 int
-xpmem_request_irq(irqreturn_t (*callback)(int, void *),
-                  void      *  priv_data)
-{
-    int lirq  = 0;
-//    int                           hirq  = 0;
-
-    lirq = xpmem_request_local_irq(callback, priv_data);
-    if (lirq <= 0) {
-        return -1;
-    }
-
-    /* TODO: store lirq somewhere */
-
-    return lirq;
-}
-
-int
-xpmem_release_irq(int                            irq,
-                  void                         * priv_data)
-{
-    return 0;
-}
-
-
-int
 xpmem_palacios_init(struct xpmem_partition * partition) {
     struct xpmem_palacios_state * state  = NULL;
     int                           ret    = 0;

@@ -252,6 +252,13 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             (void)xpmem_remove(segid);
             return -EFAULT;
         }
+
+        if (put_user(fd,
+                &((struct xpmem_cmd_make __user *)arg)->fd)) {
+            (void)xpmem_remove(segid);
+            return -EFAULT;
+        }
+
         return 0;
     }
     case XPMEM_CMD_REMOVE: {
@@ -292,6 +299,15 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             return -EFAULT;
 
         return xpmem_release(release_info.apid);
+    }
+    case XPMEM_CMD_SIGNAL: {
+        struct xpmem_cmd_signal signal_info;
+
+        if (copy_from_user(&signal_info, (void __user *)arg,
+                  sizeof(struct xpmem_cmd_signal)))
+            return -EFAULT;
+
+        return xpmem_signal(signal_info.apid);
     }
     case XPMEM_CMD_ATTACH: {
         struct xpmem_cmd_attach attach_info;
@@ -339,6 +355,45 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
         return 0;
     }
+    /*
+    case XPMEM_CMD_MAKE_SIGNAL: {
+        struct xpmem_cmd_create_signal create_info;
+        xpmem_sigid_t sigid;
+
+        if (copy_from_user(&create_info, (void __user *)arg,
+                    sizeof(struct xpmem_cmd_create_signal)))
+            return -EFAULT;
+
+        ret = xpmem_make_signal(create_info.segid, &sigid);
+        if (ret != 0)
+            return ret;
+
+        if (put_user(sigid,
+                 &((struct xpmem_cmd_create_signal __user *)arg)->sigid)) {
+            (void)xpmem_remove_signal(create_info.segid);
+            return -EFAULT;
+        }
+        return 0;
+    }
+    case XPMEM_CMD_REMOVE_SIGNAL: {
+        struct xpmem_cmd_remove_signal remove_info;
+
+        if (copy_from_user(&remove_info, (void __user *)arg,
+                    sizeof(struct xpmem_cmd_remove_signal)))
+            return -EFAULT;
+
+        return xpmem_remove_signal(remove_info.segid);
+    }
+    case XPMEM_CMD_SEND_SIGNAL: {
+        struct xpmem_cmd_send_signal send_info;
+
+        if (copy_from_user(&send_info, (void __user *)arg,
+                    sizeof(struct xpmem_cmd_send_signal)))
+            return -EFAULT;
+
+        return xpmem_send_signal(send_info.apid, send_info.domid, send_info.sigid);
+    }
+    */
     default:
         break;
     }

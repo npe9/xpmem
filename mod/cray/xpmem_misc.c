@@ -263,12 +263,22 @@ xpmem_seg_down_read(struct xpmem_thread_group *seg_tg,
     return 0;
 }
 
+void
+xpmem_seg_signal(struct xpmem_segment * seg)
+{
+    atomic_inc(&(seg->irq_count));
+    mb();
+
+    wake_up(&(seg->signalled_wq));
+}
+
 /*
  * Ensure that a user is correctly accessing a segment for a copy or an attach.
  */
 int
-xpmem_validate_access(struct xpmem_thread_group * tg, struct xpmem_access_permit *ap, off_t offset,
-              size_t size, int mode, u64 *vaddr)
+xpmem_validate_access(struct xpmem_thread_group * tg,
+        struct xpmem_access_permit *ap, off_t offset,
+        size_t size, int mode, u64 *vaddr)
 {
     /* ensure that this thread has permission to access segment */
     if (tg->tgid != ap->tg->tgid ||
@@ -318,41 +328,6 @@ xpmem_unblock_nonfatal_signals(sigset_t *oldset)
     spin_unlock_irqrestore(&current->sighand->siglock, flags);
 }
 
-/*
- * XPMEM printk debugging via procfs
- */
-/*
-int
-xpmem_debug_printk_procfs_write(struct file *file, const char *buffer,
-                    unsigned long count, void *data)
-{
-    char buf;
-    
-    if(copy_from_user(&buf, buffer, 1))
-        return -EFAULT;
-
-    if (buf == '0') 
-        xpmem_debug_on = 0;
-    else if (buf == '1')
-        xpmem_debug_on = 1;
-
-    return count;
-}
-
-int
-xpmem_debug_printk_procfs_read(char *page, char **start, off_t off, int count,
-                                int *eof, void *data)
-{
-    return snprintf(page, count, "%d\n", xpmem_debug_on);
-}
-
-struct file_operations
-xpmem_debug_printk_procfs_fops = {
-    .read = xpmem_debug_printk_procfs_read,
-    .write = xpmem_debug_printk_procfs_write
-};
-*/
-
 pid_t
 xpmem_segid_to_tgid(xpmem_segid_t segid)
 {
@@ -393,4 +368,32 @@ xpmem_apid_to_uniq(xpmem_apid_t apid)
 {
     DBUG_ON(apid <= 0);
     return ((struct xpmem_id *)&apid)->uniq;
+}
+
+
+/*
+ * XPMEM printk debugging via procfs
+ */
+int
+xpmem_debug_printk_procfs_write(struct file *file, const char *buffer,
+                    unsigned long count, void *data)
+{
+    char buf;
+    
+    if(copy_from_user(&buf, buffer, 1))
+        return -EFAULT;
+
+    if (buf == '0') 
+        xpmem_debug_on = 0;
+    else if (buf == '1')
+        xpmem_debug_on = 1;
+
+    return count;
+}
+
+int
+xpmem_debug_printk_procfs_read(char *page, char **start, off_t off, int count,
+                                int *eof, void *data)
+{
+    return snprintf(page, count, "%d\n", xpmem_debug_on);
 }

@@ -79,7 +79,7 @@ struct xpmem_link_connection {
     xpmem_link_t                   link;
     struct kref                    refcnt;
     int  (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data);
-    int  (*in_irq_fn)(int                   irq, void * priv_data);
+    int  (*in_irq_fn)(int irq, xpmem_segid_t segid, void * priv_data);
     void (*kill)     (void * priv_data);
     void                         * priv_data;
 };
@@ -271,7 +271,7 @@ xpmem_get_partition(void)
 xpmem_link_t
 xpmem_add_connection(void             * priv_data,
                      int  (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data),
-                     int  (*in_irq_fn)(int                   irq, void * priv_data),
+                     int  (*in_irq_fn)(int irq, xpmem_segid_t segid, void * priv_data),
                      void (*kill)     (void * priv_data))
 {
     struct xpmem_partition_state * part = xpmem_get_partition();
@@ -305,7 +305,7 @@ EXPORT_SYMBOL(xpmem_add_connection);
 xpmem_link_t
 xpmem_add_local_connection(void             * priv_data,
                            int  (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data),
-                           int  (*in_irq_fn)(int                   irq, void * priv_data),
+                           int  (*in_irq_fn)(int irq, xpmem_segid_t segid, void * priv_data),
                            void (*kill)     (void * priv_data))
 {
     struct xpmem_partition_state * part = xpmem_get_partition();
@@ -381,18 +381,27 @@ static irqreturn_t
 xpmem_irq_callback(int    irq,
                    void * priv_data)
 {
+    struct xpmem_partition_state * part = NULL;
     struct xpmem_link_connection * conn = (struct xpmem_link_connection *)priv_data;
+    xpmem_segid_t segid;
 
     if (conn->in_irq_fn == NULL) {
         return IRQ_NONE;
     } 
+
+    part = conn->state;
+    read_lock(&(part->irq_to_segid_lock));
+    segid = part->irq_to_segid[irq];
+    read_unlock(&(part->irq_to_segid_lock));
     
-    conn->in_irq_fn(irq, conn->priv_data);
+    conn->in_irq_fn(irq, segid, conn->priv_data);
 
     return IRQ_HANDLED;
 }
 
-
+/* TODO: I feel like this should drop into the local (partition/domain)
+ * state and allocate an irq
+ */
 int
 xpmem_request_irq_link(xpmem_link_t link)
 {
@@ -450,16 +459,17 @@ EXPORT_SYMBOL(xpmem_release_irq_link);
 
 int
 xpmem_irq_deliver(xpmem_link_t  src_link,
+                  xpmem_segid_t segid,
                   xpmem_domid_t domid,
                   xpmem_sigid_t sigid)
 {
-    struct xpmem_partition_state * part = xpmem_get_partition();
-    struct xpmem_link_connection * conn = NULL;
-    struct xpmem_signal          * sig  = (struct xpmem_signal *)&sigid;
-    xpmem_link_t                   link = xpmem_get_domid_link(part, domid);
-    int                            ret  = 0;
+    struct xpmem_partition_state * part  = xpmem_get_partition();
+    struct xpmem_link_connection * conn  = NULL;
+    struct xpmem_signal          * sig   = (struct xpmem_signal *)&sigid;
+    xpmem_link_t                   link  = xpmem_get_domid_link(part, domid);
+    int                            ret   = 0;
 
-    /* If we do not have a local link for this domid, send an IPI */
+    /* If we do not have an irq for this segid, send an IPI */
     if (link == 0) {
         xpmem_send_ipi_to_apic(sig->apic_id, sig->vector);
         return 0;
@@ -471,7 +481,7 @@ xpmem_irq_deliver(xpmem_link_t  src_link,
 
     DBUG_ON(conn->in_irq_fn == NULL);
 
-    ret = conn->in_irq_fn(sig->irq, conn->priv_data);
+    ret = conn->in_irq_fn(sig->irq, segid, conn->priv_data);
 
     put_conn(conn);
     
@@ -493,6 +503,7 @@ xpmem_partition_init(int is_ns)
     part->is_nameserver = is_ns;
 
     spin_lock_init(&(part->lock));
+    rwlock_init(&(part->irq_to_segid_lock));
 
     /* Create ns/fwd state */
     if (is_ns) {

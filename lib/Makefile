@@ -1,6 +1,9 @@
 CC             = gcc
 AR             = ar
-CFLAGS         = -fPIC -I$(PWD)/../include
+
+#xpmem=$(HOME)/tmp/xpmem-github/xpmem
+xpmem=$(PWD)/../
+CFLAGS         = -fPIC -I$(xpmem)/include
 
 TARGET        = libxpmem.so
 TARGET_STATIC = libxpmem.a

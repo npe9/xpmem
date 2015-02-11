@@ -96,7 +96,7 @@ xpmem_alloc_irq(void)
 
     if (irq > 0) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
-        struct irq_desc * desc = irq_to_desc(irq);
+        struct irq_desc * desc = linux_irq_to_desc(irq);
         if (desc == NULL) {
             XPMEM_ERR("No desc for irq %d", irq);
             linux_destroy_irq(irq);
@@ -104,10 +104,11 @@ xpmem_alloc_irq(void)
         }
 
         desc->status &= ~IRQ_LEVEL;
-        set_irq_chip_and_handler(irq, &ipi_chip, handle_edge_irq);
+        set_irq_chip(irq, &ipi_chip);
+        __set_irq_handler(irq, linux_handle_edge_irq, 0, NULL);
 #else
         irq_clear_status_flags(irq, IRQ_LEVEL);
-        irq_set_chip_and_handler(irq, &ipi_chip, handle_edge_irq);
+        irq_set_chip_and_handler(irq, &ipi_chip, linux_handle_edge_irq);
 #endif
     }
 
@@ -152,6 +153,14 @@ xpmem_request_local_irq(irqreturn_t (*callback)(int, void *),
 }
 
 int
+xpmem_request_irq(irqreturn_t (*callback)(int, void *),
+                  void * priv)
+{
+    return xpmem_request_local_irq(callback, priv);
+}
+                  
+
+int
 xpmem_release_local_irq(int    irq,
                         void * priv_data) 
 {
@@ -165,13 +174,20 @@ xpmem_release_local_irq(int    irq,
 }
 
 int
+xpmem_release_irq(int    irq,
+                  void * priv)
+{
+    return xpmem_release_local_irq(irq, priv);
+}
+
+int
 xpmem_local_irq_to_vector(int irq)
 {
     struct irq_cfg * cfg;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
     {
-        struct irq_desc * desc = irq_to_desc(irq);
+        struct irq_desc * desc = linux_irq_to_desc(irq);
         if (desc == NULL) {
             XPMEM_ERR("No desc for irq %d", irq);
             return -1;
@@ -189,6 +205,12 @@ xpmem_local_irq_to_vector(int irq)
     }
 
     return cfg->vector;
+}
+
+int
+xpmem_irq_to_vector(int irq)
+{
+    return xpmem_local_irq_to_vector(irq);
 }
 
 void

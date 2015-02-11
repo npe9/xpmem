@@ -14,7 +14,7 @@
 #define _XPMEM_PRIVATE_H
 
 #include <linux/version.h>
-#include <linux/bit_spinlock.h>
+//#include <linux/bit_spinlock.h>
 #include <linux/sched.h>
 #include <linux/hugetlb.h>
 #include <asm/signal.h>
@@ -260,54 +260,76 @@ struct xpmem_thread_group {
     struct list_head                tg_hashnode;            /* embedded in partition hash list */
 };
 
+
+/*
+ * 'irq' is the irq allocated by the source process
+ * 'apic_id' is the local apic id where the source process is running
+ * 'vector' is the ipi vector that maps to the irq on 'apic_id'
+ * 'domid' is the domid of the source process
+ * 'irq_count' is the number of outstanding irqs
+ * 'signalled_wq' is the wait queue
+ */
+struct xpmem_signal {
+    int32_t  irq;
+    uint16_t vector;
+    uint16_t apic_id;
+};
+
 struct xpmem_segment {
     /* List of access permits */
-    struct list_head                ap_list;                /* local access permits of seg */
+    struct list_head            ap_list;                /* local access permits of seg */
 
     /* This segment's exported region */
-    xpmem_segid_t                   segid;                  /* unique segid */
-    u64                             vaddr;                  /* starting address */
-    size_t                          size;                   /* size of seg */
-    int                             permit_type;            /* permission scheme */
-    void                          * permit_value;           /* permission data */
+    xpmem_segid_t               segid;                  /* unique segid */
+    u64                         vaddr;                  /* starting address */
+    size_t                      size;                   /* size of seg */
+    int                         permit_type;            /* permission scheme */
+    void                      * permit_value;           /* permission data */
+
+    /* Option signalling stuff */
+    struct xpmem_signal         sig;                    /* signal for seg */
+    xpmem_domid_t               domid;
+    atomic_t                    irq_count;
+    wait_queue_head_t           signalled_wq;
+    int                         fd;
 
     /* Other misc */
-    volatile int                    flags;                  /* seg attributes and state */
-    atomic_t                        refcnt;                 /* references to seg */
-    struct xpmem_thread_group     * tg;                     /* creator's tg */
+    volatile int                flags;                  /* seg attributes and state */
+    atomic_t                    refcnt;                 /* references to seg */
+    struct xpmem_thread_group * tg;                     /* creator's tg */
 
     /* Synchronization */
-    wait_queue_head_t               destroyed_wq;           /* wait for seg to be destroyed */
-    struct rw_semaphore             sema;                   /* seg sema */
-    spinlock_t                      lock;                   /* seg lock */
+    wait_queue_head_t           destroyed_wq;           /* wait for seg to be destroyed */
+    struct rw_semaphore         sema;                   /* seg sema */
+    spinlock_t                  lock;                   /* seg lock */
 
     /* List embeddings */
-    struct list_head                seg_node;               /* tg's list of segs */
+    struct list_head            seg_node;               /* tg's list of segs */
 };
 
 
 struct xpmem_access_permit {
     /* List of attachments */
-    struct list_head                att_list;               /* atts of this access permit's seg */
+    struct list_head            att_list;               /* atts of this access permit's seg */
 
     /* This access permit's attached region */
-    xpmem_apid_t                    apid;                   /* unique apid */
-    xpmem_apid_t                    remote_apid;            /* unique remote apid */
-    int                             mode;                   /* read/write mode */
+    xpmem_apid_t                apid;                   /* unique apid */
+    xpmem_apid_t                remote_apid;            /* unique remote apid */
+    int                         mode;                   /* read/write mode */
 
-    struct xpmem_segment          * seg;                    /* seg permitted to be accessed */
-    struct xpmem_thread_group     * tg;                     /* access permit's tg */
+    struct xpmem_segment      * seg;                    /* seg permitted to be accessed */
+    struct xpmem_thread_group * tg;                     /* access permit's tg */
 
     /* Other misc */
-    volatile int                    flags;                  /* access permit attributes and state */
-    atomic_t                        refcnt;                 /* references to access permit */
+    volatile int                flags;                  /* access permit attributes and state */
+    atomic_t                    refcnt;                 /* references to access permit */
 
     /* Synchronization */
-    spinlock_t                      lock;                   /* access permit lock */
+    spinlock_t                  lock;                   /* access permit lock */
 
     /* List embeddings */
-    struct list_head                ap_node;                /* access permits linked to seg */
-    struct list_head                ap_hashnode;            /* access permits linked to tg hash list */
+    struct list_head            ap_node;                /* access permits linked to seg */
+    struct list_head            ap_hashnode;            /* access permits linked to tg hash list */
 };
 
 struct xpmem_attachment {
@@ -359,6 +381,10 @@ struct xpmem_partition_state {
     /* table mapping domids to link ids */
     xpmem_link_t                   link_map[XPMEM_MAX_DOMID];
 
+    /* table mapping irqs to segids */
+    xpmem_segid_t                  irq_to_segid[NR_VECTORS];
+    rwlock_t                       irq_to_segid_lock;
+
     /* unique link generation. no link is ever issued twice */
     xpmem_link_t  uniq_link;
 
@@ -408,21 +434,6 @@ struct xpmem_id {
 #define XPMEM_MAX_UNIQ_ID       ((1 << (sizeof(short) * 8)) - 1)
 
 
-/*
- * xpmem_sigid_t is of type __64 and designed to be opaque to the user. It consists of 
- * the following underlying fields
- *
- * 'apic_id' is the local apic id where the destination process is running
- * 'vector' is the ipi vector allocated by the destination process
- * 'irq' is the irq allocated by the destination process, which is only used if the
- * destination process is running in a local domain
- */
-struct xpmem_signal {
-    uint16_t apic_id;
-    uint16_t vector;
-    uint32_t irq;
-};
-
 extern pid_t xpmem_segid_to_tgid(xpmem_segid_t);
 extern unsigned short xpmem_segid_to_uniq(xpmem_segid_t);
 extern pid_t xpmem_apid_to_tgid(xpmem_segid_t);
@@ -447,6 +458,8 @@ extern unsigned short xpmem_apid_to_uniq(xpmem_segid_t);
  * Memory mapped for these attachments comes from the local domain
  */
 #define XPMEM_FLAG_REMOTE           0x00200 
+
+#define XPMEM_FLAG_SIGNALLABLE      0x00400 /* Segment that is signallable */
 
 #define XPMEM_FLAG_VALIDPTEs        0x01000 /* valid PTEs exist */
 #define XPMEM_FLAG_RECALLINGPFNS    0x02000 /* recalling PFNs */
@@ -478,10 +491,9 @@ xpmem_vaddr_to_PFN(struct mm_struct *mm, u64 vaddr)
 #define XPMEM_CPUS_OFFLINE      -2
 
 /* found in xpmem_make.c */
-extern int xpmem_make_segment(u64, size_t, int, void *, int, struct xpmem_thread_group *, xpmem_segid_t);
+extern int xpmem_make_segment(u64, size_t, int, void *, int, struct xpmem_thread_group *, xpmem_segid_t, int *);
 extern int xpmem_make(u64, size_t, int, void *, int, xpmem_segid_t,  xpmem_segid_t *, int *);
 extern void xpmem_remove_segs_of_tg(struct xpmem_thread_group *);
-extern int xpmem_remove_seg(struct xpmem_thread_group *, struct xpmem_segment *);
 extern int xpmem_remove(xpmem_segid_t);
 
 /* found in xpmem_get.c */
@@ -492,6 +504,7 @@ extern int xpmem_get(xpmem_segid_t, int, int, void *, xpmem_apid_t *);
 extern void xpmem_release_aps_of_tg(struct xpmem_thread_group *);
 extern void xpmem_release_ap(struct xpmem_thread_group *, struct xpmem_access_permit *);
 extern int xpmem_release(xpmem_apid_t);
+extern int xpmem_signal(xpmem_apid_t);
 
 /* found in xpmem_attach.c */
 extern struct vm_operations_struct xpmem_vm_ops;
@@ -514,7 +527,16 @@ extern int xpmem_fork_begin(void);
 extern int xpmem_fork_end(void);
 
 #define XPMEM_TGID_STRING_LEN   11
+
+#ifdef CONFIG_XPMEM_CRAY
+extern spinlock_t xpmem_unpin_procfs_lock;
+extern struct proc_dir_entry *xpmem_unpin_procfs_dir;
+extern int xpmem_unpin_procfs_write(struct file *, const char *,
+                    unsigned long, void *);
+extern int xpmem_unpin_procfs_read(char *, char **, off_t, int, int *, void *);
+#else
 extern struct file_operations xpmem_unpin_procfs_fops;
+#endif
 
 /* found in xpmem_main.c */
 extern struct xpmem_partition *xpmem_my_part;
@@ -535,10 +557,16 @@ extern void xpmem_ap_deref(struct xpmem_access_permit *);
 extern void xpmem_att_deref(struct xpmem_attachment *);
 extern int xpmem_seg_down_read(struct xpmem_thread_group *,
                    struct xpmem_segment *, int, int);
+extern void xpmem_seg_signal(struct xpmem_segment *);
 extern int xpmem_validate_access(struct xpmem_thread_group *, struct xpmem_access_permit *, off_t, size_t,
                  int, u64 *);
 extern void xpmem_block_nonfatal_signals(sigset_t *);
 extern void xpmem_unblock_nonfatal_signals(sigset_t *);
+#ifdef CONFIG_XPMEM_CRAY
+extern int xpmem_debug_printk_procfs_write(struct file *, const char *,
+                        unsigned long, void *);
+extern int xpmem_debug_printk_procfs_read(char *, char **, off_t, int, int *, void *);
+#endif
 
 /* found in xpmem_mmu_notifier.c */
 extern int xpmem_mmu_notifier_init(struct xpmem_thread_group *);
@@ -559,7 +587,7 @@ extern void xpmem_remove_domid_link(struct xpmem_partition_state *,
 extern xpmem_link_t xpmem_add_local_connection(
     void *,
     int (*)(struct xpmem_cmd_ex *,  void *),
-    int (*)(int, void *),
+    int (*)(int, xpmem_segid_t, void *),
     void (*)(void *));
 
 /* found in xpmem_domain.c */
@@ -597,6 +625,14 @@ extern int xpmem_linux_symbol_init(void);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)
 extern int  (*linux_create_irq)(void);
 extern void (*linux_destroy_irq)(unsigned int);
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
+extern void (*linux_handle_edge_irq)(unsigned int, struct irq_desc *);
+extern struct irq_desc * (*linux_irq_to_desc)(unsigned int);
+#else
+#define linux_handle_edge_irq handle_edge_irq
+#define linux_irq_to_desc irq_to_desc
 #endif
 
 static inline char *

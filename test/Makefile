@@ -1,6 +1,9 @@
 CC      = gcc
-CFLAGS  = -I$(PWD)/../include
-LDFLAGS = -L$(PWD)/../lib -lxpmem -static
+
+#xpmem   = $(HOME)/tmp/xpmem-github/xpmem
+xpmem   = $(PWD)/../
+CFLAGS  = -I$(xpmem)/include
+LDFLAGS = -L../lib -lxpmem -static
 
 SRCS   = $(shell ls *.c)
 PROGS  = $(patsubst %.c,%,$(SRCS))

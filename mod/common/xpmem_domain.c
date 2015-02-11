@@ -26,16 +26,16 @@
 
 struct xpmem_request_struct {
     /* Has it been allocated */
-    int                   allocated;
+    int                 allocated;
 
     /* Has command been serviced? */
-    int                   serviced;
+    int                 serviced;
 
     /* Completed command struct */
-    struct xpmem_cmd_ex   cmd;
+    struct xpmem_cmd_ex cmd;
 
     /* Waitq for process */
-    wait_queue_head_t     waitq;
+    wait_queue_head_t   waitq;
 };
 
 struct xpmem_domain_state {
@@ -44,7 +44,7 @@ struct xpmem_domain_state {
 
     /* Array of request structs indexed by reqid */
     struct xpmem_request_struct    requests[MAX_UNIQ_REQ];
-    
+
     /* XPMEM connection link */
     xpmem_link_t                   link; 
 };
@@ -586,6 +586,33 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
     return 0;
 }
 
+/* Callback for segid interrupt */
+static int
+xpmem_irq_fn(int           irq,
+             xpmem_segid_t segid,
+             void        * priv)
+{
+    struct xpmem_thread_group * seg_tg;
+    struct xpmem_segment      * seg;
+
+    seg_tg = xpmem_tg_ref_by_segid(segid);
+    if (IS_ERR(seg_tg))
+        return PTR_ERR(seg_tg);
+
+    seg = xpmem_seg_ref_by_segid(seg_tg, segid);
+    if (IS_ERR(seg)) {
+        xpmem_tg_deref(seg_tg);
+        return PTR_ERR(seg);
+    }
+
+    xpmem_seg_signal(seg);
+
+    xpmem_seg_deref(seg);
+    xpmem_tg_deref(seg_tg);
+
+    return 0;
+}
+
 static void
 xpmem_kill_fn(void * priv)
 {
@@ -979,7 +1006,7 @@ xpmem_domain_init(void)
     state->link = xpmem_add_local_connection(
             (void *)state,
             xpmem_cmd_fn,
-            NULL,
+            xpmem_irq_fn,
             xpmem_kill_fn);
 
     if (state->link < 0) {

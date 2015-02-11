@@ -29,7 +29,7 @@ int main(int argc, char ** argv) {
         return -1;
     }
 
-    segid = xpmem_make((void *)addr, num_pages * PAGE_SIZE, XPMEM_REQUEST_MODE, (void *)segid);
+//    segid = xpmem_make((void *)addr, num_pages * PAGE_SIZE, XPMEM_REQUEST_MODE, (void *)segid);
 
     if (segid <= 0) {
         printf("Cannot allocate segid\n");

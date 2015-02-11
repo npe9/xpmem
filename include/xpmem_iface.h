@@ -20,9 +20,9 @@ typedef int64_t xpmem_sigid_t;
 struct xpmem_cmd_ex;
 
 xpmem_link_t
-xpmem_add_connection(void             * priv_data,
-                     int  (*in_cmd_fn)(struct xpmem_cmd_ex * cmd, void * priv_data),
-                     int  (*in_irq_fn)(int                   irq, void * priv_data),
+xpmem_add_connection(void * priv_data,
+                     int  (*in_cmd_fn)(struct xpmem_cmd_ex *, void *),
+                     int  (*in_irq_fn)(int, xpmem_segid_t, void *),
                      void (*kill)     (void *));
 
 void
@@ -48,6 +48,7 @@ xpmem_release_irq_link(xpmem_link_t link,
 
 int
 xpmem_irq_deliver(xpmem_link_t  link,
+                  xpmem_segid_t segid,
                   xpmem_domid_t domid,
                   xpmem_sigid_t sigid);
 

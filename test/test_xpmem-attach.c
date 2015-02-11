@@ -66,8 +66,11 @@ int main(int argc, char ** argv) {
         xpmem_detach(vaddr);
     }
 
-    if (signalable) 
-        xpmem_signal(apid);
+    if (signalable)  {
+        int i  = 10000;
+        while (i --> 0) 
+            xpmem_signal(apid);
+    }
 
     xpmem_release(apid);
 }
