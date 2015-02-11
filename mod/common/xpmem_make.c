@@ -95,6 +95,10 @@ signal_read(struct file * filp,
         return PTR_ERR(seg);
     }
 
+    wait_event_interruptible(seg->signalled_wq,
+        (atomic_read(&(seg->irq_count)) > 0)
+    );
+
     irqs = atomic_dec_return(&(seg->irq_count));
 
     xpmem_seg_deref(seg);
