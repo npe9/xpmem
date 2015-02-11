@@ -48,7 +48,8 @@ struct xpmem_domid_req_iter {
  * if we sent at least one request
  */
 static int
-xpmem_request_domid(struct xpmem_partition_state * part) 
+xpmem_request_domid(struct xpmem_partition_state * part,
+                    xpmem_link_t                   skip) 
 {
     struct xpmem_fwd_state * state = part->fwd_state;
     xpmem_link_t             link  = 0;
@@ -77,6 +78,9 @@ xpmem_request_domid(struct xpmem_partition_state * part)
         for (link = 0; link < XPMEM_MAX_LINK; link++) {
             /* Don't PING the local domain */
             if (link == part->local_link)
+                continue;
+
+            if (link == skip)
                 continue;
 
             if (xpmem_send_cmd_link(part, link, &domid_cmd) == 0)
@@ -153,7 +157,7 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part,
             spin_unlock(&(state->lock));
 
             /* Forward request up to the nameserver */
-            ret = xpmem_request_domid(part);
+            ret = xpmem_request_domid(part, link);
 
             break;
         }
@@ -536,7 +540,7 @@ xpmem_fwd_get_domid(struct xpmem_partition_state * part)
     spin_unlock(&(state->lock));
 
     if (request)
-        ret = xpmem_request_domid(part);
+        ret = xpmem_request_domid(part, -1);
 
     if ((ret == 0) && wait)
         domid = xpmem_wait_domid(part);

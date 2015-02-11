@@ -82,6 +82,7 @@ extern uint32_t xpmem_debug_on;
 #define delayed_work work_struct
 
 
+#ifndef CONFIG_XPMEM_CRAY
 static pte_t *
 xpmem_huge_pte_offset(struct mm_struct * mm,
                       u64                addr)
@@ -101,6 +102,7 @@ xpmem_huge_pte_offset(struct mm_struct * mm,
     }
     return (pte_t *)pmd;
 }
+#endif
 
 static inline pte_t *
 xpmem_hugetlb_pte(struct mm_struct *mm, u64 vaddr, u64 *offset, int is_pmd, pmd_t *pmd)
@@ -137,7 +139,7 @@ xpmem_hugetlb_pte(struct mm_struct *mm, u64 vaddr, u64 *offset, int is_pmd, pmd_
         XPMEM_DEBUG("vaddr = %llx, offset = %llx", vaddr, *offset);
     }
 
-#ifdef CONFIG_CRAY_MRT
+#ifdef CONFIG_XPMEM_CRAY
     pte = huge_pte_offset(mm, address, hps);
 #else
     pte = xpmem_huge_pte_offset(mm, address);
