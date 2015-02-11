@@ -538,6 +538,7 @@ xpmem_exit(void)
     misc_deregister(&xpmem_dev_handle);
     
     remove_proc_entry("global_pages", xpmem_proc_dir);
+    remove_proc_entry("debug-printk", xpmem_proc_dir);
     remove_proc_entry(XPMEM_MODULE_NAME, NULL);
 
     printk("SGI XPMEM kernel module v%s unloaded\n",
