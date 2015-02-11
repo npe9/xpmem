@@ -39,7 +39,7 @@ struct xpmem_partition * xpmem_my_part  = NULL;  /* pointer to this partition */
 struct proc_dir_entry  * xpmem_proc_dir = NULL;
 
 int ns = 1;
-module_param(ns, int, 1);
+module_param(ns, int, 0);
 
 
 /*
