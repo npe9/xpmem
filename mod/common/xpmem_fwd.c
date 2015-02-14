@@ -156,10 +156,19 @@ xpmem_fwd_process_domid_cmd(struct xpmem_partition_state * part,
             }
             spin_unlock(&(state->lock));
 
-            /* Forward request up to the nameserver */
-            ret = xpmem_request_domid(part, link);
+            /* If we do not have a domid, we send two requests here: one for the
+             * requesting domain and one for us.
+             */
 
-            break;
+            /* Request a domid for ourselves */
+            ret = xpmem_fwd_get_domid(part, link);
+            if (ret > 0) {
+                /* Request a domid for the remote domain */
+                ret = xpmem_request_domid(part, link);
+            }
+
+            /* No command to forward */
+            return ret;
         }
 
         case XPMEM_DOMID_RESPONSE: {
@@ -514,7 +523,8 @@ xpmem_fwd_deinit(struct xpmem_partition_state * part)
 }
 
 xpmem_domid_t
-xpmem_fwd_get_domid(struct xpmem_partition_state * part)
+xpmem_fwd_get_domid(struct xpmem_partition_state * part,
+                    xpmem_link_t                   request_link)
 {
     struct xpmem_fwd_state * state = part->fwd_state;
     xpmem_domid_t            domid = 0;
@@ -540,7 +550,7 @@ xpmem_fwd_get_domid(struct xpmem_partition_state * part)
     spin_unlock(&(state->lock));
 
     if (request)
-        ret = xpmem_request_domid(part, -1);
+        ret = xpmem_request_domid(part, request_link);
 
     if ((ret == 0) && wait)
         domid = xpmem_wait_domid(part);
