@@ -506,7 +506,7 @@ out_7:
 out_6:
     xpmem_partition_deinit();
 out_5:
-    remove_proc_entry("debug-printk", xpmem_proc_dir);
+    remove_proc_entry("debug_printk", xpmem_proc_dir);
 out_4:
     remove_proc_entry("global_pages", xpmem_proc_dir);
 out_3:
@@ -538,7 +538,7 @@ xpmem_exit(void)
     misc_deregister(&xpmem_dev_handle);
     
     remove_proc_entry("global_pages", xpmem_proc_dir);
-    remove_proc_entry("debug-printk", xpmem_proc_dir);
+    remove_proc_entry("debug_printk", xpmem_proc_dir);
     remove_proc_entry(XPMEM_MODULE_NAME, NULL);
 
     printk("SGI XPMEM kernel module v%s unloaded\n",
