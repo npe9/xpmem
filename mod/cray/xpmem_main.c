@@ -438,8 +438,8 @@ xpmem_init(void)
     rwlock_init(&(xpmem_my_part->wk_segid_to_tgid_lock));
 
     /* create the /proc interface directory (/proc/xpmem) */
-    xpmem_unpin_procfs_dir = proc_mkdir(XPMEM_MODULE_NAME, NULL);
-    if  (xpmem_unpin_procfs_dir == NULL) {
+    xpmem_proc_dir = proc_mkdir(XPMEM_MODULE_NAME, NULL);
+    if  (xpmem_proc_dir == NULL) {
         ret = -EBUSY;
         goto out_1;
     }
@@ -452,7 +452,7 @@ xpmem_init(void)
     atomic_set(&xpmem_my_part->n_pinned, 0);
     atomic_set(&xpmem_my_part->n_unpinned, 0);
     global_pages_entry = create_proc_entry("global_pages", 0644, 
-                    xpmem_unpin_procfs_dir);
+                    xpmem_proc_dir);
     if (global_pages_entry == NULL) {
         ret = -EBUSY;
         goto out_3;
@@ -466,7 +466,7 @@ xpmem_init(void)
 
     /* printk debugging */
     debug_printk_entry = create_proc_entry("debug_printk", 0644,
-                        xpmem_unpin_procfs_dir);
+                        xpmem_proc_dir);
     if (debug_printk_entry == NULL) {
         ret = -EBUSY;
         goto out_4;

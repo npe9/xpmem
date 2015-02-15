@@ -532,7 +532,6 @@ extern int xpmem_fork_end(void);
 
 #ifdef CONFIG_XPMEM_CRAY
 extern spinlock_t xpmem_unpin_procfs_lock;
-extern struct proc_dir_entry *xpmem_unpin_procfs_dir;
 extern int xpmem_unpin_procfs_write(struct file *, const char *,
                     unsigned long, void *);
 extern int xpmem_unpin_procfs_read(char *, char **, off_t, int, int *, void *);
