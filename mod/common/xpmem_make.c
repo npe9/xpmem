@@ -230,6 +230,7 @@ xpmem_make_segment(u64                         vaddr,
 
     spin_lock_init(&(seg->lock));
     init_rwsem(&seg->sema);
+    atomic_set(&(seg->irq_count), 0);
     seg->segid = segid;
     seg->vaddr = vaddr;
     seg->size = size;
