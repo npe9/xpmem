@@ -513,8 +513,8 @@ xpmem_exit(void)
 {
     /* Free partition resources */
     xpmem_domain_deinit(xpmem_my_part->domain_link);
-    xpmem_palacios_deinit(xpmem_my_part->vmm_link);
     xpmem_partition_deinit();
+    xpmem_palacios_deinit(xpmem_my_part->vmm_link);
 
     kfree(xpmem_my_part->tg_hashtable);
     kfree(xpmem_my_part);
