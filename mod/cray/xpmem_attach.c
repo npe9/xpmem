@@ -680,7 +680,7 @@ xpmem_detach_local_att(struct xpmem_access_permit * ap,
 
     DBUG_ON(do_munmap(att->mm, vma->vm_start, att->at_size) != 0);
 
-    up_write(&current->mm->mmap_sem);
+    up_write(&att->mm->mmap_sem);
     mutex_unlock(&att->mutex);
 }
 
