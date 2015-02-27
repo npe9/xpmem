@@ -21,9 +21,11 @@ struct xpmem_cmd_get_ex {
     xpmem_segid_t segid;
     uint32_t      flags;
     uint32_t      permit_type;
-    int64_t       permit_value;
+    uint64_t      permit_value;
     xpmem_apid_t  apid;
     uint64_t      size;
+    xpmem_domid_t domid;
+    xpmem_sigid_t sigid;
 };
 
 struct xpmem_cmd_release_ex {
@@ -112,9 +114,11 @@ xpmem_get_remote(xpmem_link_t   link,
                  xpmem_segid_t  segid,
                  int            flags, 
                  int            permit_type, 
-                 s64            permit_value, 
-                 xpmem_apid_t * apid,
-                 u64          * size);
+                 u64            permit_value, 
+                 xpmem_apid_t  * apid,
+                 u64           * size,
+                 xpmem_domid_t * domid,
+                 xpmem_sigid_t * sigid);
 
 int xpmem_release_remote(xpmem_link_t  link,
                          xpmem_segid_t segid,

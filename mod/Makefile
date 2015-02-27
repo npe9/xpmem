@@ -43,6 +43,7 @@ xpmem-y +=  common/xpmem_make.o \
 		common/xpmem_syms.o \
 		common/xpmem_ns.o \
 		common/xpmem_fwd.o \
+		common/xpmem_signal.o \
 		common/xpmem_irq.o
 
 

@@ -100,11 +100,15 @@ xpmem_try_get_remote(xpmem_segid_t   segid,
                      int             permit_type,
                      void          * permit_value,
                      xpmem_apid_t  * remote_apid,
-                     size_t        * remote_size)
+                     size_t        * remote_size,
+                     xpmem_domid_t * remote_domid,
+                     xpmem_sigid_t * remote_sigid)
 {
-    xpmem_apid_t apid   = 0;
-    size_t       size   = 0;
-    int          status = 0;
+    xpmem_apid_t  apid   = 0;
+    xpmem_domid_t domid  = 0;
+    xpmem_sigid_t sigid  = 0;
+    size_t        size   = 0;
+    int           status = 0;
     
     status = xpmem_get_remote(
         xpmem_my_part->domain_link,
@@ -113,7 +117,9 @@ xpmem_try_get_remote(xpmem_segid_t   segid,
         permit_type,
         (u64)permit_value,
         &apid,
-        (u64 *)&size);
+        (u64 *)&size,
+        &domid,
+        &sigid);
 
     /* TODO: also, get signal vector, apic_id, and domid */
 
@@ -125,8 +131,10 @@ xpmem_try_get_remote(xpmem_segid_t   segid,
         return -1;
     }
 
-    *remote_apid = apid;
-    *remote_size = size;
+    *remote_apid  = apid;
+    *remote_size  = size;
+    *remote_domid = domid;
+    *remote_sigid = sigid;
 
     return 0;
 }
@@ -184,9 +192,11 @@ int
 xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
       xpmem_apid_t *apid_p)
 {
-    xpmem_apid_t apid        = 0;
-    xpmem_apid_t remote_apid = 0;
-    size_t       remote_size = 0;
+    xpmem_apid_t  apid         = 0;
+    xpmem_apid_t  remote_apid  = 0;
+    xpmem_domid_t remote_domid = 0;
+    xpmem_sigid_t remote_sigid = 0;
+    size_t        remote_size  = 0;
 
     struct xpmem_segment *seg;
     struct xpmem_thread_group *ap_tg, *seg_tg;
@@ -205,18 +215,34 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 
     seg_tg = xpmem_tg_ref_by_segid(segid);
     if (IS_ERR(seg_tg)) {
+        int seg_flags = 0;
+
         /* No local segment found. Look for a remote one */
-        if (xpmem_try_get_remote(segid, flags, permit_type, permit_value, &remote_apid, &remote_size) != 0) {
+        if (xpmem_try_get_remote(segid, flags, permit_type, permit_value, 
+                &remote_apid, &remote_size, &remote_domid, &remote_sigid) != 0) 
+        {
             return PTR_ERR(seg_tg);
         }
 
         /* We've been given a remote apid. The strategy is to fake like the segid
          * was created locally by creating a "shadow" segment ourselves
          */
+        if (remote_size > 0)
+            seg_flags |= XPMEM_MEM_MODE;
+
+        if (remote_sigid != 0)
+            seg_flags |= XPMEM_SIG_MODE;
+
+        if (seg_flags == 0) {
+            XPMEM_ERR("Creating shadow segment that is neither a memory segment nor signalable!");
+            return -EINVAL;
+        }
+
+        seg_flags |= XPMEM_FLAG_SHADOW;
+
         seg_tg = xpmem_tg_ref_by_tgid(current->tgid);
         xpmem_make_segment(0, remote_size, permit_type, permit_value, 
-            XPMEM_MEM_MODE | XPMEM_FLAG_SHADOW, 
-            seg_tg, segid, NULL);
+            seg_flags, seg_tg, segid, remote_domid, remote_sigid, NULL);
     }
 
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);
@@ -277,8 +303,6 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 
     return status;
 }
-
-#include <linux/delay.h>
 
 /*
  * Release an access permit and detach all associated attaches.
@@ -415,67 +439,4 @@ xpmem_release(xpmem_apid_t apid)
     xpmem_tg_deref(ap_tg);
 
     return 0;
-}
-
-/*
- * Send a signal to segment associated with access permit
- */
-int
-xpmem_signal(xpmem_apid_t apid)
-{
-    struct xpmem_thread_group  * ap_tg, * seg_tg;
-    struct xpmem_access_permit * ap;
-    struct xpmem_segment       * seg;
-    int ret;
-
-    if (apid <= 0)
-        return -EINVAL;
-
-    ap_tg = xpmem_tg_ref_by_apid(apid);
-    if (IS_ERR(ap_tg))
-        return PTR_ERR(ap_tg);
-
-    ap = xpmem_ap_ref_by_apid(ap_tg, apid);
-    if (IS_ERR(ap)) {
-        xpmem_tg_deref(ap_tg);
-        return PTR_ERR(ap);
-    }
-
-    seg = ap->seg;
-    xpmem_seg_ref(seg);
-    seg_tg = seg->tg;
-    xpmem_tg_ref(seg_tg);
-
-    ret = xpmem_seg_down_read(seg_tg, seg, 0, 1);
-    if (ret != 0)
-        goto out_1;
-
-    if (!(seg->flags & XPMEM_FLAG_SIGNALLABLE)) {
-        ret = -EACCES;
-        goto out_2;
-    }
-
-    /* Send signal */
-    if (seg->flags & XPMEM_FLAG_SHADOW)
-        /* Shadow segment */
-        ret = xpmem_irq_deliver(
-            xpmem_my_part->domain_link,
-            seg->segid,
-            seg->domid,
-            (xpmem_sigid_t)&(seg->sig));
-    else {
-        /* Local segment */
-        xpmem_seg_signal(seg);
-    }
-
-    ret = 0;
-
-out_2:
-    xpmem_seg_up_read(seg_tg, seg, 0);
-out_1:
-    xpmem_seg_deref(seg);
-    xpmem_tg_deref(seg_tg);
-    xpmem_ap_deref(ap);
-    xpmem_tg_deref(ap_tg);
-    return ret;
 }

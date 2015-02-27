@@ -219,127 +219,7 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     long ret;
 
-    switch (cmd) {
-    case XPMEM_CMD_VERSION: {
-        return XPMEM_CURRENT_VERSION;
-    }
-    case XPMEM_CMD_MAKE: {
-        struct xpmem_cmd_make make_info;
-        xpmem_segid_t segid;
-        int fd;
-
-        if (copy_from_user(&make_info, (void __user *)arg,
-                   sizeof(struct xpmem_cmd_make)))
-            return -EFAULT;
-
-        ret = xpmem_make(make_info.vaddr, make_info.size,
-                 make_info.permit_type,
-                 (void *)make_info.permit_value,
-                 make_info.flags,
-                 make_info.segid, &segid, &fd);
-        if (ret != 0)
-            return ret;
-
-        if (put_user(segid,
-                 &((struct xpmem_cmd_make __user *)arg)->segid)) {
-            (void)xpmem_remove(segid);
-            return -EFAULT;
-        }
-
-        if (put_user(fd,
-                &((struct xpmem_cmd_make __user *)arg)->fd)) {
-            (void)xpmem_remove(segid);
-            return -EFAULT;
-        }
-
-        return 0;
-    }
-    case XPMEM_CMD_REMOVE: {
-        struct xpmem_cmd_remove remove_info;
-
-        if (copy_from_user(&remove_info, (void __user *)arg,
-                   sizeof(struct xpmem_cmd_remove)))
-            return -EFAULT;
-
-        return xpmem_remove(remove_info.segid);
-    }
-    case XPMEM_CMD_GET: {
-        struct xpmem_cmd_get get_info;
-        xpmem_apid_t apid;
-
-        if (copy_from_user(&get_info, (void __user *)arg,
-                   sizeof(struct xpmem_cmd_get)))
-            return -EFAULT;
-
-        ret = xpmem_get(get_info.segid, get_info.flags,
-                get_info.permit_type,
-                (void *)get_info.permit_value, &apid);
-        if (ret != 0)
-            return ret;
-
-        if (put_user(apid,
-                 &((struct xpmem_cmd_get __user *)arg)->apid)) {
-            (void)xpmem_release(apid);
-            return -EFAULT;
-        }
-        return 0;
-    }
-    case XPMEM_CMD_RELEASE: {
-        struct xpmem_cmd_release release_info;
-
-        if (copy_from_user(&release_info, (void __user *)arg,
-                   sizeof(struct xpmem_cmd_release)))
-            return -EFAULT;
-
-        return xpmem_release(release_info.apid);
-    }
-    case XPMEM_CMD_SIGNAL: {
-        struct xpmem_cmd_signal signal_info;
-
-        if (copy_from_user(&signal_info, (void __user *)arg,
-                  sizeof(struct xpmem_cmd_signal)))
-            return -EFAULT;
-
-        return xpmem_signal(signal_info.apid);
-    }
-    case XPMEM_CMD_ATTACH: {
-        struct xpmem_cmd_attach attach_info;
-        u64 at_vaddr;
-
-        if (copy_from_user(&attach_info, (void __user *)arg,
-                   sizeof(struct xpmem_cmd_attach)))
-            return -EFAULT;
-
-        ret = xpmem_attach(file, attach_info.apid, attach_info.offset,
-                   attach_info.size, attach_info.vaddr,
-                   attach_info.fd, attach_info.flags,
-                   &at_vaddr);
-        if (ret != 0)
-            return ret;
-
-        if (put_user(at_vaddr,
-                 &((struct xpmem_cmd_attach __user *)arg)->vaddr)) {
-            (void)xpmem_detach(at_vaddr);
-            return -EFAULT;
-        }
-        return 0;
-    }
-    case XPMEM_CMD_DETACH: {
-        struct xpmem_cmd_detach detach_info;
-
-        if (copy_from_user(&detach_info, (void __user *)arg,
-                   sizeof(struct xpmem_cmd_detach)))
-            return -EFAULT;
-
-        return xpmem_detach(detach_info.vaddr);
-    }
-    case XPMEM_CMD_FORK_BEGIN: {
-        return xpmem_fork_begin();
-    }
-    case XPMEM_CMD_FORK_END: {
-        return xpmem_fork_end();
-    }
-    case XPMEM_CMD_GET_DOMID: {
+    if (cmd == XPMEM_CMD_GET_DOMID) {
         xpmem_domid_t domid = xpmem_get_domid();
 
         if (put_user(domid,
@@ -348,48 +228,135 @@ xpmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
         return 0;
     }
-    /*
-    case XPMEM_CMD_MAKE_SIGNAL: {
-        struct xpmem_cmd_create_signal create_info;
-        xpmem_sigid_t sigid;
 
-        if (copy_from_user(&create_info, (void __user *)arg,
-                    sizeof(struct xpmem_cmd_create_signal)))
-            return -EFAULT;
+    /* Make sure we have a domid */
+    if (!xpmem_ensure_valid_domid())
+        return -EBUSY;
 
-        ret = xpmem_make_signal(create_info.segid, &sigid);
-        if (ret != 0)
-            return ret;
-
-        if (put_user(sigid,
-                 &((struct xpmem_cmd_create_signal __user *)arg)->sigid)) {
-            (void)xpmem_remove_signal(create_info.segid);
-            return -EFAULT;
+    switch (cmd) {
+        case XPMEM_CMD_VERSION: {
+            return XPMEM_CURRENT_VERSION;
         }
-        return 0;
-    }
-    case XPMEM_CMD_REMOVE_SIGNAL: {
-        struct xpmem_cmd_remove_signal remove_info;
+        case XPMEM_CMD_MAKE: {
+            struct xpmem_cmd_make make_info;
+            xpmem_segid_t segid;
+            int fd;
 
-        if (copy_from_user(&remove_info, (void __user *)arg,
-                    sizeof(struct xpmem_cmd_remove_signal)))
-            return -EFAULT;
+            if (copy_from_user(&make_info, (void __user *)arg,
+                       sizeof(struct xpmem_cmd_make)))
+                return -EFAULT;
 
-        return xpmem_remove_signal(remove_info.segid);
-    }
-    case XPMEM_CMD_SEND_SIGNAL: {
-        struct xpmem_cmd_send_signal send_info;
+            ret = xpmem_make(make_info.vaddr, make_info.size,
+                     make_info.permit_type,
+                     (void *)make_info.permit_value,
+                     make_info.flags,
+                     make_info.segid, &segid, &fd);
+            if (ret != 0)
+                return ret;
 
-        if (copy_from_user(&send_info, (void __user *)arg,
-                    sizeof(struct xpmem_cmd_send_signal)))
-            return -EFAULT;
+            if (put_user(segid,
+                     &((struct xpmem_cmd_make __user *)arg)->segid)) {
+                (void)xpmem_remove(segid);
+                return -EFAULT;
+            }
 
-        return xpmem_send_signal(send_info.apid, send_info.domid, send_info.sigid);
+            if (put_user(fd,
+                    &((struct xpmem_cmd_make __user *)arg)->fd)) {
+                (void)xpmem_remove(segid);
+                return -EFAULT;
+            }
+
+            return 0;
+        }
+        case XPMEM_CMD_REMOVE: {
+            struct xpmem_cmd_remove remove_info;
+
+            if (copy_from_user(&remove_info, (void __user *)arg,
+                       sizeof(struct xpmem_cmd_remove)))
+                return -EFAULT;
+
+            return xpmem_remove(remove_info.segid);
+        }
+        case XPMEM_CMD_GET: {
+            struct xpmem_cmd_get get_info;
+            xpmem_apid_t apid;
+
+            if (copy_from_user(&get_info, (void __user *)arg,
+                       sizeof(struct xpmem_cmd_get)))
+                return -EFAULT;
+
+            ret = xpmem_get(get_info.segid, get_info.flags,
+                    get_info.permit_type,
+                    (void *)get_info.permit_value, &apid);
+            if (ret != 0)
+                return ret;
+
+            if (put_user(apid,
+                     &((struct xpmem_cmd_get __user *)arg)->apid)) {
+                (void)xpmem_release(apid);
+                return -EFAULT;
+            }
+            return 0;
+        }
+        case XPMEM_CMD_RELEASE: {
+            struct xpmem_cmd_release release_info;
+
+            if (copy_from_user(&release_info, (void __user *)arg,
+                       sizeof(struct xpmem_cmd_release)))
+                return -EFAULT;
+
+            return xpmem_release(release_info.apid);
+        }
+        case XPMEM_CMD_SIGNAL: {
+            struct xpmem_cmd_signal signal_info;
+
+            if (copy_from_user(&signal_info, (void __user *)arg,
+                      sizeof(struct xpmem_cmd_signal)))
+                return -EFAULT;
+
+            return xpmem_signal(signal_info.apid);
+        }
+        case XPMEM_CMD_ATTACH: {
+            struct xpmem_cmd_attach attach_info;
+            u64 at_vaddr;
+
+            if (copy_from_user(&attach_info, (void __user *)arg,
+                       sizeof(struct xpmem_cmd_attach)))
+                return -EFAULT;
+
+            ret = xpmem_attach(file, attach_info.apid, attach_info.offset,
+                       attach_info.size, attach_info.vaddr,
+                       attach_info.fd, attach_info.flags,
+                       &at_vaddr);
+            if (ret != 0)
+                return ret;
+
+            if (put_user(at_vaddr,
+                     &((struct xpmem_cmd_attach __user *)arg)->vaddr)) {
+                (void)xpmem_detach(at_vaddr);
+                return -EFAULT;
+            }
+            return 0;
+        }
+        case XPMEM_CMD_DETACH: {
+            struct xpmem_cmd_detach detach_info;
+
+            if (copy_from_user(&detach_info, (void __user *)arg,
+                       sizeof(struct xpmem_cmd_detach)))
+                return -EFAULT;
+
+            return xpmem_detach(detach_info.vaddr);
+        }
+        case XPMEM_CMD_FORK_BEGIN: {
+            return xpmem_fork_begin();
+        }
+        case XPMEM_CMD_FORK_END: {
+            return xpmem_fork_end();
+        }
+        default:
+            break;
     }
-    */
-    default:
-        break;
-    }
+
     return -ENOIOCTLCMD;
 }
 
@@ -490,7 +457,7 @@ xpmem_init(void)
     }
 
     /* Bring up palacios device driver / host OS interface */
-    ret = xpmem_palacios_init(xpmem_my_part);
+    ret = xpmem_palacios_init();
     if (ret < 0)
         goto out_7;
 
@@ -530,7 +497,7 @@ xpmem_exit(void)
     /* Free partition resources */
     xpmem_domain_deinit(xpmem_my_part->domain_link);
     xpmem_partition_deinit();
-    xpmem_palacios_deinit(xpmem_my_part->vmm_link);
+    xpmem_palacios_deinit();
 
     kfree(xpmem_my_part->tg_hashtable);
     kfree(xpmem_my_part);

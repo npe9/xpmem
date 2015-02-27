@@ -622,6 +622,7 @@ alloc_xpmem_domain(struct xpmem_ns_state * ns_state,
 
     if (domain->domid == -1) {
         XPMEM_ERR("No free domids: cannot create new domain!");
+        kfree(domain);
         return NULL;
     }
 

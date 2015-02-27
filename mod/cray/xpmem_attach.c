@@ -611,9 +611,9 @@ xpmem_detach(u64 at_vaddr)
         /* Free from Palacios, if we're in a VM */ 
         pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
         if (pa == 0) {
-            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)att->at_vaddr);
+            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach host memory\n", (void *)att->at_vaddr);
         } else {
-            xpmem_palacios_detach_paddr(xpmem_my_part->vmm_link, pa);
+            xpmem_detach_host_paddr(pa);
         }
     } else {
         xpmem_unpin_pages(ap->seg, current->mm, att->at_vaddr, att->at_size);
@@ -668,9 +668,9 @@ xpmem_detach_local_att(struct xpmem_access_permit * ap,
         /* Free from Palacios, if we're in a VM */ 
         pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
         if (pa == 0) {
-            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach in Palacios\n", (void *)att->at_vaddr);
+            XPMEM_ERR("Cannot find pa for vaddr %p, cannot detach host memory\n", (void *)att->at_vaddr);
         } else {
-            xpmem_palacios_detach_paddr(xpmem_my_part->vmm_link, pa);
+            xpmem_detach_host_paddr(pa);
         }
     } else {
         xpmem_unpin_pages(ap->seg, att->mm, att->at_vaddr, att->at_size);

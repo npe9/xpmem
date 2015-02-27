@@ -12,6 +12,7 @@
 
 #ifdef __KERNEL__
 
+#include <linux/irq.h>
 #include <xpmem.h>
 
 typedef int16_t xpmem_link_t;
@@ -19,11 +20,28 @@ typedef int64_t xpmem_sigid_t;
 
 struct xpmem_cmd_ex;
 
+
+/*
+ * xpmem_sigid_t is of type __s64 and designed to be opaque to the user. It consists of 
+ * the following underlying fields
+ *
+ * 'vector' is the ipi vector allocated by the destination process
+ * 'apic_id' is the local apic id where the destination process is running
+ * 'irq' is the irq allocated by the destination process, which is only used if the
+ * destination process is running in a local domain
+ */
+struct xpmem_signal {
+    uint16_t vector;
+    uint16_t apic_id;
+    int32_t irq;
+};
+
+
 xpmem_link_t
 xpmem_add_connection(void * priv_data,
-                     int  (*in_cmd_fn)(struct xpmem_cmd_ex *, void *),
-                     int  (*in_irq_fn)(int, xpmem_segid_t, void *),
-                     void (*kill)     (void *));
+                     int  (*in_cmd_fn)  (struct xpmem_cmd_ex *, void *),
+                     int  (*in_segid_fn)(xpmem_segid_t, xpmem_sigid_t, xpmem_domid_t, void *),
+                     void (*kill)       (void *));
 
 void
 xpmem_remove_connection(xpmem_link_t link);
@@ -39,18 +57,23 @@ int
 xpmem_cmd_deliver(xpmem_link_t          link,
                   struct xpmem_cmd_ex * cmd);
 
+/* IRQ support */
 int
-xpmem_request_irq_link(xpmem_link_t link);
+xpmem_request_irq(irqreturn_t (*cb)(int, void *),
+                  void      * priv_data);
+
+void
+xpmem_release_irq(int    irq,
+                  void * priv_data);
 
 int
-xpmem_release_irq_link(xpmem_link_t link,
-                       int          irq);
+xpmem_irq_to_vector(int irq);
 
 int
-xpmem_irq_deliver(xpmem_link_t  link,
-                  xpmem_segid_t segid,
-                  xpmem_domid_t domid,
-                  xpmem_sigid_t sigid);
+xpmem_irq_deliver(xpmem_segid_t segid,
+                  xpmem_sigid_t sigid,
+                  xpmem_domid_t domid);
+
 
 #endif
 

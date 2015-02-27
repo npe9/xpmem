@@ -263,15 +263,6 @@ xpmem_seg_down_read(struct xpmem_thread_group *seg_tg,
     return 0;
 }
 
-void
-xpmem_seg_signal(struct xpmem_segment * seg)
-{
-    atomic_inc(&(seg->irq_count));
-    mb();
-
-    wake_up(&(seg->signalled_wq));
-}
-
 /*
  * Ensure that a user is correctly accessing a segment for a copy or an attach.
  */

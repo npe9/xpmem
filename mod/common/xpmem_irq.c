@@ -126,8 +126,8 @@ xpmem_free_irq(int irq)
 }
 
 int 
-xpmem_request_local_irq(irqreturn_t (*callback)(int, void *),
-                        void      * priv_data)
+xpmem_request_irq(irqreturn_t (*callback)(int, void *),
+                  void      * priv_data)
 {
     int  irq = 0;
     char name[16];
@@ -152,36 +152,25 @@ xpmem_request_local_irq(irqreturn_t (*callback)(int, void *),
     return irq;
 }
 
-int
-xpmem_request_irq(irqreturn_t (*callback)(int, void *),
-                  void * priv)
-{
-    return xpmem_request_local_irq(callback, priv);
-}
-                  
+EXPORT_SYMBOL(xpmem_request_irq);
 
-int
-xpmem_release_local_irq(int    irq,
-                        void * priv_data) 
+
+void
+xpmem_release_irq(int    irq,
+                  void * priv_data) 
 {
     /* Free Linux irq handler */
     free_irq(irq, priv_data);
 
     /* Free hardware irq */
     xpmem_free_irq(irq);
-
-    return 0;
 }
 
-int
-xpmem_release_irq(int    irq,
-                  void * priv)
-{
-    return xpmem_release_local_irq(irq, priv);
-}
+EXPORT_SYMBOL(xpmem_release_irq);
+
 
 int
-xpmem_local_irq_to_vector(int irq)
+xpmem_irq_to_vector(int irq)
 {
     struct irq_cfg * cfg;
 
@@ -207,11 +196,7 @@ xpmem_local_irq_to_vector(int irq)
     return cfg->vector;
 }
 
-int
-xpmem_irq_to_vector(int irq)
-{
-    return xpmem_local_irq_to_vector(irq);
-}
+EXPORT_SYMBOL(xpmem_irq_to_vector);
 
 void
 xpmem_send_ipi_to_apic(unsigned int apic_id, 

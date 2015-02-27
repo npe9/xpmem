@@ -39,14 +39,12 @@ struct xpmem_request_struct {
 };
 
 struct xpmem_domain_state {
-    /* Lock for domain state */
-    spinlock_t                     lock;
-
     /* Array of request structs indexed by reqid */
-    struct xpmem_request_struct    requests[MAX_UNIQ_REQ];
+    spinlock_t                  req_lock;
+    struct xpmem_request_struct requests[MAX_UNIQ_REQ];
 
     /* XPMEM connection link */
-    xpmem_link_t                   link; 
+    xpmem_link_t                link; 
 };
 
 static int32_t
@@ -54,7 +52,7 @@ alloc_request_id(struct xpmem_domain_state * state)
 {
     int32_t id = -1;
 
-    spin_lock(&(state->lock));
+    spin_lock(&(state->req_lock));
     {
         int i = 0;
         for (i = 0; i < MAX_UNIQ_REQ; i++) {
@@ -69,7 +67,7 @@ alloc_request_id(struct xpmem_domain_state * state)
             }
         }
     }
-    spin_unlock(&(state->lock));
+    spin_unlock(&(state->req_lock));
 
     return id;
 }
@@ -78,11 +76,11 @@ static void
 free_request_id(struct xpmem_domain_state * state,
                 uint32_t                    reqid)
 {
-    spin_lock(&(state->lock));
+    spin_lock(&(state->req_lock));
     {
         state->requests[reqid].allocated = 0;
     }
-    spin_unlock(&(state->lock));
+    spin_unlock(&(state->req_lock));
 }
 
 static void 
@@ -162,8 +160,14 @@ xpmem_get_domain(struct xpmem_cmd_get_ex * get_ex)
     status = xpmem_get_segment(flags, permit_type, permit_value, apid, 0, seg, seg_tg, ap_tg);
 
     if (status == 0) { 
-        get_ex->apid = apid;
-        get_ex->size = seg->size;
+        get_ex->apid  = apid;
+        get_ex->size  = seg->size;
+        get_ex->domid = seg->domid;
+
+        if (seg->flags & XPMEM_FLAG_SIGNALLABLE)
+            get_ex->sigid = *((xpmem_sigid_t *)&seg->sig);
+        else
+            get_ex->sigid = 0;
     } else {
         xpmem_seg_deref(seg);
         xpmem_tg_deref(seg_tg);
@@ -586,31 +590,13 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
     return 0;
 }
 
-/* Callback for segid interrupt */
 static int
-xpmem_irq_fn(int           irq,
-             xpmem_segid_t segid,
-             void        * priv)
+xpmem_segid_fn(xpmem_segid_t segid,
+               xpmem_sigid_t sigid,
+               xpmem_domid_t domid,
+               void        * priv)
 {
-    struct xpmem_thread_group * seg_tg;
-    struct xpmem_segment      * seg;
-
-    seg_tg = xpmem_tg_ref_by_segid(segid);
-    if (IS_ERR(seg_tg))
-        return PTR_ERR(seg_tg);
-
-    seg = xpmem_seg_ref_by_segid(seg_tg, segid);
-    if (IS_ERR(seg)) {
-        xpmem_tg_deref(seg_tg);
-        return PTR_ERR(seg);
-    }
-
-    xpmem_seg_signal(seg);
-
-    xpmem_seg_deref(seg);
-    xpmem_tg_deref(seg_tg);
-
-    return 0;
+    return xpmem_segid_signal(segid);
 }
 
 static void
@@ -734,13 +720,15 @@ out:
 }
 
 int
-xpmem_get_remote(xpmem_link_t  link,
-                 xpmem_segid_t segid,
-                 int           flags,
-                 int            permit_type,
-                 s64            permit_value,
-                 xpmem_apid_t * apid,
-                 u64          * size)
+xpmem_get_remote(xpmem_link_t    link,
+                 xpmem_segid_t   segid,
+                 int             flags,
+                 int             permit_type,
+                 u64             permit_value,
+                 xpmem_apid_t  * apid,
+                 u64           * size,
+                 xpmem_domid_t * domid,
+                 xpmem_sigid_t * sigid)
 {
     struct xpmem_domain_state * state  = NULL;
     struct xpmem_cmd_ex       * resp   = NULL;
@@ -785,9 +773,11 @@ xpmem_get_remote(xpmem_link_t  link,
         goto out;
     }
 
-    /* Grab allocated apid and size */
-    *apid = resp->get.apid;
-    *size = resp->get.size;
+    /* Grab segment parameters */
+    *apid  = resp->get.apid;
+    *size  = resp->get.size;
+    *domid = resp->get.domid;
+    *sigid = resp->get.sigid;
 
 out:
     free_request_id(state, reqid);
@@ -1000,13 +990,13 @@ xpmem_domain_init(void)
     }
     
     /* Initialize stuff */
-    spin_lock_init(&(state->lock));
+    spin_lock_init(&(state->req_lock));
     init_request_map(state);
 
     state->link = xpmem_add_local_connection(
             (void *)state,
             xpmem_cmd_fn,
-            xpmem_irq_fn,
+            xpmem_segid_fn,
             xpmem_kill_fn);
 
     if (state->link < 0) {

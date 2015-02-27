@@ -37,6 +37,10 @@ struct xpmem_bar_state {
     u32 xpmem_detach_hcall_id;
     u32 xpmem_irq_clear_hcall_id;
     u32 xpmem_read_cmd_hcall_id;
+    u32 xpmem_read_apicid_hcall_id;
+    u32 xpmem_request_irq_hcall_id;
+    u32 xpmem_release_irq_hcall_id;
+    u32 xpmem_deliver_irq_hcall_id;
 
     /* vmx capable */
     u8 vmx_capable;
@@ -54,26 +58,37 @@ struct xpmem_bar_state {
     u64 xpmem_pfn_size;
 };
 
-
 struct xpmem_palacios_state {
-    void __iomem                 * xpmem_bar;   /* Bar memory */
-    struct xpmem_bar_state         bar_state;   /* Bar state */
+    void __iomem         * xpmem_bar;   /* Bar memory */
+    struct xpmem_bar_state bar_state;   /* Bar state */
 
-    unsigned int                   irq;         /* device irq number */
-    struct work_struct             work;        /* work struct */
+    unsigned int           irq;         /* device irq number */
+    struct work_struct     work;        /* work struct */
 
-    xpmem_link_t                   link;        /* xpmem connection link */
-    struct xpmem_partition       * partition;   /* pointer to partition */ 
+    xpmem_link_t           link;        /* xpmem connection link */
 };
 
+static xpmem_link_t vmm_link = 0;
+static DEFINE_SPINLOCK(vmm_link_lock);
 
-static struct xpmem_palacios_state palacios_devs[MAX_DEVICES];
-atomic_t dev_off = ATOMIC_INIT(0);
+xpmem_link_t
+xpmem_get_host_link(void)
+{
+    xpmem_link_t link;
+
+    spin_lock(&vmm_link_lock);
+    link = vmm_link;
+    spin_unlock(&vmm_link_lock);
+
+    return link;
+}
 
 
-static void
-xpmem_hcall(u32                   hcall_id, 
-            struct xpmem_cmd_ex * cmd)
+static unsigned long long
+do_xpmem_hcall(u32       hcall_id,
+               uintptr_t arg1,
+               uintptr_t arg2,
+               uintptr_t arg3)
 {
     unsigned long long ret = 0;
 
@@ -81,81 +96,78 @@ xpmem_hcall(u32                   hcall_id,
         __asm__ volatile(
             VMCALL
             : "=a"(ret)
-            : "a"(hcall_id), "b"(cmd)
+            : "a"(hcall_id), "b"(arg1), "c"(arg2), "d"(arg3)
         );
     } else {
         __asm__ volatile(
             VMMCALL
             : "=a"(ret)
-            : "a"(hcall_id), "b"(cmd)
+            : "a"(hcall_id), "b"(arg1), "c"(arg2), "d"(arg3)
         );
     }
+
+    return ret;
 }
 
 static void
-xpmem_detach_hcall(u32 hcall_id,
-                   u64 vaddr)
+xpmem_cmd_hcall(struct xpmem_palacios_state * state, 
+                struct xpmem_cmd_ex         * cmd)
 {
-    unsigned long long ret = 0;
-
-    if (vmcall) {
-        __asm__ volatile(
-            VMCALL
-            : "=a"(ret)
-            : "a"(hcall_id), "b"(vaddr)
-        );
-    } else {
-        __asm__ volatile(
-            VMMCALL
-            : "=a"(ret)
-            : "a"(hcall_id), "b"(vaddr)
-        );
-    }
+    (void)do_xpmem_hcall(state->bar_state.xpmem_hcall_id, (uintptr_t)cmd, 0, 0);
 }
 
-
 static void
-xpmem_irq_clear_hcall(u32 hcall_id)
+xpmem_detach_hcall(struct xpmem_palacios_state * state,
+                   u64                           paddr)
 {
-    unsigned long long ret = 0;
-
-    if (vmcall) {
-        __asm__ volatile(
-            VMCALL
-            : "=a"(ret)
-            : "a"(hcall_id)
-        );
-    } else {
-        __asm__ volatile(
-            VMMCALL
-            : "=a"(ret)
-            : "a"(hcall_id)
-        );
-    }
+    (void)do_xpmem_hcall(state->bar_state.xpmem_detach_hcall_id, (uintptr_t)paddr, 0, 0);
 }
 
 static void
-xpmem_read_cmd_hcall(u32 hcall_id,
+xpmem_irq_clear_hcall(struct xpmem_palacios_state * state)
+{
+    (void)do_xpmem_hcall(state->bar_state.xpmem_irq_clear_hcall_id, 0, 0, 0);
+}
+
+static void
+xpmem_read_cmd_hcall(struct xpmem_palacios_state * state,
                      u64 cmd_va,
                      u64 pfn_va)
 {
-    unsigned long long ret = 0;
-
-    if (vmcall) {
-        __asm__ volatile(
-            VMCALL
-            : "=a"(ret)
-            : "a"(hcall_id), "b"(cmd_va), "c"(pfn_va)
-        );
-    } else {
-        __asm__ volatile(
-            VMMCALL
-            : "=a"(ret)
-            : "a"(hcall_id), "b"(cmd_va), "c"(pfn_va)
-        );
-    }
+    (void)do_xpmem_hcall(state->bar_state.xpmem_read_cmd_hcall_id, (uintptr_t)cmd_va, (uintptr_t)pfn_va, 0);
 }
 
+static void
+xpmem_read_apicid_hcall(struct xpmem_palacios_state * state,
+                        unsigned int                  logical_cpu,
+                        int                         * host_apicid_va)
+{
+    (void)do_xpmem_hcall(state->bar_state.xpmem_read_apicid_hcall_id, (uintptr_t)logical_cpu, (uintptr_t)host_apicid_va, 0);
+}
+
+static void
+xpmem_request_irq_hcall(struct xpmem_palacios_state * state,
+                        int                           guest_vector,
+                        int                         * host_vector_va)
+{
+    (void)do_xpmem_hcall(state->bar_state.xpmem_request_irq_hcall_id, (uintptr_t)guest_vector, (uintptr_t)host_vector_va, 0);
+}
+
+static void
+xpmem_release_irq_hcall(struct xpmem_palacios_state * state,
+                        int                           host_vector)
+{
+    (void)do_xpmem_hcall(state->bar_state.xpmem_release_irq_hcall_id, host_vector, 0, 0);
+}
+
+static void
+xpmem_deliver_irq_hcall(struct xpmem_palacios_state * state,
+                        xpmem_domid_t                 segid,
+                        xpmem_sigid_t                 sigid,
+                        xpmem_domid_t                 domid)
+{
+    (void)do_xpmem_hcall(state->bar_state.xpmem_deliver_irq_hcall_id, (uintptr_t)segid, (uintptr_t)sigid, (uintptr_t)domid);
+}
 
 
 static void
@@ -168,7 +180,6 @@ read_bar(void __iomem * xpmem_bar,
         *((u8 *)(dst + i)) = ioread8(xpmem_bar + i);
     }
 }
-
 
 /* 
  * Work queue for interrupt processing.
@@ -208,7 +219,7 @@ __xpmem_work_fn(struct xpmem_palacios_state * state)
 
     /* Read command from BAR */
     xpmem_read_cmd_hcall(
-        state->bar_state.xpmem_read_cmd_hcall_id, 
+        state, 
         (u64)(void *)&cmd,
         (u64)__pa(pfn_buf)
     );
@@ -219,7 +230,7 @@ __xpmem_work_fn(struct xpmem_palacios_state * state)
     }
 
     /* Clear device interrupt flag */
-    xpmem_irq_clear_hcall(state->bar_state.xpmem_irq_clear_hcall_id);
+    xpmem_irq_clear_hcall(state);
 
     /* Deliver the command */
     xpmem_cmd_deliver(state->link, &cmd);
@@ -261,7 +272,6 @@ irq_handler(int    irq,
 
 
 
-
 /* Callback for commands being issued by the XPMEM name/forwarding service */
 static int
 xpmem_cmd_fn(struct xpmem_cmd_ex * cmd, 
@@ -270,10 +280,8 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
     struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)priv_data;
     u32                         * pfns  = NULL;
 
-    xpmem_hcall(
-        state->bar_state.xpmem_hcall_id, 
-        cmd
-    );
+    /* Invoke hypercall */
+    xpmem_cmd_hcall(state, cmd);
 
     /* Free list allocated on attachment interrupt */
     if (cmd->type == XPMEM_ATTACH_COMPLETE) {
@@ -283,6 +291,35 @@ xpmem_cmd_fn(struct xpmem_cmd_ex * cmd,
 
     return 0;
 }
+
+/* Callback for signals issued to a segid */
+static int
+xpmem_segid_fn(xpmem_segid_t segid,
+               xpmem_sigid_t sigid,
+               xpmem_domid_t domid,
+               void        * priv_data)
+{
+    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)priv_data;
+
+    /* Invoke hypercall */
+    xpmem_deliver_irq_hcall(state, segid, sigid, domid);
+
+    return 0;
+}
+
+static void
+xpmem_kill_fn(void * priv_data)
+{
+    struct xpmem_palacios_state * state = (struct xpmem_palacios_state *)priv_data;
+
+    /* Remove vmm link */
+    spin_lock(&vmm_link_lock);
+    vmm_link = 0;
+    spin_unlock(&vmm_link_lock);
+
+    kfree(state);
+}
+
 
 
 static const struct pci_device_id 
@@ -296,25 +333,18 @@ static int
 xpmem_probe_driver(struct pci_dev             * dev, 
                    const struct pci_device_id * id)                   
 {
-    struct xpmem_palacios_state * palacios_state = NULL;
+    struct xpmem_palacios_state * state    = NULL;
+    unsigned long                 bar_size = 0;
 
-    unsigned long bar_size = 0;
-    int           dev_no   = 0;
-
-    if (dev->vendor != XPMEM_VENDOR_ID) {
+    if (dev->vendor != XPMEM_VENDOR_ID)
         return -1;
-    }
 
-    if (dev->device != XPMEM_DEVICE_ID) {
+    if (dev->device != XPMEM_DEVICE_ID)
         return -1;
-    }
 
-    /* Index into global list */
-    dev_no         = atomic_read(&dev_off);
-    palacios_state = &(palacios_devs[dev_no]);
-
-    /* Remember the state with the driver's private data field */
-    pci_set_drvdata(dev, (void *)palacios_state);
+    state = kzalloc(sizeof(struct xpmem_palacios_state), GFP_KERNEL);
+    if (state == NULL)
+        return -ENOMEM;
 
     /* Enable PCI device */
     if (pci_enable_device(dev)) {
@@ -329,89 +359,92 @@ xpmem_probe_driver(struct pci_dev             * dev,
     }
 
     /* Map BAR 0 */
-    bar_size                  = pci_resource_len(dev, 0);
-    palacios_state->xpmem_bar = pci_iomap(dev, 0, bar_size); 
+    bar_size         = pci_resource_len(dev, 0);
+    state->xpmem_bar = pci_iomap(dev, 0, bar_size); 
 
-    if (!palacios_state->xpmem_bar) {
+    if (state->xpmem_bar == NULL) {
         XPMEM_ERR("Failed to map Palacios device BAR 0 memory");
         goto err;
     }
 
     /* Read Palacios hypercall ids from BAR 0 */
-    read_bar(palacios_state->xpmem_bar, 
-             (void *)&(palacios_state->bar_state), 
-             sizeof(palacios_state->bar_state));
+    read_bar(state->xpmem_bar, 
+             (void *)&(state->bar_state), 
+             sizeof(state->bar_state));
 
-    if ( (palacios_state->bar_state.xpmem_hcall_id           == 0) ||
-         (palacios_state->bar_state.xpmem_detach_hcall_id    == 0) ||
-         (palacios_state->bar_state.xpmem_irq_clear_hcall_id == 0) ||
-         (palacios_state->bar_state.xpmem_read_cmd_hcall_id  == 0))
+    if ( (state->bar_state.xpmem_hcall_id              == 0) ||
+         (state->bar_state.xpmem_detach_hcall_id       == 0) ||
+         (state->bar_state.xpmem_irq_clear_hcall_id    == 0) ||
+         (state->bar_state.xpmem_read_cmd_hcall_id     == 0) ||
+         (state->bar_state.xpmem_read_apicid_hcall_id  == 0) ||
+         (state->bar_state.xpmem_request_irq_hcall_id  == 0) ||
+         (state->bar_state.xpmem_release_irq_hcall_id  == 0) ||
+         (state->bar_state.xpmem_deliver_irq_hcall_id  == 0)
+       )
     {
         XPMEM_ERR("Palacios hypercall(s) not available");
         goto err_unmap;
     }
 
-    if ( (palacios_state->bar_state.vmx_capable == 0) &&
-         (palacios_state->bar_state.svm_capable == 0))
+    if ( (state->bar_state.vmx_capable == 0) &&
+         (state->bar_state.svm_capable == 0))
     {
         XPMEM_ERR("Palacios hypercall(s) not functional");
         goto err_unmap;
     }
 
-    if (palacios_state->bar_state.vmx_capable > 0) {
+    if (state->bar_state.vmx_capable > 0) {
         vmcall = 1;
     } else {
         vmcall = 0;
     }
 
     /* Initialize the rest of the state */
-    INIT_WORK(&(palacios_state->work), xpmem_work_fn);
-    atomic_inc(&dev_off);
+    INIT_WORK(&(state->work), xpmem_work_fn);
 
     /* Add connection to name/forwarding service */
-    palacios_state->link = xpmem_add_connection(
-            (void *)palacios_state,
+    state->link = xpmem_add_connection(
+            (void *)state,
             xpmem_cmd_fn, 
-            NULL,
-            NULL);
+            xpmem_segid_fn,
+            xpmem_kill_fn);
 
-    if (palacios_state->link <= 0) {
+    if (state->link <= 0) {
         XPMEM_ERR("Failed to register Palacios interface with name/forwarding service");
         goto err_unmap;
     }
 
-    /* Save vmm link */
-    palacios_state->partition->vmm_link = palacios_state->link;
-
-    {
-        char buf[16];
-
-        memset(buf, 0, 16);
-        snprintf(buf, 16, "xpmem_%d", dev_no);
-
-        /* Register IRQ handler */
-        if (request_irq(dev->irq, irq_handler, IRQF_SHARED, buf, (void *)palacios_state) != 0) {
-            XPMEM_ERR("Failed to request IRQ for Palacios device (irq = %d)", dev->irq);
-            goto err_remove;
-        }
-
-        palacios_state->irq = dev->irq;
+    /* Register IRQ handler */
+    if (request_irq(dev->irq, irq_handler, IRQF_SHARED, "xpmem", (void *)state) != 0) {
+        XPMEM_ERR("Failed to request IRQ for Palacios device (irq = %d)", dev->irq);
+        goto err_remove;
     }
 
+    state->irq = dev->irq;
+
+    /* Save vmm link */
+    spin_lock(&vmm_link_lock);
+    vmm_link = state->link;
+    spin_unlock(&vmm_link_lock);
+
+    /* Remember the state with the driver's private data field */
+    pci_set_drvdata(dev, (void *)state);
+
     /* Signal device initialization by clearing irq status */
-    xpmem_irq_clear_hcall(palacios_state->bar_state.xpmem_irq_clear_hcall_id);
+    xpmem_irq_clear_hcall(state);
 
     printk("XPMEM: Palacios PCI device enabled\n");
     return 0;
 
 err_remove:
-    xpmem_remove_connection(palacios_state->link);
+    xpmem_remove_connection(state->link);
 
 err_unmap:
-    pci_iounmap(dev, palacios_state->xpmem_bar);
+    pci_iounmap(dev, state->xpmem_bar);
 
 err:
     printk("XPMEM: Palacios PCI device initialization failed\n");
+    kfree(state);
     return -1;
 }
 
@@ -446,15 +479,20 @@ xpmem_driver =
 
 
 int
-xpmem_palacios_detach_paddr(xpmem_link_t link, 
-                            u64          paddr)
+xpmem_detach_host_paddr(u64 paddr)
 {
-    struct xpmem_palacios_state * state = xpmem_get_link_data(link);
-    if (state == NULL) {
-        return -1;
-    }
+    struct xpmem_palacios_state * state = NULL;
+    xpmem_link_t                  link  = xpmem_get_host_link();
 
-    xpmem_detach_hcall(state->bar_state.xpmem_detach_hcall_id, paddr);
+    /* We might be in the host already */
+    if (link == 0)
+        return 0;
+
+    state = xpmem_get_link_data(link);
+    if (state == NULL)
+        return -1;
+
+    xpmem_detach_hcall(state, paddr);
 
     xpmem_put_link_data(state->link);
 
@@ -464,43 +502,92 @@ xpmem_palacios_detach_paddr(xpmem_link_t link,
 
 
 int
-xpmem_palacios_init(struct xpmem_partition * partition) {
-    struct xpmem_palacios_state * state  = NULL;
-    int                           ret    = 0;
-    int                           dev_no = 0;
+xpmem_request_host_vector(int vector)
+{
+    struct xpmem_palacios_state * state       = NULL;
+    xpmem_link_t                  link        = xpmem_get_host_link();
+    int                           host_vector = vector;
 
-    /* Index into global list */
-    dev_no = atomic_read(&dev_off);
+    if (link == 0)
+        return host_vector;
 
-    /* Clear the state */
-    state = &(palacios_devs[dev_no]);
-    memset(state, 0, sizeof(struct xpmem_palacios_state));
+    state = xpmem_get_link_data(link);
+    if (state == NULL)
+        return -EBUSY;
 
-    state->partition = partition;
+    xpmem_request_irq_hcall(state, vector, &host_vector);
+    if (host_vector < 0)
+        XPMEM_ERR("Cannot allocate host IDT vector");
+
+    xpmem_put_link_data(link);
+    return host_vector;
+}
+
+void
+xpmem_release_host_vector(int host_vector)
+{
+    struct xpmem_palacios_state * state = NULL;
+    xpmem_link_t                  link  = xpmem_get_host_link();
+
+    if (link == 0)
+        return;
+
+    state = xpmem_get_link_data(link);
+    if (state == NULL) {
+        XPMEM_ERR("Leaking Host IDT vector %d", host_vector);
+        return;
+    }
+
+    xpmem_release_irq_hcall(state, host_vector);
+    xpmem_put_link_data(link);
+}
+
+int
+xpmem_get_host_apic_id(int cpu)
+{
+    struct xpmem_palacios_state * state   = NULL;
+    xpmem_link_t                  link    = xpmem_get_host_link();
+    int                           apic_id = -1;
+
+    if (link == 0)
+        return apic->cpu_present_to_apicid(cpu);
+
+    state = xpmem_get_link_data(link);
+    if (state == NULL)
+        return -EBUSY;
+
+    xpmem_read_apicid_hcall(state, cpu, &apic_id);
+    if (apic_id < 0)
+        XPMEM_ERR("Cannot read host apic id for cpu %d", cpu);
+
+    xpmem_put_link_data(link);
+    return apic_id;
+}
+
+int
+xpmem_palacios_init(void) {
+    int ret = 0;
 
     /* Register PCI driver */
     ret = pci_register_driver(&xpmem_driver);
-
-    if (ret != 0) {
+    if (ret != 0)
         XPMEM_ERR("Failed to register Palacios PCI device driver");
-    }
 
     return ret;
 }
 
 int
-xpmem_palacios_deinit(xpmem_link_t link)
+xpmem_palacios_deinit(void)
 {
-    pci_unregister_driver(&xpmem_driver);
+    xpmem_link_t link = xpmem_get_host_link();
 
     /* Remove the xpmem connection */
-    if (link > 0) {
+    if (link > 0)
         xpmem_remove_connection(link);
-    }
+
+    pci_unregister_driver(&xpmem_driver);
 
     return 0;
 }
-
-
 
 MODULE_DEVICE_TABLE(pci, xpmem_ids);

@@ -262,21 +262,6 @@ struct xpmem_thread_group {
     struct list_head                tg_hashnode;            /* embedded in partition hash list */
 };
 
-
-/*
- * 'irq' is the irq allocated by the source process
- * 'apic_id' is the local apic id where the source process is running
- * 'vector' is the ipi vector that maps to the irq on 'apic_id'
- * 'domid' is the domid of the source process
- * 'irq_count' is the number of outstanding irqs
- * 'signalled_wq' is the wait queue
- */
-struct xpmem_signal {
-    int32_t  irq;
-    uint16_t vector;
-    uint16_t apic_id;
-};
-
 struct xpmem_segment {
     /* List of access permits */
     struct list_head            ap_list;                /* local access permits of seg */
@@ -287,13 +272,12 @@ struct xpmem_segment {
     size_t                      size;                   /* size of seg */
     int                         permit_type;            /* permission scheme */
     void                      * permit_value;           /* permission data */
+    xpmem_domid_t               domid;                  /* domid where seg exists */
 
     /* Option signalling stuff */
-    struct xpmem_signal         sig;                    /* signal for seg */
-    xpmem_domid_t               domid;
-    atomic_t                    irq_count;
-    wait_queue_head_t           signalled_wq;
-    int                         fd;
+    struct xpmem_signal         sig;                    /* opaque cross-enclave signal for seg */
+    atomic_t                    irq_count;              /* irq count for seg */
+    wait_queue_head_t           signalled_wq;           /* wait queue for seg */
 
     /* Other misc */
     volatile int                flags;                  /* seg attributes and state */
@@ -383,10 +367,6 @@ struct xpmem_partition_state {
     /* table mapping domids to link ids */
     xpmem_link_t                   link_map[XPMEM_MAX_DOMID];
 
-    /* table mapping irqs to segids */
-    xpmem_segid_t                  irq_to_segid[NR_VECTORS];
-    rwlock_t                       irq_to_segid_lock;
-
     /* unique link generation. no link is ever issued twice */
     xpmem_link_t  uniq_link;
 
@@ -416,7 +396,9 @@ struct xpmem_partition {
     struct xpmem_partition_state    part_state;             /* extended per-partition state */
 
     xpmem_link_t                    domain_link;            /* local domain xpmem link */
-    xpmem_link_t                    vmm_link;               /* link into the host */
+    xpmem_link_t                    host_link;              /* xpmem link giving access to the host enclave */
+
+    xpmem_domid_t                   domid;
 };
 
 /*
@@ -493,7 +475,7 @@ xpmem_vaddr_to_PFN(struct mm_struct *mm, u64 vaddr)
 #define XPMEM_CPUS_OFFLINE      -2
 
 /* found in xpmem_make.c */
-extern int xpmem_make_segment(u64, size_t, int, void *, int, struct xpmem_thread_group *, xpmem_segid_t, int *);
+extern int xpmem_make_segment(u64, size_t, int, void *, int, struct xpmem_thread_group *, xpmem_segid_t, xpmem_domid_t, xpmem_sigid_t, int *);
 extern int xpmem_make(u64, size_t, int, void *, int, xpmem_segid_t,  xpmem_segid_t *, int *);
 extern void xpmem_remove_segs_of_tg(struct xpmem_thread_group *);
 extern int xpmem_remove(xpmem_segid_t);
@@ -577,6 +559,7 @@ extern void xpmem_mmu_notifier_unlink(struct xpmem_thread_group *);
 extern int xpmem_partition_init(int);
 extern int xpmem_partition_deinit(void);
 extern xpmem_domid_t xpmem_get_domid(void);
+extern int xpmem_ensure_valid_domid(void);
 extern int xpmem_send_cmd_link(struct xpmem_partition_state *,
         xpmem_link_t, struct xpmem_cmd_ex *);
 extern void xpmem_add_domid_link(struct xpmem_partition_state *,
@@ -588,7 +571,7 @@ extern void xpmem_remove_domid_link(struct xpmem_partition_state *,
 extern xpmem_link_t xpmem_add_local_connection(
     void *,
     int (*)(struct xpmem_cmd_ex *,  void *),
-    int (*)(int, xpmem_segid_t, void *),
+    int (*)(xpmem_segid_t, xpmem_sigid_t, xpmem_domid_t, void *),
     void (*)(void *));
 
 /* found in xpmem_domain.c */
@@ -606,20 +589,28 @@ extern int xpmem_fwd_init(struct xpmem_partition_state *);
 extern int xpmem_fwd_deinit(struct xpmem_partition_state *);
 extern int xpmem_fwd_deliver_cmd(struct xpmem_partition_state *, xpmem_link_t, struct xpmem_cmd_ex *);
 extern xpmem_domid_t xpmem_fwd_get_domid(struct xpmem_partition_state *, xpmem_link_t);
+extern int xpmem_fwd_ensure_valid_domid(struct xpmem_partition_state *);
 
 /* found in xpmem_palacios.c */
-extern int xpmem_palacios_init(struct xpmem_partition *);
-extern int xpmem_palacios_deinit(xpmem_link_t);
-extern int xpmem_palacios_detach_paddr(xpmem_link_t, u64);
-extern int xpmem_request_irq(irqreturn_t (*)(int, void *), void *);
-extern int xpmem_release_irq(int, void *);
-extern int xpmem_irq_to_vector(int);
+extern int xpmem_palacios_init(void);
+extern int xpmem_palacios_deinit(void);
+extern xpmem_link_t xpmem_get_host_link(void);
+extern int xpmem_detach_host_paddr(u64);
+
+extern int xpmem_request_host_vector(int);
+extern void xpmem_release_host_vector(int);
+extern int xpmem_get_host_apic_id(int);
 
 /* found in xpmem_irq.c */
-extern int xpmem_request_local_irq(irqreturn_t (*)(int, void *), void *);
-extern int xpmem_release_local_irq(int, void *);
-extern int xpmem_local_irq_to_vector(int);
 extern void xpmem_send_ipi_to_apic(unsigned int, unsigned int);
+
+/* found in xpmem_signal.c */
+extern int xpmem_alloc_seg_signal(struct xpmem_segment *);
+extern void xpmem_free_seg_signal(struct xpmem_segment *);
+extern void xpmem_signal_seg(struct xpmem_segment *);
+extern int xpmem_segid_signal(xpmem_segid_t);
+extern int xpmem_signal(xpmem_apid_t);
+extern struct file_operations xpmem_signal_fops;
 
 /* found in xpmem_syms.c */
 extern int xpmem_linux_symbol_init(void);

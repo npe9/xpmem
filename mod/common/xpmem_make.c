@@ -19,169 +19,6 @@
 #include <xpmem_extended.h>
 #include <xpmem_private.h>
 
-static int
-xpmem_alloc_seg_signal(struct xpmem_segment * seg)
-{
-    int irq;
-    int vector;
-    int apic_id;
-
-    /* Request irq */
-    irq = xpmem_request_irq_link(xpmem_my_part->domain_link);
-    if (irq < 0) 
-        return irq;
-
-    /* Get irq IPI vector */
-    vector = xpmem_irq_to_vector(irq);
-    if (vector < 0) {
-        xpmem_release_irq_link(xpmem_my_part->domain_link, irq);
-        return vector;
-    }
-
-    /* Store local apic id of logical cpu 0 */
-    apic_id = apic->cpu_present_to_apicid(0);
-
-    /* Save sigid in seg structure */
-    seg->sig.irq     = irq;
-    seg->sig.vector  = vector;
-    seg->sig.apic_id = apic_id;
-
-    return 0;
-}
-
-static void
-xpmem_free_seg_signal(struct xpmem_segment * seg)
-{
-    int status = 0;
-
-    spin_lock(&(seg->lock));
-    if (seg->flags & XPMEM_FLAG_SIGNALLABLE) {
-        status = 1;
-        seg->flags &= ~XPMEM_FLAG_SIGNALLABLE;
-    } 
-    spin_unlock(&(seg->lock));
-
-    if (status) {
-        /* Release the irq */
-        status = xpmem_release_irq_link(xpmem_my_part->domain_link, seg->sig.irq);
-        if (status != 0)
-            XPMEM_ERR("Could not free irq %d for segid %lli", seg->sig.irq, seg->segid);
-    }
-}
-
-static ssize_t
-signal_read(struct file * filp,
-            char __user * buffer,
-            size_t        length,
-            loff_t      * offset)
-{
-    struct xpmem_thread_group * seg_tg;
-    struct xpmem_segment      * seg;
-    xpmem_segid_t               segid;
-    unsigned long               irqs;
-
-    if (length != sizeof(unsigned long))
-        return -EINVAL;
-
-    segid = (xpmem_segid_t)filp->private_data;
-
-    seg_tg = xpmem_tg_ref_by_segid(segid);
-    if (IS_ERR(seg_tg))
-        return PTR_ERR(seg_tg);
-
-    seg = xpmem_seg_ref_by_segid(seg_tg, segid);
-    if (IS_ERR(seg)) {
-        xpmem_tg_deref(seg_tg);
-        return PTR_ERR(seg);
-    }
-
-    wait_event_interruptible(seg->signalled_wq,
-        (atomic_read(&(seg->irq_count)) > 0)
-    );
-
-    irqs = atomic_dec_return(&(seg->irq_count));
-
-    xpmem_seg_deref(seg);
-    xpmem_tg_deref(seg_tg);
-
-    if (copy_to_user(buffer, &irqs, sizeof(unsigned long))) 
-        return -EFAULT;
-
-    return length;
-}
-
-static unsigned int
-signal_poll(struct file              * filp,
-            struct poll_table_struct * poll)
-{
-    struct xpmem_thread_group * seg_tg;
-    struct xpmem_segment      * seg;
-    xpmem_segid_t               segid;
-    unsigned long               irqs;
-    unsigned int                mask = 0;
-
-    segid = (xpmem_segid_t)filp->private_data;
-
-    seg_tg = xpmem_tg_ref_by_segid(segid);
-    if (IS_ERR(seg_tg))
-        return PTR_ERR(seg_tg);
-
-    seg = xpmem_seg_ref_by_segid(seg_tg, segid);
-    if (IS_ERR(seg)) {
-        xpmem_tg_deref(seg_tg);
-        return PTR_ERR(seg);
-    }
-
-    poll_wait(filp, &(seg->signalled_wq), poll);
-
-    irqs = atomic_read(&(seg->irq_count));
-    if (irqs > 0) 
-        mask = POLLIN | POLLRDNORM;
-
-    xpmem_seg_deref(seg);
-    xpmem_tg_deref(seg_tg);
-
-    return mask;
-}
-
-/* Free segment's signal on release */
-static int
-signal_release(struct inode * inodep,
-               struct file  * filp)
-{
-    struct xpmem_thread_group * seg_tg;
-    struct xpmem_segment      * seg;
-    xpmem_segid_t               segid;
-
-    segid = (xpmem_segid_t)filp->private_data;
-
-    seg_tg = xpmem_tg_ref_by_segid(segid);
-    if (IS_ERR(seg_tg))
-        return PTR_ERR(seg_tg);
-
-    seg = xpmem_seg_ref_by_segid(seg_tg, segid);
-    if (IS_ERR(seg)) {
-        xpmem_tg_deref(seg_tg);
-        return PTR_ERR(seg);
-    }
-
-    xpmem_free_seg_signal(seg);
-
-    xpmem_seg_deref(seg);
-    xpmem_tg_deref(seg_tg);
-
-    return 0;
-}
-
-static struct file_operations 
-signal_fops = 
-{
-    .owner   = THIS_MODULE,
-    .read    = signal_read,
-    .poll    = signal_poll,
-    .release = signal_release,
-};
-
 
 /*
  * Create a new and unique segid.
@@ -217,6 +54,8 @@ xpmem_make_segment(u64                         vaddr,
                    int                         flags,
                    struct xpmem_thread_group * seg_tg,
                    xpmem_segid_t               segid,
+                   xpmem_domid_t               domid,
+                   xpmem_sigid_t               sigid,
                    int                       * fd_p)
 {
     struct xpmem_segment *seg;
@@ -236,43 +75,55 @@ xpmem_make_segment(u64                         vaddr,
     seg->size = size;
     seg->permit_type = permit_type;
     seg->permit_value = permit_value;
+    seg->domid = domid;
     init_waitqueue_head(&seg->destroyed_wq);
     seg->tg = seg_tg;
     INIT_LIST_HEAD(&seg->ap_list);
     INIT_LIST_HEAD(&seg->seg_node);
 
-    if (flags & XPMEM_FLAG_SHADOW) {
+    if (flags & XPMEM_FLAG_SHADOW)
         seg->flags = XPMEM_FLAG_SHADOW;
-    }
 
     if (flags & XPMEM_SIG_MODE) {
-        char name[16];
-        int fd;
+        if (flags & XPMEM_FLAG_SHADOW) {
+            /* We are making a shadow segment that is signallable. We simply need
+             * to record the sigid that will be used to IPI the segment
+             */
+            struct xpmem_signal * signal = (struct xpmem_signal *)&sigid;
 
-        /* Allocate signal */
-        status = xpmem_alloc_seg_signal(seg);
-        if (status != 0) {
-            kfree(seg);
-            return status;
+            seg->sig.irq     = signal->irq;
+            seg->sig.vector  = signal->vector;
+            seg->sig.apic_id = signal->apic_id;
+
+            seg->flags |= XPMEM_FLAG_SIGNALLABLE;
+        } else {
+            /* Else, create the signal structures locally */
+            char name[16];
+            int fd;
+
+            /* Allocate signal */
+            status = xpmem_alloc_seg_signal(seg);
+            if (status != 0) {
+                kfree(seg);
+                return status;
+            }
+
+            seg->domid = xpmem_get_domid();
+            init_waitqueue_head(&seg->signalled_wq);
+            seg->flags |= XPMEM_FLAG_SIGNALLABLE;
+
+            memset(name, 0, 16);
+            snprintf(name, 16, "xpmem-irq-%d", seg->sig.irq);
+
+            fd = anon_inode_getfd(name, &xpmem_signal_fops, (void *)seg->segid, O_RDONLY);
+            if (fd < 0) {
+                xpmem_free_seg_signal(seg);
+                kfree(seg);
+                return fd;
+            }
+
+            *fd_p = fd;
         }
-
-        /* Allocate everything else */
-        init_waitqueue_head(&seg->signalled_wq);
-        seg->flags |= XPMEM_FLAG_SIGNALLABLE;
-
-        /* Allocate anon fd */
-        memset(name, 0, 16);
-        snprintf(name, 16, "xpmem-irq-%d", seg->sig.irq);
-
-        fd = anon_inode_getfd(name, &signal_fops, (void *)seg->segid, O_RDONLY);
-        if (fd < 0) {
-            xpmem_free_seg_signal(seg);
-            kfree(seg);
-            return fd;
-        }
-
-        seg->fd = fd;
-        *fd_p   = fd;
     }
 
     xpmem_seg_not_destroyable(seg);
@@ -300,6 +151,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, int flag
         xpmem_segid_t request, xpmem_segid_t *segid_p, int *fd_p)
 {
     xpmem_segid_t segid;
+    xpmem_domid_t domid;
     struct xpmem_thread_group *seg_tg;
     int status;
 
@@ -362,8 +214,10 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, int flag
         return segid;
     }
 
+    domid = xpmem_get_domid();
+    DBUG_ON(domid <= 0);
 
-    status = xpmem_make_segment(vaddr, size, permit_type, permit_value, flags, seg_tg, segid, fd_p);
+    status = xpmem_make_segment(vaddr, size, permit_type, permit_value, flags, seg_tg, segid, domid, 0, fd_p);
 
     if (status == 0) {
         *segid_p = segid;
@@ -399,8 +253,11 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
     /* unpin pages and clear PTEs for each attachment to this segment */
     xpmem_clear_PTEs(seg);
 
-    /* Remove signal */
-    xpmem_free_seg_signal(seg);
+    /* Remove signal and free from name server if this is a real segment */
+    if (!(seg->flags & XPMEM_FLAG_SHADOW)) {
+        xpmem_free_seg_signal(seg);
+        xpmem_remove_remote(xpmem_my_part->domain_link, seg->segid);
+    }
 
     /* indicate that the segment has been destroyed */
     spin_lock(&seg->lock);
@@ -417,11 +274,6 @@ xpmem_remove_seg(struct xpmem_thread_group *seg_tg, struct xpmem_segment *seg)
         write_lock(&xpmem_my_part->wk_segid_to_tgid_lock);
         xpmem_my_part->wk_segid_to_tgid[seg->segid] = 0;
         write_unlock(&xpmem_my_part->wk_segid_to_tgid_lock);
-    }
-
-    /* Nameserver does not know about shadow segments, so don't remove them */
-    if (!(seg->flags & XPMEM_FLAG_SHADOW)) {
-        xpmem_remove_remote(xpmem_my_part->domain_link, seg->segid);
     }
 
     xpmem_seg_up_write(seg);
