@@ -396,9 +396,6 @@ struct xpmem_partition {
     struct xpmem_partition_state    part_state;             /* extended per-partition state */
 
     xpmem_link_t                    domain_link;            /* local domain xpmem link */
-    xpmem_link_t                    host_link;              /* xpmem link giving access to the host enclave */
-
-    xpmem_domid_t                   domid;
 };
 
 /*
