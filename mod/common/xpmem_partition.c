@@ -387,10 +387,19 @@ xpmem_irq_deliver(xpmem_segid_t segid,
     struct xpmem_partition_state * part = xpmem_get_partition();
     struct xpmem_link_connection * conn = NULL;
     struct xpmem_signal          * sig  = (struct xpmem_signal *)&sigid;
-    xpmem_link_t                   link = xpmem_get_domid_link(part, domid);
+    xpmem_link_t                   link = 0;
     int                            ret  = 0;
 
     /* First, see if we have a link for the domid */
+    link = xpmem_get_domid_link(part, domid);
+
+    if (link == 0) {
+        /* If we don't have a link to the domid, go through Palacios if we are being
+         * virtualized
+         */
+        link = xpmem_get_host_link();
+    }
+
     if (link > 0) {
         /* We have a link --> invoke the irq callback directly */
         conn = xpmem_get_link_conn(part, link);
