@@ -268,12 +268,6 @@ xpmem_fault_pages(struct xpmem_attachment * att,
     seg_tg = seg->tg;
     xpmem_tg_ref(seg_tg);
 
-    /* Get read access to the segment */
-    ret = xpmem_seg_down_read(seg_tg, seg, 1, 0);
-    if (ret != 0) {
-        goto out;
-    }
-
     /* Grab the segemnt vaddr */
     seg_vaddr = ((u64)att->vaddr & PAGE_MASK);
 
@@ -286,10 +280,8 @@ xpmem_fault_pages(struct xpmem_attachment * att,
 
     /* Fault the pages into the seg */
     ret = xpmem_ensure_valid_PFNs(seg, seg_vaddr, att->at_size);
-
-    if (ret != 0) {
-        goto out_2;
-    }
+    if (ret != 0)
+        goto out;
 
     /* The list is preallocated by the remote domain, the address of which is given
      * by 'pfn_pa'. We assume all memory is already mapped by Linux, so a simple __va
@@ -303,7 +295,7 @@ xpmem_fault_pages(struct xpmem_attachment * att,
         if (!pfn_valid(pfn) || pfn <= 0) {
             XPMEM_ERR("Invalid PFN");
             ret = -EFAULT;
-            goto out_2;
+            goto out;
         }
 
         pfns[i]      = pfn;
@@ -311,15 +303,13 @@ xpmem_fault_pages(struct xpmem_attachment * att,
     }
 
  
-out_2:
+out:
     mutex_unlock(&(att->mutex));
 
     /* Release the mmap sem */
     up_read(&(seg_tg->mm->mmap_sem));
     atomic_dec(&(seg_tg->mm->mm_users));
 
-    xpmem_seg_up_read(seg_tg, seg, 1);
-out:
     xpmem_att_deref(att);
     xpmem_ap_deref(ap);
     xpmem_tg_deref(ap_tg);

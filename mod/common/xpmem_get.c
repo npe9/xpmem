@@ -121,8 +121,6 @@ xpmem_try_get_remote(xpmem_segid_t   segid,
         &domid,
         &sigid);
 
-    /* TODO: also, get signal vector, apic_id, and domid */
-
     if (status != 0) {
         return -1;
     }
@@ -365,7 +363,8 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     spin_unlock(&seg->lock);
     
     /* Release remote apid */
-    if (ap->remote_apid > 0) {
+    if (ap->seg->flags & XPMEM_FLAG_SHADOW) {
+        DBUG_ON(ap->remote_apid <= 0);
         xpmem_release_remote(xpmem_my_part->domain_link, seg->segid, ap->remote_apid);
     }
 

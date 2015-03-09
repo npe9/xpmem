@@ -10,7 +10,7 @@
 
 int main(int argc, char ** argv) {
     int * addr;
-    int flags, signalable, fd, sec;
+    int flags, signalable, fd, sec, i;
     xpmem_segid_t segid = 0;
     long num_pages;
 
@@ -48,15 +48,13 @@ int main(int argc, char ** argv) {
     if (segid <= 0) {
         printf("Cannot allocate segid\n");
         return -1;
-    } else {
-        int i = 0;
+    }
 
-        for (i = 0; i < num_pages; i++) {
-            void * addr2 = ((void *)addr + (PAGE_SIZE * i));
-            *((int *)addr2) = 12340 + i;
-            printf("addr: %p, *addr: %d\n",
-                addr2, *((int *)addr2));
-        }
+    for (i = 0; i < num_pages; i++) {
+        void * addr2 = ((void *)addr + (PAGE_SIZE * i));
+        *((int *)addr2) = 12340 + i;
+        printf("addr: %p, *addr: %d\n",
+            addr2, *((int *)addr2));
     }
 
     if (signalable) {
@@ -67,26 +65,25 @@ int main(int argc, char ** argv) {
         fds[0].fd = fd;
         fds[0].events = POLLIN | POLLRDNORM;
 
-        while (1) {
-            printf("Polling fd %d\n", fd);
+        printf("Polling fd %d\n", fd);
 
-            status = poll(fds, 1, -1);
-            printf("poll status = %d\n", status, irqs);
+        status = poll(fds, 1, -1);
+        printf("poll status = %d\n", status, irqs);
 
-            status = read(fd, &irqs, sizeof(unsigned long));
-            printf("read status = %d, outstanding irqs =%lu\n", status, irqs);
-        }
+        status = read(fd, &irqs, sizeof(unsigned long));
+        printf("read status = %d, outstanding irqs =%lu\n", status, irqs);
 
+        close(fd);
+    }
+
+    if (sec == -1) {
+        printf("Sleeping forever\n");
+       while (1)
+           sleep(1);
     } else {
-        if (sec == -1) {
-           while (1)
-               sleep(1);
-        } else {
-            int i = 0;
-            for (i = 0; i < sec; i++) {
-                printf("exiting in %d seconds\n", sec - i);
-                sleep(1);
-            }
+        for (i = 0; i < sec; i++) {
+            printf("Exiting in %d seconds\n", sec - i);
+            sleep(1);
         }
     }
 

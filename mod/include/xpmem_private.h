@@ -575,6 +575,16 @@ extern xpmem_link_t xpmem_add_local_connection(
 extern xpmem_link_t xpmem_domain_init(void);
 extern int xpmem_domain_deinit(xpmem_link_t);
 
+extern int xpmem_make_remote(xpmem_link_t, xpmem_segid_t, xpmem_segid_t *);
+extern int xpmem_remove_remote(xpmem_link_t, xpmem_segid_t);
+extern int xpmem_get_remote(xpmem_link_t, xpmem_segid_t, int, int, u64,
+        xpmem_apid_t *, u64 *, xpmem_domid_t *, xpmem_sigid_t *);
+extern int xpmem_release_remote(xpmem_link_t, xpmem_segid_t, xpmem_apid_t);
+extern int xpmem_attach_remote(xpmem_link_t, xpmem_segid_t, xpmem_apid_t,
+        off_t, size_t, u64);
+extern int xpmem_detach_remote(xpmem_link_t, xpmem_segid_t, xpmem_apid_t, u64);
+
+
 /* found in xpmem_ns.c */
 extern int xpmem_ns_init(struct xpmem_partition_state *);
 extern int xpmem_ns_deinit(struct xpmem_partition_state *);
