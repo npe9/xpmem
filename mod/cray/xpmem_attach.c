@@ -473,8 +473,8 @@ xpmem_attach(struct file *file, xpmem_apid_t apid, off_t offset, size_t size,
 
     /* if remote, load pfns in now */
     if (seg->flags & XPMEM_FLAG_SHADOW) {
-        DBUG_ON(ap->remote_apid <= 0);
-        if (xpmem_try_attach_remote(seg->segid, ap->remote_apid, offset, size, at_vaddr) != 0) {
+        DBUG_ON(seg->remote_apid <= 0);
+        if (xpmem_try_attach_remote(seg->segid, seg->remote_apid, offset, size, at_vaddr) != 0) {
             do_munmap(current->mm, at_vaddr, size);
             up_write(&current->mm->mmap_sem);
             ret = -EFAULT;
@@ -606,7 +606,8 @@ xpmem_detach(u64 at_vaddr)
     if (ap->seg->flags & XPMEM_FLAG_SHADOW) {
         u64 pa = 0;
 
-        xpmem_detach_remote(xpmem_my_part->domain_link, ap->seg->segid, ap->remote_apid, att->at_vaddr);
+        DBUG_ON(ap->seg->remote_apid <= 0);
+        xpmem_detach_remote(xpmem_my_part->domain_link, ap->seg->segid, ap->seg->remote_apid, att->at_vaddr);
 
         /* Free from Palacios, if we're in a VM */ 
         pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;
@@ -663,7 +664,8 @@ xpmem_detach_local_att(struct xpmem_access_permit * ap,
     if (ap->seg->flags & XPMEM_FLAG_SHADOW) {
         u64 pa = 0;
 
-        xpmem_detach_remote(xpmem_my_part->domain_link, ap->seg->segid, ap->remote_apid, att->at_vaddr);
+        DBUG_ON(ap->seg->remote_apid <= 0);
+        xpmem_detach_remote(xpmem_my_part->domain_link, ap->seg->segid, ap->seg->remote_apid, att->at_vaddr);
 
         /* Free from Palacios, if we're in a VM */ 
         pa = xpmem_vaddr_to_PFN(att->mm, att->at_vaddr) << PAGE_SHIFT;

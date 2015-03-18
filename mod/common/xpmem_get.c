@@ -143,7 +143,6 @@ xpmem_get_segment(int                         flags,
                   int                         permit_type,
                   void                      * permit_value,
                   xpmem_apid_t                apid,
-                  xpmem_apid_t                remote_apid,
                   struct xpmem_segment      * seg,
                   struct xpmem_thread_group * seg_tg,
                   struct xpmem_thread_group * ap_tg)
@@ -161,7 +160,6 @@ xpmem_get_segment(int                         flags,
     ap->seg = seg;
     ap->tg = ap_tg;
     ap->apid = apid;
-    ap->remote_apid = remote_apid;
     ap->mode = flags;
     INIT_LIST_HEAD(&ap->att_list);
     INIT_LIST_HEAD(&ap->ap_node);
@@ -240,7 +238,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
 
         seg_tg = xpmem_tg_ref_by_tgid(current->tgid);
         xpmem_make_segment(0, remote_size, permit_type, permit_value, 
-            seg_flags, seg_tg, segid, remote_domid, remote_sigid, NULL);
+            seg_flags, seg_tg, segid, remote_apid, remote_domid, remote_sigid, NULL);
     }
 
     seg = xpmem_seg_ref_by_segid(seg_tg, segid);
@@ -274,7 +272,7 @@ xpmem_get(xpmem_segid_t segid, int flags, int permit_type, void *permit_value,
         return apid;
     }
  
-    status = xpmem_get_segment(flags, permit_type, permit_value, apid, remote_apid, seg, seg_tg, ap_tg);
+    status = xpmem_get_segment(flags, permit_type, permit_value, apid, seg, seg_tg, ap_tg);
 
     if (status == 0) {
         *apid_p = apid;
@@ -363,9 +361,9 @@ xpmem_release_ap(struct xpmem_thread_group *ap_tg,
     spin_unlock(&seg->lock);
     
     /* Release remote apid */
-    if (ap->seg->flags & XPMEM_FLAG_SHADOW) {
-        DBUG_ON(ap->remote_apid <= 0);
-        xpmem_release_remote(xpmem_my_part->domain_link, seg->segid, ap->remote_apid);
+    if (seg->flags & XPMEM_FLAG_SHADOW) {
+        DBUG_ON(seg->remote_apid <= 0);
+        xpmem_release_remote(xpmem_my_part->domain_link, seg->segid, seg->remote_apid);
     }
 
     xpmem_seg_deref(seg);   /* deref of xpmem_get()'s ref */

@@ -54,6 +54,7 @@ xpmem_make_segment(u64                         vaddr,
                    int                         flags,
                    struct xpmem_thread_group * seg_tg,
                    xpmem_segid_t               segid,
+                   xpmem_apid_t                remote_apid,
                    xpmem_domid_t               domid,
                    xpmem_sigid_t               sigid,
                    int                       * fd_p)
@@ -71,6 +72,7 @@ xpmem_make_segment(u64                         vaddr,
     init_rwsem(&seg->sema);
     atomic_set(&(seg->irq_count), 0);
     seg->segid = segid;
+    seg->remote_apid = remote_apid;
     seg->vaddr = vaddr;
     seg->size = size;
     seg->permit_type = permit_type;
@@ -217,7 +219,7 @@ xpmem_make(u64 vaddr, size_t size, int permit_type, void *permit_value, int flag
     domid = xpmem_get_domid();
     DBUG_ON(domid <= 0);
 
-    status = xpmem_make_segment(vaddr, size, permit_type, permit_value, flags, seg_tg, segid, domid, 0, fd_p);
+    status = xpmem_make_segment(vaddr, size, permit_type, permit_value, flags, seg_tg, segid, 0, domid, 0, fd_p);
 
     if (status == 0) {
         *segid_p = segid;

@@ -69,6 +69,9 @@ int main(int argc, char ** argv) {
     if (signalable) 
         xpmem_signal(apid);
 
+
+    sleep(10);
+
     xpmem_release(apid);
 
     return 0;

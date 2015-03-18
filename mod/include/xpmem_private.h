@@ -273,6 +273,7 @@ struct xpmem_segment {
     int                         permit_type;            /* permission scheme */
     void                      * permit_value;           /* permission data */
     xpmem_domid_t               domid;                  /* domid where seg exists */
+    xpmem_apid_t                remote_apid;            /* if this is a shadow segment, the remote apid that maps to it */
 
     /* Option signalling stuff */
     struct xpmem_signal         sig;                    /* opaque cross-enclave signal for seg */
@@ -300,7 +301,7 @@ struct xpmem_access_permit {
 
     /* This access permit's attached region */
     xpmem_apid_t                apid;                   /* unique apid */
-    xpmem_apid_t                remote_apid;            /* unique remote apid */
+//    xpmem_apid_t                remote_apid;            /* unique remote apid */
     int                         mode;                   /* read/write mode */
 
     struct xpmem_segment      * seg;                    /* seg permitted to be accessed */
@@ -472,7 +473,7 @@ xpmem_vaddr_to_PFN(struct mm_struct *mm, u64 vaddr)
 #define XPMEM_CPUS_OFFLINE      -2
 
 /* found in xpmem_make.c */
-extern int xpmem_make_segment(u64, size_t, int, void *, int, struct xpmem_thread_group *, xpmem_segid_t, xpmem_domid_t, xpmem_sigid_t, int *);
+extern int xpmem_make_segment(u64, size_t, int, void *, int, struct xpmem_thread_group *, xpmem_segid_t, xpmem_apid_t, xpmem_domid_t, xpmem_sigid_t, int *);
 extern int xpmem_make(u64, size_t, int, void *, int, xpmem_segid_t,  xpmem_segid_t *, int *);
 extern void xpmem_remove_segs_of_tg(struct xpmem_thread_group *);
 extern int xpmem_remove(xpmem_segid_t);
@@ -480,7 +481,7 @@ extern int xpmem_remove(xpmem_segid_t);
 /* found in xpmem_get.c */
 extern int xpmem_check_permit_mode(int, struct xpmem_segment *);
 extern xpmem_apid_t xpmem_make_apid(struct xpmem_thread_group *);
-extern int xpmem_get_segment(int, int, void *, xpmem_apid_t, xpmem_apid_t, struct xpmem_segment *, struct xpmem_thread_group *, struct xpmem_thread_group *);
+extern int xpmem_get_segment(int, int, void *, xpmem_apid_t, struct xpmem_segment *, struct xpmem_thread_group *, struct xpmem_thread_group *);
 extern int xpmem_get(xpmem_segid_t, int, int, void *, xpmem_apid_t *);
 extern void xpmem_release_aps_of_tg(struct xpmem_thread_group *);
 extern void xpmem_release_ap(struct xpmem_thread_group *, struct xpmem_access_permit *);
