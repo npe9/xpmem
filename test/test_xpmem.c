@@ -38,7 +38,7 @@ int main(int argc, char ** argv) {
         return -1;
     }
 
-    segid = xpmem_make_hobbes((void *)addr, PAGE_SIZE * num_pages, 
+    segid = xpmem_make_ext((void *)addr, PAGE_SIZE * num_pages, 
             XPMEM_PERMIT_MODE, (void *)0600,
             flags, segid, &fd);
 

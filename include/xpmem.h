@@ -137,13 +137,27 @@ struct xpmem_cmd_domid {
 #ifndef __KERNEL__
 extern int xpmem_version(void);
 extern xpmem_segid_t xpmem_make(void *, size_t, int, void *);
-extern xpmem_segid_t xpmem_make_hobbes(void *, size_t, int, void *, int, xpmem_segid_t, int *);
+extern xpmem_segid_t xpmem_make_ext(void *, size_t, int, void *, int, xpmem_segid_t, int *);
 extern int xpmem_remove(xpmem_segid_t);
 extern xpmem_apid_t xpmem_get(xpmem_segid_t, int, int, void *);
 extern int xpmem_release(xpmem_apid_t);
 extern int xpmem_signal(xpmem_apid_t);
 extern void *xpmem_attach(struct xpmem_addr, size_t, void *);
 extern int xpmem_detach(void *);
+
+
+static inline xpmem_segid_t 
+xpmem_make_hobbes(void * vaddr, 
+		  size_t size, 
+		  int    permit_type, 
+		  void * permit_value, 
+		  int    flags, 
+		  xpmem_segid_t request,
+		  int *  fd) 
+{
+    return xpmem_make_ext(vaddr, size, permit_type, permit_value, flags, request, fd);
+}
+
 #endif
 
 #endif /* _XPMEM_H */

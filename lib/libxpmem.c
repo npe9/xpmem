@@ -107,17 +107,17 @@ int xpmem_ioctl(int cmd, void *arg)
  *	Success: 64-bit segment ID (xpmem_segid_t)
  *	Failure: -1
  */
-xpmem_segid_t xpmem_make_hobbes(void *vaddr, size_t size, int permit_type,
+xpmem_segid_t xpmem_make_ext(void *vaddr, size_t size, int permit_type,
             void *permit_value, int flags, xpmem_segid_t request, int * fd)
 {
 	struct xpmem_cmd_make make_info;
 
-	make_info.vaddr = (__u64)vaddr;
-	make_info.size  = size;
+	make_info.vaddr        = (__u64)vaddr;
+	make_info.size         = size;
 	make_info.permit_type  = permit_type;
 	make_info.permit_value = (__s64)permit_value;
-    make_info.flags = flags;
-    make_info.segid = request;
+	make_info.flags        = flags;
+	make_info.segid        = request;
 
 	if (xpmem_ioctl(XPMEM_CMD_MAKE, &make_info) == -1 || !make_info.segid)
 		return -1;
@@ -131,7 +131,7 @@ xpmem_segid_t xpmem_make_hobbes(void *vaddr, size_t size, int permit_type,
 xpmem_segid_t xpmem_make(void *vaddr, size_t size, int permit_type,
 			 void *permit_value)
 {
-    return xpmem_make_hobbes(vaddr, size, permit_type, permit_value, 
+    return xpmem_make_ext(vaddr, size, permit_type, permit_value, 
         XPMEM_MEM_MODE, 0, NULL);
 }
 
@@ -257,12 +257,13 @@ void *xpmem_attach(struct xpmem_addr addr, size_t size, void *vaddr)
 {
 	struct xpmem_cmd_attach attach_info;
 
-	attach_info.apid = addr.apid;
+	attach_info.apid   = addr.apid;
 	attach_info.offset = addr.offset;
-	attach_info.size = size;
-	attach_info.vaddr = (__u64)vaddr;
-	attach_info.fd = xpmem_fd;
-	attach_info.flags = 0;
+	attach_info.size   = size;
+	attach_info.vaddr  = (__u64)vaddr;
+	attach_info.fd     = xpmem_fd;
+	attach_info.flags  = 0;
+
 	if (xpmem_ioctl(XPMEM_CMD_ATTACH, &attach_info) == -1)
 		return (void *)-1;
 	return (void *)attach_info.vaddr;
