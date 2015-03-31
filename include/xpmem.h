@@ -142,6 +142,7 @@ extern int xpmem_remove(xpmem_segid_t);
 extern xpmem_apid_t xpmem_get(xpmem_segid_t, int, int, void *);
 extern int xpmem_release(xpmem_apid_t);
 extern int xpmem_signal(xpmem_apid_t);
+extern int xpmem_ack(int fd);
 extern void *xpmem_attach(struct xpmem_addr, size_t, void *);
 extern int xpmem_detach(void *);
 

@@ -232,7 +232,33 @@ int xpmem_signal(xpmem_apid_t apid)
         return -1;
     return 0;
 }
- 
+
+
+/**
+ * xpmem_ack - ack a pending signal 
+ * @fd: IN: File descriptor connected to notification channel
+ * Description:
+ *	Acknowledges an outstanding signal notification
+ * Context:
+ *	Called by the notification consumer to indicate that it has 
+ *      received and handled a signal. 
+ * Return Value:
+ *	Success: number of pending notifications
+ *	Failure: -1
+ */
+int xpmem_ack(int fd)
+{
+    unsigned long x   = 0;
+    int           ret = 0;
+
+    ret = read(fd, &x, sizeof(unsigned long));
+    
+    if (ret <= 0) {
+	return ret;
+    }
+
+    return x;
+}
 
 /**
  * xpmem_attach - map a source address to own address space
