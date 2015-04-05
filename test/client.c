@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <sys/time.h>
 
 #include <xpmem.h>
 
@@ -18,8 +19,7 @@ unsigned long get_tick(void)
 }
 
 int main(int argc, char ** argv) {
-    int * addr;
-    int mb, i, iters, mode, ar_size;
+    int mb, i, iters, mode;
     long size, num_pages;
     int * ar;
     unsigned long at_start, at_end, end;

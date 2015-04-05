@@ -68,7 +68,7 @@ int main(int argc, char ** argv) {
         printf("Polling fd %d\n", fd);
 
         status = poll(fds, 1, -1);
-        printf("poll status = %d\n", status, irqs);
+        printf("poll status = %d\n", status);
 
         status = read(fd, &irqs, sizeof(unsigned long));
         printf("read status = %d, outstanding irqs =%lu\n", status, irqs);

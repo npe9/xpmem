@@ -2,7 +2,7 @@ CC      = gcc
 
 #xpmem   = $(HOME)/tmp/xpmem-github/xpmem
 xpmem   = $(PWD)/../
-CFLAGS  = -I$(xpmem)/include
+CFLAGS  = -Wall -Werror -I$(xpmem)/include
 LDFLAGS = -L../lib -lxpmem -static
 
 SRCS   = $(shell ls *.c)
