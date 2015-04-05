@@ -3,7 +3,7 @@ AR             = ar
 
 #xpmem=$(HOME)/tmp/xpmem-github/xpmem
 xpmem=$(PWD)/../
-CFLAGS         = -fPIC -I$(xpmem)/include
+CFLAGS         = -Wall -Werror -fPIC -I$(xpmem)/include
 
 TARGET        = libxpmem.so
 TARGET_STATIC = libxpmem.a
