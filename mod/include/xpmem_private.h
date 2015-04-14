@@ -622,6 +622,7 @@ extern struct file_operations xpmem_signal_fops;
 
 /* found in xpmem_syms.c */
 extern int xpmem_linux_symbol_init(void);
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)
 extern int  (*linux_create_irq)(void);
 extern void (*linux_destroy_irq)(unsigned int);
@@ -634,6 +635,18 @@ extern struct irq_desc * (*linux_irq_to_desc)(unsigned int);
 #define linux_handle_edge_irq handle_edge_irq
 #define linux_irq_to_desc irq_to_desc
 #endif
+
+#ifndef CONFIG_XPMEM_CRAY
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,11,0)
+extern void (*linux_tlb_gather_mmu)(struct mmu_gather *, struct mm_struct *, bool);
+#else
+extern void (*linux_tlb_gather_mmu)(struct mmu_gather *, struct mm_struct *, 
+        unsigned long, unsigned long);
+#endif
+extern void (*linux_tlb_flush_mmu)(struct mmu_gather *);
+extern void (*linux_tlb_finish_mmu)(struct mmu_gather *, unsigned long, unsigned long);
+#endif
+
 
 static inline char *
 xpmem_cmd_to_string(xpmem_op_t op) 

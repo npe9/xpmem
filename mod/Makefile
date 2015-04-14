@@ -23,14 +23,16 @@ ifeq ($(CRAY_VERSION),1)
 				cray/xpmem_attach.o \
 				cray/xpmem_pfn.o \
 				cray/xpmem_misc.o \
-				cray/xpmem_mmu_notifier.o
+				cray/xpmem_mmu_notifier.o \
+				cray/xpmem_syms.o
 EXTRA_CFLAGS += -DCONFIG_XPMEM_CRAY
 else
   xpmem-objs  :=  linux/xpmem_main.o \
 				linux/xpmem_attach.o \
 				linux/xpmem_pfn.o \
 				linux/xpmem_misc.o \
-				linux/xpmem_mmu_notifier.o
+				linux/xpmem_mmu_notifier.o \
+				linux/xpmem_syms.o
 EXTRA_CFLAGS += -DCONFIG_XPMEM_LINUX
 endif
 
@@ -40,7 +42,6 @@ xpmem-y +=  common/xpmem_make.o \
 		common/xpmem_partition.o \
 		common/xpmem_palacios.o \
 		common/xpmem_hashtable.o \
-		common/xpmem_syms.o \
 		common/xpmem_ns.o \
 		common/xpmem_fwd.o \
 		common/xpmem_signal.o \

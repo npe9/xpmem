@@ -55,6 +55,7 @@ xpmem_invalidate_range(struct mmu_notifier *mn, struct mm_struct *mm,
 {
     struct xpmem_thread_group *seg_tg;
     struct vm_area_struct *vma;
+    struct mmu_gather tlb;
 
     seg_tg = container_of(mn, struct xpmem_thread_group, mmu_not);
 
@@ -73,11 +74,34 @@ xpmem_invalidate_range(struct mmu_notifier *mn, struct mm_struct *mm,
         start -= offset_in_page(start);
     if (offset_in_page(end) != 0)
         end += PAGE_SIZE - offset_in_page(end);
+    /*
+     * Save off some mmu_gather data so we can restore it before returning
+     * to the kernel.  This is needed because XPMEM, via the MMU notifier
+     * callout, can call zap_page_range() which itself does a
+     * tlb_gather_mmu().  Since the kernel itself may be part-way
+     * through a tlb_gather_mmu/tlb_finish_mmu seqeuence itself when
+     * calling the MMU notifier, we need to restore this mmu state before
+     * returning.
+     */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,11,0)
+    linux_tlb_gather_mmu(&tlb, mm, 0);
+#else
+    linux_tlb_gather_mmu(&tlb, mm, start, end);
+#endif
+
+    /*
+     * We could be in the middle of an unmap_region() -> unmap_vmas() which
+     * eventually calls tlb_finish_mmu() to flush the tlb. However, we
+     * later call zap_page_range() on a different mm, thus wiping out the
+     * work needed to be done by tlb_finish_mmu() in unmap_region(). So to
+     * prevent this work from being neglected, we flush out the tlb here.
+     */
+    linux_tlb_flush_mmu(&tlb);
 
     vma = find_vma_intersection(mm, start, end);
     if (vma == NULL) {
         xpmem_invalidate_PTEs_range(seg_tg, start, end);
-        return;
+        goto out;
     }
 
     for ( ; vma && vma->vm_start < end; vma = vma->vm_next) {
@@ -107,6 +131,9 @@ xpmem_invalidate_range(struct mmu_notifier *mn, struct mm_struct *mm,
 
         xpmem_invalidate_PTEs_range(seg_tg, vm_start, vm_end);
     }
+out:
+    /* restore the mm state */
+    linux_tlb_finish_mmu(&tlb, start, end);
 }
 
 /*

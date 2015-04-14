@@ -15,22 +15,16 @@
 #include <xpmem_private.h>
 
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)
 int  (*linux_create_irq) (void);
 void (*linux_destroy_irq)(unsigned int);
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
 void (*linux_handle_edge_irq)(unsigned int, struct irq_desc *);
 struct irq_desc * (*linux_irq_to_desc)(unsigned int);
-#endif
 
 
 int
 xpmem_linux_symbol_init(void)
 {
     unsigned long symbol_addr = 0;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)
 
     /* Symbol:
      *  --  create_irq
@@ -59,9 +53,7 @@ xpmem_linux_symbol_init(void)
 
         linux_destroy_irq = (void (*)(unsigned int))symbol_addr;
     }   
-#endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)
     /* Symbol:
      *  --  handle_edge_irq
      */
@@ -90,7 +82,6 @@ xpmem_linux_symbol_init(void)
 
         linux_irq_to_desc = (struct irq_desc * (*)(unsigned int))symbol_addr;
     }   
-#endif
 
     return 0;
 }
