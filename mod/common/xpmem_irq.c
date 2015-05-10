@@ -13,14 +13,14 @@
 #include <linux/pci.h>
 #include <asm/ipi.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0)
 #include <asm/irq_cfg.h>
 #endif
 
 #include <xpmem.h>
 #include <xpmem_private.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0)
 static void 
 mask_lapic_irq(unsigned int irq) 
 {
@@ -95,7 +95,7 @@ xpmem_alloc_irq(void)
 #endif
 
     if (irq > 0) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0)
         struct irq_desc * desc = linux_irq_to_desc(irq);
         if (desc == NULL) {
             XPMEM_ERR("No desc for irq %d", irq);
@@ -108,7 +108,8 @@ xpmem_alloc_irq(void)
         __set_irq_handler(irq, linux_handle_edge_irq, 0, NULL);
 #else
         irq_clear_status_flags(irq, IRQ_LEVEL);
-        irq_set_chip_and_handler(irq, &ipi_chip, linux_handle_edge_irq);
+        irq_set_chip(irq, &ipi_chip);
+        __irq_set_handler(irq, linux_handle_edge_irq, 0, NULL);
 #endif
     }
 
@@ -174,7 +175,7 @@ xpmem_irq_to_vector(int irq)
 {
     struct irq_cfg * cfg;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0)
     {
         struct irq_desc * desc = linux_irq_to_desc(irq);
         if (desc == NULL) {

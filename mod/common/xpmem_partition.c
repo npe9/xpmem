@@ -7,6 +7,7 @@
  */
 
 #include <linux/kref.h>
+#include <linux/module.h>
 
 #include <xpmem_private.h>
 

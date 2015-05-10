@@ -82,7 +82,7 @@ extern uint32_t xpmem_debug_on;
 #define delayed_work work_struct
 
 
-#ifndef CONFIG_XPMEM_CRAY
+#ifndef CONFIG_XPMEM_OLD_CRAY
 static pte_t *
 xpmem_huge_pte_offset(struct mm_struct * mm,
                       u64                addr)
@@ -139,7 +139,7 @@ xpmem_hugetlb_pte(struct mm_struct *mm, u64 vaddr, u64 *offset, int is_pmd, pmd_
         XPMEM_DEBUG("vaddr = %llx, offset = %llx", vaddr, *offset);
     }
 
-#ifdef CONFIG_XPMEM_CRAY
+#ifdef CONFIG_XPMEM_OLD_CRAY
     pte = huge_pte_offset(mm, address, hps);
 #else
     pte = xpmem_huge_pte_offset(mm, address);
@@ -510,7 +510,7 @@ extern int xpmem_fork_end(void);
 
 #define XPMEM_TGID_STRING_LEN   11
 
-#ifdef CONFIG_XPMEM_CRAY
+#ifdef CONFIG_XPMEM_OLD_CRAY
 extern spinlock_t xpmem_unpin_procfs_lock;
 extern int xpmem_unpin_procfs_write(struct file *, const char *,
                     unsigned long, void *);
@@ -543,7 +543,7 @@ extern int xpmem_validate_access(struct xpmem_thread_group *, struct xpmem_acces
                  int, u64 *);
 extern void xpmem_block_nonfatal_signals(sigset_t *);
 extern void xpmem_unblock_nonfatal_signals(sigset_t *);
-#ifdef CONFIG_XPMEM_CRAY
+#ifdef CONFIG_XPMEM_OLD_CRAY
 extern int xpmem_debug_printk_procfs_write(struct file *, const char *,
                         unsigned long, void *);
 extern int xpmem_debug_printk_procfs_read(char *, char **, off_t, int, int *, void *);
@@ -636,7 +636,7 @@ extern struct irq_desc * (*linux_irq_to_desc)(unsigned int);
 #define linux_irq_to_desc irq_to_desc
 #endif
 
-#ifndef CONFIG_XPMEM_CRAY
+#ifndef CONFIG_XPMEM_OLD_CRAY
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,11,0)
 extern void (*linux_tlb_gather_mmu)(struct mmu_gather *, struct mm_struct *, bool);
 #else
