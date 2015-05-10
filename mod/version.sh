@@ -1,8 +1,13 @@
 #!/bin/bash
 
-if [ $# -ne 1 ]; then
-    echo "Usage: $0 <KERN_PATH>"
-    exit -1
+if [ $# -eq 1 ]; then
+    DIR=$1
 fi
 
-grep LINUX_VERSION_CODE $1/include/linux/version.h | awk '{print $3}'
+FILE=include/linux/version.h
+
+if [ -e $DIR/$FILE ]; then
+    grep LINUX_VERSION_CODE $DIR/$FILE | awk '{print $3}'
+else
+    grep LINUX_VERSION_CODE /usr/$FILE | awk '{print $3}'
+fi
